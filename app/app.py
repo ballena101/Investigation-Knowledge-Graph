@@ -812,61 +812,67 @@ with tab_mapping_review:
 
         st.divider()
 
-        mapping_decision = st.radio(
-            "Human mapping decision",
-            options=["VALIDATED", "REJECTED", "AMENDED"],
-            horizontal=True,
-            key="mapping_decision",
-        )
+        if "mapping_review_flash" in st.session_state:
+            flash = st.session_state.pop("mapping_review_flash")
+            st.success(flash)
 
-        amended_mapping = None
-        if mapping_decision == "AMENDED":
-            amended_mapping = st.text_input(
-                "Proposed amended EMCIP mapping",
+        with st.form("emcip_mapping_review_form"):
+            mapping_decision = st.radio(
+                "Human mapping decision",
+                options=["VALIDATED", "REJECTED", "AMENDED"],
+                horizontal=True,
+                key="mapping_decision",
+            )
+
+            amended_mapping = None
+            if mapping_decision == "AMENDED":
+                amended_mapping = st.text_input(
+                    "Proposed amended EMCIP mapping",
+                    placeholder=(
+                        "Enter the replacement taxonomy path/value. "
+                        "It will be stored as a proposal and will not overwrite "
+                        "the original mapping."
+                    ),
+                    key="mapping_amended_value",
+                ).strip()
+
+                if not amended_mapping:
+                    st.info(
+                        "An amended mapping value is required before an "
+                        "AMENDED review can be saved."
+                    )
+
+            mapping_comment = st.text_area(
+                "Mapping review comment",
                 placeholder=(
-                    "Enter the replacement taxonomy path/value. "
-                    "It will be stored as a proposal and will not overwrite "
-                    "the original mapping."
+                    "Optional for validation; strongly recommended for rejection "
+                    "or amendment."
                 ),
-                key="mapping_amended_value",
-            ).strip()
+                key="mapping_review_comment",
+            )
 
-            if not amended_mapping:
-                st.info(
-                    "An amended mapping value is required before an "
-                    "AMENDED review can be saved."
-                )
+            mapping_reviewer = get_reviewer_identity()
+            mapping_reviewer_display = (
+                mapping_reviewer["email"]
+                if mapping_reviewer["email"] != "unknown"
+                else mapping_reviewer["username"]
+            )
+            st.caption(
+                f"Reviewer recorded as: {mapping_reviewer_display}"
+            )
 
-        mapping_comment = st.text_area(
-            "Mapping review comment",
-            placeholder=(
-                "Optional for validation; strongly recommended for rejection "
-                "or amendment."
-            ),
-            key="mapping_review_comment",
-        )
+            mapping_save_disabled = (
+                mapping_decision == "AMENDED"
+                and not amended_mapping
+            )
 
-        mapping_reviewer = get_reviewer_identity()
-        mapping_reviewer_display = (
-            mapping_reviewer["email"]
-            if mapping_reviewer["email"] != "unknown"
-            else mapping_reviewer["username"]
-        )
-        st.caption(
-            f"Reviewer recorded as: {mapping_reviewer_display}"
-        )
+            mapping_submitted = st.form_submit_button(
+                "Save mapping review",
+                type="primary",
+                disabled=mapping_save_disabled,
+            )
 
-        mapping_save_disabled = (
-            mapping_decision == "AMENDED"
-            and not amended_mapping
-        )
-
-        if st.button(
-            "Save mapping review",
-            type="primary",
-            disabled=mapping_save_disabled,
-            key="save_mapping_review",
-        ):
+        if mapping_submitted:
             try:
                 mapping_review_id = save_mapping_review(
                     selected_mapping,
@@ -874,11 +880,30 @@ with tab_mapping_review:
                     amended_mapping=amended_mapping,
                     comment=mapping_comment.strip(),
                 )
-                st.success(
-                    f"Mapping review saved: {mapping_decision} — "
+
+                with get_driver().session() as session:
+                    persisted = session.run(
+                        """
+                        MATCH (r:EMCIPMappingReview {review_id: $review_id})
+                        RETURN
+                            r.human_review_decision AS decision,
+                            r.human_review_status AS status
+                        """,
+                        review_id=mapping_review_id,
+                    ).single()
+
+                if persisted is None:
+                    raise RuntimeError(
+                        "The write returned a review ID but the review record "
+                        "could not be read back from Neo4j."
+                    )
+
+                st.session_state["mapping_review_flash"] = (
+                    f"Mapping review saved: {persisted['decision']} — "
                     f"review ID {mapping_review_id}"
                 )
                 st.rerun()
+
             except Exception as exc:
                 st.error(
                     "The EMCIP mapping review could not be saved to Neo4j."
