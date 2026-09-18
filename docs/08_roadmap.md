@@ -14,18 +14,19 @@ Completed:
 - Neo4j projection;
 - Databricks interactive graph app;
 - relationship-review UI;
-- auditable human-review table design;
-- Databricks App resource setup notebook for review persistence.
+- append-only Neo4j human-review design;
+- reviewer provenance captured from Databricks App identity headers.
 
 Current implementation step:
 
-- create the governed relationship-review table;
-- attach a SQL warehouse and the review table to the App;
-- deploy and test Validate / Reject / Amend end to end.
+- confirm the existing Neo4j credentials can create review nodes;
+- redeploy the App;
+- test Validate / Reject / Amend end to end.
 
 Next after successful relationship-review validation:
 
-- implement EMCIP mapping review using the same provenance pattern.
+- implement EMCIP mapping review using the same provenance pattern;
+- optionally add a controlled export of review records to Delta / Unity Catalog.
 
 ## Phase 1 — Generic controlled ingestion
 
