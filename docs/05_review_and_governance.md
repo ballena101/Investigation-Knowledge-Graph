@@ -29,9 +29,9 @@ review_comment = optional
 
 Human validation must not overwrite or masquerade as assistant validation.
 
-The review history should remain auditable.
+The review history remains append-only and auditable.
 
-## Proposed future app workflow
+## Current App workflow
 
 For relationships:
 
@@ -43,19 +43,28 @@ assistant status
 comment
 ```
 
-For taxonomy mappings:
+For EMCIP mappings:
 
 ```text
 case concept
-candidate mapping
-supporting rationale/evidence
-assistant status
-[Validate] [Reject] [Change]
+original EMCIP mapping
+assistant mapping disposition
+[Validate] [Reject] [Amend]
+proposed replacement when amended
 comment
 ```
 
-## Authoritative store
+## Current PoC persistence
 
-Manual review decisions should be written to governed Delta / Unity Catalog tables.
+For the controlled Commodore Clipper PoC:
 
-Neo4j should receive the reviewed projection but should not be the sole audit store.
+- relationship reviews are stored as `RelationshipReview` nodes in Neo4j;
+- EMCIP mapping reviews are stored as `EMCIPMappingReview` nodes in Neo4j;
+- original graph relationships and original mappings are not overwritten;
+- reviewer identity is captured from Databricks Apps forwarded identity headers.
+
+Neo4j review persistence is deliberately pragmatic for the PoC because the existing App credentials already provide the required write path.
+
+## Future governed audit store
+
+If required for institutional deployment, the append-only review records can be exported to governed Delta / Unity Catalog tables from a controlled Databricks notebook or workflow. The current Neo4j review model should not be treated as the final production governance architecture.
