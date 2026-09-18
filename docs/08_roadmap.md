@@ -14,19 +14,21 @@ Completed:
 - Neo4j projection;
 - Databricks interactive graph app;
 - relationship-review UI;
-- append-only Neo4j human-review design;
-- reviewer provenance captured from Databricks App identity headers.
+- end-to-end relationship validation persisted in Neo4j;
+- append-only human-review provenance;
+- reviewer identity captured from Databricks App headers;
+- EMCIP mapping-review UI implemented in the App code.
 
 Current implementation step:
 
-- confirm the existing Neo4j credentials can create review nodes;
+- create the `EMCIPMappingReview` uniqueness constraint;
 - redeploy the App;
-- test Validate / Reject / Amend end to end.
+- test one EMCIP mapping validation end to end.
 
-Next after successful relationship-review validation:
+Next after successful mapping-review validation:
 
-- implement EMCIP mapping review using the same provenance pattern;
-- optionally add a controlled export of review records to Delta / Unity Catalog.
+- optionally add a controlled export of review records to Delta / Unity Catalog;
+- freeze the controlled Commodore Clipper demonstrator before moving to generic ingestion.
 
 ## Phase 1 — Generic controlled ingestion
 
