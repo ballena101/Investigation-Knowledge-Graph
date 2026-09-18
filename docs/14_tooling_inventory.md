@@ -6,12 +6,31 @@ the Investigation Knowledge Graph project.
 It should be updated whenever a tool is added, removed, replaced or changes
 role.
 
+## Data protection and confidentiality reference
+
+Every tool listed here must also be read together with:
+
+`docs/15_data_protection_confidentiality.md`
+
+That document defines the project's rules for personal data, protected
+investigation material, Article 9 confidentiality, least privilege, data
+minimisation, logging, model prompts, retention, data movement and tool
+admission.
+
+A tool being technically available does **not** mean that confidential
+investigation data are authorised to be processed by it.
+
 ## 1. GitHub
 
 **Tool:** GitHub  
 **Repository:** `ballena101/Investigation-Knowledge-Graph`  
 **Role:** source control and project source of truth  
 **Status:** active; target authoritative source
+
+**Confidentiality position:** code/documentation repository only. Raw
+investigation evidence, personal data, witness material, VDR/VTS material,
+credentials and model prompts containing protected evidence must not be stored
+in GitHub.
 
 GitHub stores:
 
@@ -42,6 +61,10 @@ validated.
 **Role:** governed execution, analytical processing, storage integration and App
 hosting  
 **Status:** active
+
+**Confidentiality position:** preferred governed execution environment. Whether
+a specific confidential dataset may be processed still depends on access,
+classification, contractual, retention and organisational approval.
 
 Databricks provides several separate capabilities used by the project.
 
@@ -96,6 +119,11 @@ The intended App resource configuration is:
 **Role:** governed data and file access  
 **Status:** active
 
+**Confidentiality position:** preferred primary store for approved protected
+source material because access is governed through Unity Catalog. Broad
+inherited grants must be reviewed before loading confidential investigation
+records.
+
 Used for:
 
 - controlled source-document storage;
@@ -117,6 +145,10 @@ not require direct raw-file access in the preferred architecture.
 **Tool:** Delta Lake on Databricks  
 **Role:** authoritative analytical persistence and provenance  
 **Status:** active
+
+**Confidentiality position:** may contain protected extracted evidence and
+analytical derivatives. Table/schema permissions, retention and minimisation
+must reflect the sensitivity of the source.
 
 Used for:
 
@@ -167,6 +199,11 @@ Secrets and resource identifiers must not be hard-coded in application source.
 review metadata  
 **Status:** active
 
+**Confidentiality position:** graph projection layer, not the default raw
+evidence repository. Store references and authorised analytical derivatives in
+preference to full witness statements, VDR/VTS transcripts, health data or
+other protected source content.
+
 Neo4j stores / projects:
 
 - SourceDocument catalogue metadata;
@@ -195,6 +232,10 @@ Neo4j must not replace source evidence or provenance.
 **Role:** application UI framework inside Databricks Apps  
 **Status:** active
 
+**Confidentiality position:** presentation layer only. It must display only
+authorised content and must not expose protected text in logs, URLs or
+client-visible state unnecessarily.
+
 Used to implement:
 
 - forms;
@@ -213,6 +254,9 @@ Used to implement:
 **Role:** interactive knowledge-graph visualisation  
 **Status:** active
 
+**Confidentiality position:** visualisation library only. Graph labels and
+tooltips should avoid unnecessary personal or protected evidence text.
+
 Used for:
 
 - reference Commodore Clipper graph;
@@ -227,6 +271,11 @@ Used for:
 **Role:** LLM-assisted analytical extraction and cross-document resolution  
 **Status:** implemented in the generic analysis pipeline; requires runtime
 validation in the target Databricks environment
+
+**Confidentiality position:** no protected/Class D investigation material
+should be sent to a model service until the specific service/model has been
+approved for that data classification, including contractual, processor /
+subprocessor, data-location, retention/logging and model-use considerations.
 
 Current configured model options include:
 
@@ -262,6 +311,10 @@ These libraries are implementation dependencies, not independent data stores.
 **Python package:** `pymupdf` / `fitz`  
 **Role:** deterministic PDF text extraction  
 **Status:** active
+
+**Confidentiality position:** local processing dependency inside Databricks;
+extracted text inherits the confidentiality classification of the source and
+must remain in governed storage.
 
 Used with page boundaries preserved and sorted text extraction.
 
@@ -376,26 +429,26 @@ Do not delete the folder before validating:
 
 ## 11. Tool responsibility summary
 
-| Tool / platform | Primary responsibility | Current status |
-|---|---|---|
-| GitHub | Source control and authoritative project source | Active / target source of truth |
-| Databricks Apps | Investigator-facing application | Active |
+| Tool / platform | Primary responsibility | Confidentiality position | Current status |
+|---|---|---|---|
+| GitHub | Source control and authoritative project source | Code/docs only; no raw protected evidence or secrets | Active / target source of truth |
+| Databricks Apps | Investigator-facing application | Authorised presentation/orchestration only; minimise direct raw evidence access | Active |
 | Streamlit | App UI framework | Active |
-| Lakeflow Jobs | Automated extraction/analysis orchestration | Being connected |
-| Unity Catalog | Governed file/data access | Active |
-| UC Volume | Source-document library | Active |
-| Delta Lake | Evidence/provenance/analytical persistence | Active |
-| Neo4j AuraDB | Graph projection, traversal, review metadata | Active |
-| streamlit-cytoscape | Interactive graph rendering | Active |
-| Databricks model services | LLM-assisted analytical extraction/resolution | Implemented; runtime validation required |
-| PyMuPDF | PDF text extraction | Active |
-| python-docx | DOCX text extraction | Active |
-| langdetect | Language detection | Active PoC |
-| neo4j Python driver | Neo4j connectivity | Active |
-| Databricks SDK | Job orchestration / Databricks API access | Active |
-| EMCIP reference tables | Controlled taxonomy mapping | Active |
-| MAIRA | Reusable document-processing components/reference | Separate / optional reuse |
-| Old workspace App folder | Current deployment source | Transitional |
+| Lakeflow Jobs | Automated extraction/analysis orchestration | Run under least-privilege identity; no protected text in routine logs | Being connected |
+| Unity Catalog | Governed file/data access | Preferred governed store for approved confidential data | Active |
+| UC Volume | Source-document library | May contain approved protected evidence; strict grants required | Active |
+| Delta Lake | Evidence/provenance/analytical persistence | May contain protected evidence/derivatives; governed access and retention required | Active |
+| Neo4j AuraDB | Graph projection, traversal, review metadata | Prefer references/derivatives; raw protected evidence only if explicitly approved | Active |
+| streamlit-cytoscape | Interactive graph rendering | Avoid exposing unnecessary protected text in graph UI | Active |
+| Databricks model services | LLM-assisted analytical extraction/resolution | Confidential data requires explicit model/service approval | Implemented; runtime validation required |
+| PyMuPDF | PDF text extraction | Local processing; output inherits source classification | Active |
+| python-docx | DOCX text extraction | Local processing; output inherits source classification | Active |
+| langdetect | Language detection | Local processing; no external SaaS transfer in current design | Active PoC |
+| neo4j Python driver | Neo4j connectivity | Encrypted/authenticated connection; credentials from secrets only | Active |
+| Databricks SDK | Job orchestration / Databricks API access | Least-privilege service identity; no hard-coded credentials | Active |
+| EMCIP reference tables | Controlled taxonomy mapping | Classification layer; must not expose protected evidence | Active |
+| MAIRA | Reusable document-processing components/reference | Reuse of code does not imply reuse of datasets/permissions | Separate / optional reuse |
+| Old workspace App folder | Current deployment source | Transitional code copy only; do not use as evidence store | Transitional |
 
 ## 12. Architectural principle
 
@@ -420,3 +473,29 @@ Databricks App
 
 The LLM assists analytical extraction inside this architecture but does not
 replace evidence, governance or human review.
+
+
+## 13. External assurance and organisational approval
+
+The tool inventory records technical capability and project intent. It does not
+constitute legal approval for processing confidential safety-investigation
+material.
+
+Before protected investigation data are introduced, the responsible
+organisation should confirm, as applicable:
+
+- information classification;
+- GDPR role/lawful basis and DPIA need;
+- Article 9 Directive 2009/18/EC confidentiality constraints;
+- approved hosting/data region;
+- vendor/controller/processor/subprocessor terms;
+- model-service eligibility for the data class;
+- access-control design;
+- logging and monitoring;
+- retention/deletion;
+- backup handling;
+- cross-border transfer implications;
+- incident-response obligations.
+
+Unknown items are treated as blockers for confidential-data use, not as
+assumptions of acceptability.
