@@ -95,3 +95,25 @@ Future analytical assistant only:
 - evidence comparison.
 
 The LLM is not the authority.
+
+
+## Tooling reference
+
+The authoritative list of project tools, dependencies, responsibilities and
+current status is maintained in:
+
+`docs/14_tooling_inventory.md`
+
+Architecture documentation should explain how components interact. The tooling
+inventory should be used to answer which technologies are actually in use,
+which are transitional, and which are only optional/reusable references.
+
+## Source-control principle
+
+GitHub repository `ballena101/Investigation-Knowledge-Graph` is the target
+single source of truth for application code, processing notebooks and
+documentation.
+
+The existing workspace App source folder is transitional and must be retired
+only after Git-backed deployment, Lakeflow execution, resources/secrets and one
+end-to-end analysis have been validated.
