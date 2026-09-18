@@ -37,3 +37,37 @@ User-managed UC volume
   → Neo4j AnalysisGroup
   → processing notebook under user identity
 ```
+
+
+## End-to-end generic analysis pipeline
+
+1. `14_index_volume_documents_to_neo4j.py`
+   - scans the user-managed Unity Catalog document library;
+   - publishes SourceDocument metadata to Neo4j.
+
+2. App → **New analysis**
+   - select 1–5 indexed documents;
+   - create one AnalysisGroup;
+   - status becomes PENDING_PROCESSING.
+
+3. `15_extract_analysis_evidence.py`
+   - reads the selected source files under the notebook user's identity;
+   - supports PDF, DOCX and TXT;
+   - extracts deterministic passages with document/page provenance;
+   - detects language;
+   - persists passages to Delta;
+   - status becomes EVIDENCE_READY.
+
+4. `16_analyse_evidence_and_build_graph.py`
+   - performs evidence-grounded candidate extraction in batches;
+   - resolves duplicate concepts across the selected document group;
+   - consolidates only already-supported relationships;
+   - publishes one generic Neo4j graph;
+   - stores overview, key findings, uncertainties and source conflicts;
+   - status becomes COMPLETED.
+
+5. App → **Analyses**
+   - shows extraction/analysis progress;
+   - shows the completed summary and generic graph.
+
+Causality is never inferred from chronology alone. Generated graph relationships remain assistant candidates until human review.
