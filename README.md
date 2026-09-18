@@ -101,6 +101,7 @@ docs/
     12_group_analysis_architecture.md
     13_automated_analysis_orchestration.md
     14_tooling_inventory.md
+    15_data_protection_confidentiality.md
 
 notebooks/
     01_neo4j_connection_test.py
@@ -140,3 +141,21 @@ Core stack:
 Current status: **Commodore Clipper PoC — interactive graph viewer working**.
 
 Next recommended PoC step: add a human review workflow for relationships and EMCIP mappings without expanding the source scope yet.
+
+
+## Data protection and confidentiality
+
+The project may process investigation material subject to legal,
+organisational and personal-data protections.
+
+The authoritative project policy is:
+
+`docs/15_data_protection_confidentiality.md`
+
+Key rule: technical capability is not equivalent to authorisation. Raw
+confidential investigation evidence must not be introduced into a component
+until the permitted processing path, access controls, data location, retention,
+logging and vendor/processor implications have been confirmed.
+
+For the current PoC, published/non-sensitive investigation material is the
+preferred validation dataset.
