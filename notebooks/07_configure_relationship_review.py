@@ -8,62 +8,19 @@
 # MAGIC - one SQL warehouse resource with CAN_USE;
 # MAGIC - the relationship review table with MODIFY.
 # MAGIC
-# MAGIC This notebook requires a recent Databricks SDK because table resources for Databricks Apps are not present in the older 0.67.0 model.
+# MAGIC Note: some Databricks Runtime environments expose an Apps SDK model whose
+# MAGIC generated enums lag the live Apps REST API. To avoid that mismatch, this
+# MAGIC notebook sends the documented resource JSON directly through
+# MAGIC WorkspaceClient.api_client.
 # MAGIC
-# MAGIC The app continues to use Neo4j only for graph projection. Human review is stored in Delta / Unity Catalog.
+# MAGIC The app continues to use Neo4j only for graph projection. Human review is
+# MAGIC stored in Delta / Unity Catalog.
 
 # COMMAND ----------
-
-# MAGIC %pip install databricks-sdk==0.139.0
-
-# COMMAND ----------
-
-# MAGIC %restart_python
-
-# COMMAND ----------
-
-import importlib.metadata
 
 from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.apps import (
-    AppResourceUcSecurableUcSecurablePermission,
-    AppResourceUcSecurableUcSecurableType,
-)
-
-print("databricks-sdk version:", importlib.metadata.version("databricks-sdk"))
-print(
-    "TABLE supported:",
-    hasattr(AppResourceUcSecurableUcSecurableType, "TABLE"),
-)
-print(
-    "MODIFY supported:",
-    hasattr(AppResourceUcSecurableUcSecurablePermission, "MODIFY"),
-)
-
-if not hasattr(AppResourceUcSecurableUcSecurableType, "TABLE"):
-    raise RuntimeError("Installed Databricks SDK does not support TABLE app resources.")
-if not hasattr(AppResourceUcSecurableUcSecurablePermission, "MODIFY"):
-    raise RuntimeError("Installed Databricks SDK does not support MODIFY app resources.")
 
 w = WorkspaceClient()
-
-# COMMAND ----------
-
-warehouse_rows = [
-    (
-        wh.id,
-        wh.name,
-        str(wh.state) if wh.state is not None else None,
-    )
-    for wh in w.warehouses.list()
-]
-
-display(
-    spark.createDataFrame(
-        warehouse_rows,
-        ["warehouse_id", "warehouse_name", "state"],
-    )
-)
 
 # COMMAND ----------
 
@@ -103,81 +60,74 @@ print("Warehouse:", WAREHOUSE_ID)
 
 # COMMAND ----------
 
-from databricks.sdk.service.apps import (
-    App,
-    AppResource,
-    AppResourceSecret,
-    AppResourceSecretSecretPermission,
-    AppResourceSqlWarehouse,
-    AppResourceSqlWarehouseSqlWarehousePermission,
-    AppResourceUcSecurable,
-    AppResourceUcSecurableUcSecurablePermission,
-    AppResourceUcSecurableUcSecurableType,
-)
-
 APP_NAME = "investigation-kg-poc"
 SECRET_SCOPE = "kg-poc-app"
 
-resources = [
-    AppResource(
-        name="neo4j_uri",
-        secret=AppResourceSecret(
-            scope=SECRET_SCOPE,
-            key="neo4j_uri",
-            permission=AppResourceSecretSecretPermission.READ,
-        ),
-    ),
-    AppResource(
-        name="neo4j_username",
-        secret=AppResourceSecret(
-            scope=SECRET_SCOPE,
-            key="neo4j_username",
-            permission=AppResourceSecretSecretPermission.READ,
-        ),
-    ),
-    AppResource(
-        name="neo4j_password",
-        secret=AppResourceSecret(
-            scope=SECRET_SCOPE,
-            key="neo4j_password",
-            permission=AppResourceSecretSecretPermission.READ,
-        ),
-    ),
-    AppResource(
-        name="review_warehouse",
-        sql_warehouse=AppResourceSqlWarehouse(
-            id=WAREHOUSE_ID,
-            permission=AppResourceSqlWarehouseSqlWarehousePermission.CAN_USE,
-        ),
-    ),
-    AppResource(
-        name="relationship_review_table",
-        uc_securable=AppResourceUcSecurable(
-            securable_full_name=REVIEW_TABLE,
-            securable_type=AppResourceUcSecurableUcSecurableType.TABLE,
-            permission=AppResourceUcSecurableUcSecurablePermission.MODIFY,
-        ),
-    ),
-]
+payload = {
+    "resources": [
+        {
+            "name": "neo4j_uri",
+            "secret": {
+                "scope": SECRET_SCOPE,
+                "key": "neo4j_uri",
+                "permission": "READ",
+            },
+        },
+        {
+            "name": "neo4j_username",
+            "secret": {
+                "scope": SECRET_SCOPE,
+                "key": "neo4j_username",
+                "permission": "READ",
+            },
+        },
+        {
+            "name": "neo4j_password",
+            "secret": {
+                "scope": SECRET_SCOPE,
+                "key": "neo4j_password",
+                "permission": "READ",
+            },
+        },
+        {
+            "name": "review_warehouse",
+            "sql_warehouse": {
+                "id": WAREHOUSE_ID,
+                "permission": "CAN_USE",
+            },
+        },
+        {
+            "name": "relationship_review_table",
+            "uc_securable": {
+                "securable_full_name": REVIEW_TABLE,
+                "securable_type": "TABLE",
+                "permission": "MODIFY",
+            },
+        },
+    ]
+}
 
-w.apps.update(
-    name=APP_NAME,
-    app=App(
-        name=APP_NAME,
-        resources=resources,
-    ),
+response = w.api_client.do(
+    "PATCH",
+    f"/api/2.0/apps/{APP_NAME}",
+    body=payload,
 )
 
-print("App resources updated atomically.")
+print("App resources updated via Apps REST API.")
 
 # COMMAND ----------
 
-app = w.apps.get(APP_NAME)
+app_json = w.api_client.do(
+    "GET",
+    f"/api/2.0/apps/{APP_NAME}",
+)
 
 print("APP RESOURCES")
 print("-------------")
-for resource in app.resources or []:
-    print(resource.as_dict())
+
+resources = app_json.get("resources", [])
+for resource in resources:
+    print(resource)
 
 expected = {
     "neo4j_uri",
@@ -188,8 +138,8 @@ expected = {
 }
 
 actual = {
-    resource.name
-    for resource in app.resources or []
+    resource.get("name")
+    for resource in resources
 }
 
 missing = expected - actual
