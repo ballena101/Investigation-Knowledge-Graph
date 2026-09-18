@@ -279,8 +279,27 @@ subprocessor, data-location, retention/logging and model-use considerations.
 
 Current configured model options include:
 
-- `system.ai.gpt-5-6-sol`
-- `system.ai.claude-sonnet-4-5`
+- `system.ai.gpt-5-6-sol` — current default
+- `system.ai.claude-sonnet-4-5` — optional alternative
+
+### Exact default model and applicable policy
+
+The default IKG analytical model is:
+
+`system.ai.gpt-5-6-sol`
+
+This is a Databricks Unity Catalog `system.ai` model service for OpenAI
+GPT-5.6 Sol.
+
+Its use is subject to the organisation's Databricks agreement, Databricks Model
+Serving / Foundation Model API data-protection and retention terms, and the
+applicable model terms listed by Databricks. Databricks currently identifies
+OpenAI Usage Policy and OpenAI high-risk use-case mitigation requirements as
+applicable terms for GPT-5.6 Sol.
+
+The exact model selected is stored and displayed per analysis. A change to the
+model changes the applicable provider/model terms and must be reflected in the
+App disclosure and this inventory.
 
 The LLM is used for:
 
