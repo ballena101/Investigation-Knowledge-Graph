@@ -245,7 +245,10 @@ with driver.session() as session:
                 d.relative_path AS relative_path,
                 d.source_type AS source_type,
                 d.byte_size AS byte_size,
-                d.detected_language AS detected_language,
+                coalesce(
+                    properties(d)["detected_language"],
+                    "PENDING"
+                ) AS detected_language,
                 toString(d.indexed_at) AS indexed_at
             ORDER BY d.filename, d.relative_path
             """,
