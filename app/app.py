@@ -25,6 +25,7 @@ SOURCE_VOLUME_PATH = (
 ANALYSIS_GROUP_TABLE = "bdw_analysis_prod.kg_poc.analysis_group"
 ANALYSIS_DOCUMENT_TABLE = "bdw_analysis_prod.kg_poc.analysis_document"
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
+APP_BUILD = "2026-09-18-group-upload-v1"
 
 st.set_page_config(
     page_title="Investigation Knowledge Graph",
@@ -36,6 +37,7 @@ st.title("Investigation Knowledge Graph")
 st.caption(
     "Create document-group analyses and review evidence-grounded investigation graphs."
 )
+st.caption(f"App build: {APP_BUILD}")
 
 NEO4J_URI = os.getenv("NEO4J_URI")
 NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
