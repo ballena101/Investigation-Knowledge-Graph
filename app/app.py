@@ -90,6 +90,29 @@ def load_graph():
         ]
 
 
+@st.cache_data(ttl=60)
+def load_emcip_mappings():
+    query = """
+    MATCH (n:KGNode {case_id: $case_id})
+    WHERE n.emcip_mappings IS NOT NULL
+      AND size(n.emcip_mappings) > 0
+    RETURN
+        n.node_id AS node_id,
+        n.label AS node_label,
+        n.node_kind AS node_kind,
+        n.proposed_emcip_entity AS proposed_emcip_entity,
+        n.mapping_disposition AS mapping_disposition,
+        n.emcip_mappings AS emcip_mappings
+    ORDER BY node_label
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(query, case_id=CASE_ID)
+        ]
+
+
 def get_reviewer_identity():
     try:
         headers = st.context.headers
@@ -308,6 +331,7 @@ def load_latest_mapping_reviews():
 
 try:
     rows = load_graph()
+    emcip_mapping_nodes = load_emcip_mappings()
 except Exception as exc:
     st.error("Could not connect to the Neo4j knowledge graph.")
     st.exception(exc)
@@ -379,29 +403,20 @@ elements = {
 
 mapping_rows_by_key = {}
 
-for node in nodes.values():
-    data = node["data"]
-    original_mappings = data.get("emcip_mappings")
-
-    if (
-        not original_mappings
-        or original_mappings == "No validated EMCIP mapping"
-    ):
-        continue
-
-    for original_mapping in original_mappings.split(" | "):
+for node in emcip_mapping_nodes:
+    for original_mapping in node.get("emcip_mappings") or []:
         original_mapping = original_mapping.strip()
         if not original_mapping:
             continue
 
-        key = mapping_key(data["id"], original_mapping)
+        key = mapping_key(node["node_id"], original_mapping)
         mapping_rows_by_key[key] = {
             "mapping_key": key,
-            "node_id": data["id"],
-            "node_label": data["name"],
-            "node_kind": data["node_kind"],
-            "proposed_emcip_entity": data["proposed_emcip_entity"],
-            "mapping_disposition": data["mapping_disposition"],
+            "node_id": node["node_id"],
+            "node_label": node["node_label"],
+            "node_kind": node["node_kind"],
+            "proposed_emcip_entity": node["proposed_emcip_entity"] or "—",
+            "mapping_disposition": node["mapping_disposition"] or "—",
             "original_mapping": original_mapping,
         }
 
