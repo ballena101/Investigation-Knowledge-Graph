@@ -1,15 +1,12 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # 11 — Enable user authorization for generic analyses
+# MAGIC # 11 — Enable user authorization while preserving Neo4j resources
 # MAGIC
-# MAGIC The generic upload workflow uses the interactive user's existing
-# MAGIC Databricks permissions instead of granting a SQL warehouse or Unity
-# MAGIC Catalog volume to the App service principal.
+# MAGIC The generic upload workflow uses the interactive user's Databricks
+# MAGIC permissions through the files + sql scopes.
 # MAGIC
-# MAGIC Required scopes:
-# MAGIC
-# MAGIC - files
-# MAGIC - sql
+# MAGIC The existing Neo4j secret resources must remain attached because
+# MAGIC app.yaml resolves NEO4J_URI / USERNAME / PASSWORD through valueFrom.
 
 # COMMAND ----------
 
@@ -18,44 +15,55 @@ from databricks.sdk import WorkspaceClient
 w = WorkspaceClient()
 
 APP_NAME = "investigation-kg-poc"
+SECRET_SCOPE = "kg-poc-app"
 
-before = w.api_client.do(
-    "GET",
-    f"/api/2.0/apps/{APP_NAME}",
-)
+payload = {
+    "user_api_scopes": [
+        "files",
+        "sql",
+    ],
+    "resources": [
+        {
+            "name": "neo4j_uri",
+            "secret": {
+                "scope": SECRET_SCOPE,
+                "key": "neo4j_uri",
+                "permission": "READ",
+            },
+        },
+        {
+            "name": "neo4j_username",
+            "secret": {
+                "scope": SECRET_SCOPE,
+                "key": "neo4j_username",
+                "permission": "READ",
+            },
+        },
+        {
+            "name": "neo4j_password",
+            "secret": {
+                "scope": SECRET_SCOPE,
+                "key": "neo4j_password",
+                "permission": "READ",
+            },
+        },
+    ],
+}
 
-print("Before:")
-print("user_api_scopes:", before.get("user_api_scopes"))
-print(
-    "effective_user_api_scopes:",
-    before.get("effective_user_api_scopes"),
-)
-
-# COMMAND ----------
-
-updated = w.api_client.do(
+w.api_client.do(
     "PATCH",
     f"/api/2.0/apps/{APP_NAME}",
-    body={
-        "user_api_scopes": [
-            "files",
-            "sql",
-        ]
-    },
+    body=payload,
 )
 
-print("Requested user authorization scopes:", updated.get("user_api_scopes"))
-
-# COMMAND ----------
-
-after = w.api_client.do(
+check = w.api_client.do(
     "GET",
     f"/api/2.0/apps/{APP_NAME}",
 )
 
-print("After:")
-print("user_api_scopes:", after.get("user_api_scopes"))
-print(
-    "effective_user_api_scopes:",
-    after.get("effective_user_api_scopes"),
-)
+print("Configured scopes:", check.get("user_api_scopes"))
+print("Effective scopes:", check.get("effective_user_api_scopes"))
+
+print("\nResources:")
+for resource in check.get("resources", []):
+    print(resource.get("name"), resource)
