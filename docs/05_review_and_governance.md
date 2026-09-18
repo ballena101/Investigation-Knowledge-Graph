@@ -68,3 +68,29 @@ Neo4j review persistence is deliberately pragmatic for the PoC because the exist
 ## Future governed audit store
 
 If required for institutional deployment, the append-only review records can be exported to governed Delta / Unity Catalog tables from a controlled Databricks notebook or workflow. The current Neo4j review model should not be treated as the final production governance architecture.
+
+
+## Data protection and investigation confidentiality
+
+Review/governance controls apply not only to analytical correctness but also to
+information handling.
+
+See:
+
+`docs/15_data_protection_confidentiality.md`
+
+The review system must never be interpreted as permission to expose protected
+investigation evidence more broadly than the underlying investigation/legal
+framework allows.
+
+In particular:
+
+- reviewer access to a graph does not automatically imply access to every raw
+  source document;
+- evidence references should be preferred over duplicating confidential text;
+- personal identifiers should be minimised where not analytically necessary;
+- human-review records may themselves contain personal data and must be
+  governed accordingly;
+- model-generated content must remain distinguishable from source evidence;
+- publication/export workflows must separately assess confidentiality before
+  releasing reviewed content.
