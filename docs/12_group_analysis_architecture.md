@@ -265,3 +265,19 @@ Path:
 `/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/<analysis_id>/`
 
 Each analysis receives its own directory. Source filenames are preserved in metadata, while the stored object name should include the deterministic document ID to avoid collisions.
+
+
+## Multilingual analysis
+
+Language is treated as metadata and presentation context, not as a transformation of source evidence.
+
+The model separates:
+
+- **source language handling** — one language, mixed documents, or automatic detection per document;
+- **detected document language** — populated during extraction;
+- **detected passage language** — available when a document itself contains mixed-language sections;
+- **analysis output language** — the language used for summaries and analytical explanations.
+
+Original source text is always preserved. Any future translation is derivative material and must retain a link to the original evidence passage.
+
+This allows one analysis group to contain, for example, an English investigation report, a Spanish witness statement and a Portuguese technical note without collapsing their provenance.
