@@ -71,3 +71,15 @@ User-managed UC volume
    - shows the completed summary and generic graph.
 
 Causality is never inferred from chronology alone. Generated graph relationships remain assistant candidates until human review.
+
+
+## Automated App workflow
+
+- `17_create_automated_analysis_job.py` — one-time setup that creates or
+  updates the reusable Lakeflow Job containing notebook 15 followed by notebook
+  16.
+
+After this setup and attaching the Job to the App with resource key
+`analysis_job` / permission `Can manage run`, investigators do not need to
+open notebooks 15 or 16 manually. Creating an analysis in the App triggers the
+workflow automatically.
