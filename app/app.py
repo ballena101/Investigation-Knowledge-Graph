@@ -18,6 +18,9 @@ CASE_ID = "commodore_clipper_2010"
 GRAPH_VERSION = "CASE_GRAPH_V0.2"
 
 DATABRICKS_HOST = os.getenv("DATABRICKS_HOST")
+
+if DATABRICKS_HOST and not DATABRICKS_HOST.startswith(("http://", "https://")):
+    DATABRICKS_HOST = "https://" + DATABRICKS_HOST
 WAREHOUSE_ID = "372b5b52ba082619"
 SOURCE_VOLUME_PATH = (
     "/Volumes/bdw_analysis_prod/kg_poc/investigation_sources"
@@ -25,7 +28,26 @@ SOURCE_VOLUME_PATH = (
 ANALYSIS_GROUP_TABLE = "bdw_analysis_prod.kg_poc.analysis_group"
 ANALYSIS_DOCUMENT_TABLE = "bdw_analysis_prod.kg_poc.analysis_document"
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
-APP_BUILD = "2026-09-18-group-upload-v1"
+APP_BUILD = "2026-09-18-group-upload-v2"
+
+SUPPORTED_LANGUAGES = [
+    "Auto-detect per document",
+    "English",
+    "Spanish",
+    "Portuguese",
+    "French",
+    "German",
+    "Italian",
+    "Dutch",
+    "Norwegian",
+    "Icelandic",
+    "Danish",
+    "Swedish",
+    "Finnish",
+    "Polish",
+    "Greek",
+    "Other / mixed",
+]
 
 st.set_page_config(
     page_title="Investigation Knowledge Graph",
@@ -89,7 +111,12 @@ def _user_headers(content_type=None):
 def _api_url(path):
     if not DATABRICKS_HOST:
         raise RuntimeError("DATABRICKS_HOST is unavailable in the App runtime.")
-    return f"{DATABRICKS_HOST.rstrip('/')}{path}"
+
+    host = DATABRICKS_HOST.strip().rstrip("/")
+    if not host.startswith(("http://", "https://")):
+        host = "https://" + host
+
+    return f"{host}{path}"
 
 
 def execute_user_sql(statement, parameters=None):
@@ -182,6 +209,7 @@ def register_analysis_group(
     objective,
     creator,
     document_count,
+    language_mode,
 ):
     statement = f"""
     INSERT INTO {ANALYSIS_GROUP_TABLE} (
@@ -194,7 +222,8 @@ def register_analysis_group(
         document_count,
         pipeline_version,
         graph_version,
-        error_message
+        error_message,
+        language_mode
     )
     VALUES (
         :analysis_id,
@@ -206,7 +235,8 @@ def register_analysis_group(
         :document_count,
         :pipeline_version,
         NULL,
-        NULL
+        NULL,
+        :language_mode
     )
     """
 
@@ -223,6 +253,7 @@ def register_analysis_group(
                 "INT",
             ),
             sql_parameter("pipeline_version", PIPELINE_VERSION),
+            sql_parameter("language_mode", language_mode),
         ],
     )
 
@@ -290,7 +321,7 @@ def register_analysis_document(
     )
 
 
-def create_analysis(title, objective, uploaded_files):
+def create_analysis(title, objective, uploaded_files, language_mode):
     identity = get_reviewer_identity()
     uploader = (
         identity["email"]
@@ -337,6 +368,7 @@ def create_analysis(title, objective, uploaded_files):
         objective=objective,
         creator=uploader,
         document_count=len(documents),
+        language_mode=language_mode,
     )
 
     for document in documents:
@@ -865,6 +897,18 @@ with tab_new_analysis:
             ),
         )
 
+        language_mode = st.selectbox(
+            "Document language handling",
+            options=SUPPORTED_LANGUAGES,
+            index=0,
+            help=(
+                "Choose Auto-detect when the group may contain documents "
+                "in different languages. Original-language evidence will be "
+                "preserved; language detection and optional translation are "
+                "handled later in the extraction pipeline."
+            ),
+        )
+
         uploaded_files = st.file_uploader(
             "Source documents",
             type=["pdf", "docx", "txt"],
@@ -896,6 +940,7 @@ with tab_new_analysis:
                         title=analysis_title.strip(),
                         objective=analysis_objective.strip(),
                         uploaded_files=uploaded_files,
+                        language_mode=language_mode,
                     )
 
                 st.success(
@@ -910,6 +955,7 @@ with tab_new_analysis:
                     f"Registered {len(registered_documents)} source "
                     "document(s)."
                 )
+                st.write(f"Language handling: {language_mode}")
 
                 for document in registered_documents:
                     st.write(
