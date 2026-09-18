@@ -11,9 +11,12 @@ Execution order for the current Commodore Clipper PoC:
 5. `05_validate_neo4j_projection.py`
 6. `06_configure_databricks_app_resources.py`
 7. `07_configure_relationship_review.py`
+8. `08_configure_emcip_mapping_review.py`
 
-Notebook 07 creates the governed relationship-review table and atomically attaches the SQL warehouse and UC table resources while preserving the three Neo4j secret resources.
+Notebook 07 verifies the Neo4j review write path and creates the uniqueness constraint for relationship reviews.
 
-The current app reads the published Neo4j graph and can write human relationship-review decisions to Unity Catalog.
+Notebook 08 creates the uniqueness constraint for EMCIP mapping reviews.
+
+The current App reads the published Neo4j graph and writes append-only relationship and EMCIP mapping review records to Neo4j. It does not require an additional SQL warehouse resource for the controlled PoC.
 
 Future generic ingestion and LLM-assisted extraction notebooks are intentionally not implemented here yet because the agreed current scope remains Commodore Clipper only.
