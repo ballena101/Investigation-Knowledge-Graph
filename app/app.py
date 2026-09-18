@@ -30,7 +30,7 @@ SOURCE_VOLUME_PATH = (
 ANALYSIS_GROUP_TABLE = "bdw_analysis_prod.kg_poc.analysis_group"
 ANALYSIS_DOCUMENT_TABLE = "bdw_analysis_prod.kg_poc.analysis_document"
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
-APP_BUILD = "2026-09-18-group-upload-v5"
+APP_BUILD = "2026-09-18-group-upload-v6"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -998,6 +998,11 @@ with tab_new_analysis:
         )
 
     oauth_diag = get_user_token_diagnostics()
+    required_user_scopes = {"files", "sql"}
+    forwarded_user_scopes = set(oauth_diag["scopes"] or [])
+    missing_user_scopes = sorted(
+        required_user_scopes - forwarded_user_scopes
+    )
 
     with st.expander("Forwarded OAuth diagnostic", expanded=True):
         st.write("Token present:", oauth_diag["token_present"])
@@ -1015,15 +1020,17 @@ with tab_new_analysis:
                 oauth_diag["identity_user"],
             )
 
-        if oauth_diag["scopes"] and "files" not in oauth_diag["scopes"]:
+        if missing_user_scopes:
             st.error(
-                "The running App token does not contain the 'files' scope, "
-                "even though the App configuration requests it. This points "
-                "to stale or missing OAuth consent."
+                "The running App token is missing required scope(s): "
+                + ", ".join(missing_user_scopes)
+                + ". The App configuration requests them, so the user "
+                  "OAuth consent/token must be refreshed."
             )
-        elif "files" in oauth_diag["scopes"]:
+        else:
             st.success(
-                "The forwarded token contains the 'files' scope."
+                "The forwarded token contains the required 'files' and "
+                "'sql' scopes."
             )
 
     with st.form(
@@ -1096,7 +1103,10 @@ with tab_new_analysis:
         create_submitted = st.form_submit_button(
             "Create analysis",
             type="primary",
-            disabled=not bool(get_user_access_token()),
+            disabled=(
+                not bool(get_user_access_token())
+                or bool(missing_user_scopes)
+            ),
         )
 
     if create_submitted:
