@@ -14,7 +14,7 @@ GRAPH_VERSION = "CASE_GRAPH_V0.2"
 
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
 MAX_DOCUMENTS_PER_ANALYSIS = 5
-APP_BUILD = "2026-09-18-document-library-v3"
+APP_BUILD = "2026-09-18-document-library-v4"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -185,7 +185,7 @@ def load_recent_analyses():
         a.created_by AS created_by,
         toString(a.created_at) AS created_at,
         count(d) AS document_count
-    ORDER BY a.created_at DESC
+    ORDER BY created_at DESC
     LIMIT 20
     """
 
@@ -211,7 +211,7 @@ def load_analysis_groups():
         a.created_by AS created_by,
         toString(a.created_at) AS created_at,
         count(d) AS document_count
-    ORDER BY a.created_at DESC
+    ORDER BY created_at DESC
     """
 
     with get_driver().session() as session:
