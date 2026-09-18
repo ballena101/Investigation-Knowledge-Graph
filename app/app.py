@@ -16,7 +16,7 @@ GRAPH_VERSION = "CASE_GRAPH_V0.2"
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
 ANALYSIS_JOB_ID = os.getenv("ANALYSIS_JOB_ID")
 MAX_DOCUMENTS_PER_ANALYSIS = 5
-APP_BUILD = "2026-09-18-automated-pipeline-v1"
+APP_BUILD = "2026-09-18-automated-pipeline-v2"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -374,6 +374,121 @@ def load_analysis_graph_counts(analysis_id):
         }
 
     return record.data()
+
+
+def render_pipeline_status(
+    status,
+    processing_stage,
+    evidence_counts,
+    result_meta,
+):
+    stages = [
+        ("Analysis created", "PENDING_PROCESSING"),
+        ("Workflow queued", "JOB_QUEUED"),
+        ("Evidence extraction", "EXTRACTING"),
+        ("Evidence ready", "EVIDENCE_READY"),
+        ("Candidate extraction", "CANDIDATE_EXTRACTION"),
+        ("Cross-document resolution", "RESOLVING"),
+        ("Knowledge graph construction", "BUILDING_GRAPH"),
+        ("Completed", "COMPLETED"),
+    ]
+
+    failure_stages = {
+        "EXTRACTION_FAILED": "Evidence extraction",
+        "CANDIDATE_EXTRACTION_FAILED": "Candidate extraction",
+        "RESOLUTION_FAILED": "Cross-document resolution",
+        "GRAPH_BUILD_FAILED": "Knowledge graph construction",
+    }
+
+    order = {
+        stage_key: index
+        for index, (_, stage_key) in enumerate(stages)
+    }
+
+    effective_stage = processing_stage or status or "PENDING_PROCESSING"
+
+    if status == "QUEUED":
+        effective_stage = "JOB_QUEUED"
+
+    failed_label = failure_stages.get(effective_stage)
+
+    if status == "FAILED" and failed_label:
+        current_index = next(
+            (
+                index
+                for index, (label, _) in enumerate(stages)
+                if label == failed_label
+            ),
+            0,
+        )
+    else:
+        current_index = order.get(
+            effective_stage,
+            order.get(status, 0),
+        )
+
+    st.markdown("### Process status")
+
+    for index, (label, stage_key) in enumerate(stages):
+        if status == "FAILED" and index == current_index:
+            marker = "❌"
+            state_text = "Failed"
+        elif index < current_index:
+            marker = "✅"
+            state_text = "Completed"
+        elif index == current_index:
+            if stage_key == "COMPLETED" and status == "COMPLETED":
+                marker = "✅"
+                state_text = "Completed"
+            else:
+                marker = "🔄"
+                state_text = "Running"
+        else:
+            marker = "○"
+            state_text = "Pending"
+
+        detail = ""
+
+        if stage_key == "EXTRACTING":
+            documents_processed = int(
+                evidence_counts.get("documents_processed") or 0
+            )
+            documents_total = int(
+                evidence_counts.get("documents_total") or 0
+            )
+            pages_processed = int(
+                evidence_counts.get("pages_processed") or 0
+            )
+            pages_total = int(
+                evidence_counts.get("pages_total") or 0
+            )
+            passages_total = int(
+                evidence_counts.get("passages_total") or 0
+            )
+
+            if documents_total or pages_total or passages_total:
+                detail = (
+                    f" — documents {documents_processed}/{documents_total}, "
+                    f"pages {pages_processed}/{pages_total}, "
+                    f"passages {passages_total}"
+                )
+
+        if stage_key == "CANDIDATE_EXTRACTION":
+            batches_processed = int(
+                result_meta.get("batches_processed") or 0
+            )
+            batches_total = int(
+                result_meta.get("batches_total") or 0
+            )
+
+            if batches_total:
+                detail = (
+                    f" — batches {batches_processed}/{batches_total}"
+                )
+
+        st.write(
+            f"{marker} **{label}** — {state_text}{detail}"
+        )
 
 
 @st.cache_data(ttl=30)
@@ -1373,6 +1488,18 @@ with tab_analyses:
         graph_counts = load_analysis_graph_counts(
             selected_analysis_id
         )
+        result_meta = load_analysis_result(
+            selected_analysis_id
+        )
+
+        render_pipeline_status(
+            status=selected_analysis.get("status"),
+            processing_stage=selected_analysis.get("processing_stage"),
+            evidence_counts=evidence_counts,
+            result_meta=result_meta,
+        )
+
+        st.divider()
 
         a1, a2, a3, a4 = st.columns(4)
         a1.metric(
@@ -1514,10 +1641,6 @@ with tab_analyses:
             )
 
         elif status == "ANALYSING":
-            result_meta = load_analysis_result(
-                selected_analysis_id
-            )
-
             stage = (
                 selected_analysis.get("processing_stage")
                 or evidence_counts.get("processing_stage")
@@ -1547,9 +1670,6 @@ with tab_analyses:
                 )
 
         elif status == "COMPLETED":
-            result_meta = load_analysis_result(
-                selected_analysis_id
-            )
             st.success(
                 "Group analysis completed."
             )
