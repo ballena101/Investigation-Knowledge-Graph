@@ -14,7 +14,7 @@ GRAPH_VERSION = "CASE_GRAPH_V0.2"
 
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
 MAX_DOCUMENTS_PER_ANALYSIS = 5
-APP_BUILD = "2026-09-18-document-library-v4"
+APP_BUILD = "2026-09-18-evidence-pipeline-v1"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -206,6 +206,14 @@ def load_analysis_groups():
         a.analysis_title AS analysis_title,
         a.analysis_objective AS analysis_objective,
         a.status AS status,
+        a.processing_stage AS processing_stage,
+        a.documents_total AS documents_total,
+        a.documents_processed AS documents_processed,
+        a.pages_total AS pages_total,
+        a.pages_processed AS pages_processed,
+        a.passages_total AS passages_total,
+        properties(a)["processing_error"] AS processing_error,
+        properties(a)["detected_language"] AS detected_language,
         a.language_mode AS language_mode,
         a.output_language AS output_language,
         a.created_by AS created_by,
@@ -249,6 +257,30 @@ def load_analysis_sources(analysis_id):
                 analysis_id=analysis_id,
             )
         ]
+
+
+@st.cache_data(ttl=30)
+def load_analysis_evidence_counts(analysis_id):
+    query = """
+    MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+    RETURN
+        coalesce(a.documents_processed, 0) AS documents_processed,
+        coalesce(a.documents_total, a.document_count, 0) AS documents_total,
+        coalesce(a.pages_processed, 0) AS pages_processed,
+        coalesce(a.pages_total, 0) AS pages_total,
+        coalesce(a.passages_total, 0) AS passages_total,
+        properties(a)["detected_language"] AS detected_language,
+        properties(a)["processing_error"] AS processing_error,
+        properties(a)["processing_stage"] AS processing_stage
+    """
+
+    with get_driver().session() as session:
+        record = session.run(
+            query,
+            analysis_id=analysis_id,
+        ).single()
+
+    return record.data() if record else {}
 
 
 @st.cache_data(ttl=30)
@@ -942,6 +974,16 @@ with tab_analyses:
         "generic processing pipeline is connected."
     )
 
+    if st.button(
+        "Refresh status",
+        key="refresh_analysis_status",
+    ):
+        load_analysis_groups.clear()
+        load_analysis_sources.clear()
+        load_analysis_graph_counts.clear()
+        load_analysis_evidence_counts.clear()
+        st.rerun()
+
     try:
         analysis_groups = load_analysis_groups()
     except Exception as exc:
@@ -974,22 +1016,45 @@ with tab_analyses:
 
         selected_analysis = analyses_by_id[selected_analysis_id]
 
-        a1, a2, a3 = st.columns(3)
+        evidence_counts = load_analysis_evidence_counts(
+            selected_analysis_id
+        )
+        graph_counts = load_analysis_graph_counts(
+            selected_analysis_id
+        )
+
+        a1, a2, a3, a4 = st.columns(4)
         a1.metric(
             "Status",
             selected_analysis["status"] or "UNKNOWN",
         )
         a2.metric(
             "Documents",
-            selected_analysis["document_count"],
-        )
-
-        graph_counts = load_analysis_graph_counts(
-            selected_analysis_id
+            (
+                f"{evidence_counts.get('documents_processed', 0)} / "
+                f"{evidence_counts.get('documents_total', selected_analysis['document_count'])}"
+            ),
         )
         a3.metric(
+            "Pages",
+            (
+                f"{evidence_counts.get('pages_processed', 0)} / "
+                f"{evidence_counts.get('pages_total', 0)}"
+            ),
+        )
+        a4.metric(
+            "Passages",
+            evidence_counts.get("passages_total", 0),
+        )
+
+        g1, g2 = st.columns(2)
+        g1.metric(
             "Graph nodes",
             graph_counts.get("nodes", 0),
+        )
+        g2.metric(
+            "Relationships",
+            graph_counts.get("relationships", 0),
         )
 
         st.markdown("**Analysis title**")
@@ -1030,21 +1095,77 @@ with tab_analyses:
 
         st.divider()
 
-        if selected_analysis["status"] == "PENDING_PROCESSING":
+        status = selected_analysis["status"] or "UNKNOWN"
+
+        if status == "PENDING_PROCESSING":
             st.warning(
-                "No analytical outcome exists yet. This analysis has been "
-                "defined and its source documents have been linked, but "
-                "document extraction and group-level analysis have not run."
+                "This analysis is defined, but evidence extraction has not "
+                "started yet. Run notebook 15 for this analysis_id."
             )
-            st.markdown(
-                "**Next pipeline stage:** extract → passage → "
-                "cross-document resolution → relationships → graph."
+            st.code(
+                selected_analysis_id,
+                language=None,
             )
-        else:
+
+        elif status == "EXTRACTING":
+            st.info(
+                "Evidence extraction is currently running."
+            )
+
+            doc_total = max(
+                int(evidence_counts.get("documents_total") or 0),
+                1,
+            )
+            doc_done = int(
+                evidence_counts.get("documents_processed") or 0
+            )
+
+            page_total = max(
+                int(evidence_counts.get("pages_total") or 0),
+                1,
+            )
+            page_done = int(
+                evidence_counts.get("pages_processed") or 0
+            )
+
+            st.progress(
+                min(doc_done / doc_total, 1.0),
+                text=f"Documents: {doc_done} / {doc_total}",
+            )
+            st.progress(
+                min(page_done / page_total, 1.0),
+                text=f"Pages: {page_done} / {page_total}",
+            )
+
+        elif status == "EVIDENCE_READY":
             st.success(
-                "Processing has started or completed. Generic analytical "
-                "results will be displayed here as pipeline outputs are "
-                "connected."
+                "Evidence extraction is complete. Source text has been "
+                "converted into deterministic passages with provenance and "
+                "language metadata."
+            )
+            st.write(
+                "Detected analysis language:",
+                evidence_counts.get("detected_language") or "UNKNOWN",
+            )
+            st.info(
+                "Next stage: analyse the evidence group across documents, "
+                "resolve concepts, identify supported relationships and "
+                "build the generic knowledge graph."
+            )
+
+        elif status == "FAILED":
+            st.error(
+                "Processing failed."
+            )
+            if evidence_counts.get("processing_error"):
+                st.code(
+                    evidence_counts["processing_error"],
+                    language=None,
+                )
+
+        else:
+            st.info(
+                f"Processing status: {status}"
             )
 
         st.caption(
