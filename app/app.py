@@ -28,7 +28,7 @@ SOURCE_VOLUME_PATH = (
 ANALYSIS_GROUP_TABLE = "bdw_analysis_prod.kg_poc.analysis_group"
 ANALYSIS_DOCUMENT_TABLE = "bdw_analysis_prod.kg_poc.analysis_document"
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
-APP_BUILD = "2026-09-18-group-upload-v3"
+APP_BUILD = "2026-09-18-group-upload-v4"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -182,6 +182,44 @@ def safe_source_filename(filename):
     return cleaned or "document"
 
 
+def _raise_databricks_http_error(response, action):
+    if response.ok:
+        return
+
+    body = (response.text or "").strip()
+    if len(body) > 3000:
+        body = body[:3000] + "..."
+
+    scope_hint = ""
+    if response.status_code == 403:
+        scope_hint = (
+            " A 403 can mean that the forwarded user token has not been "
+            "granted/refreshed with the required OAuth scope, or that the "
+            "user lacks a required Unity Catalog privilege."
+        )
+
+    raise RuntimeError(
+        f"{action} failed with HTTP {response.status_code} "
+        f"{response.reason}.{scope_hint}\n"
+        f"Databricks response: {body or '<empty response body>'}"
+    )
+
+
+def check_volume_access():
+    path = SOURCE_VOLUME_PATH.rstrip("/") + "/"
+    encoded = quote(path, safe="/")
+    response = requests.head(
+        _api_url(f"/api/2.0/fs/directories{encoded}"),
+        headers=_user_headers(),
+        timeout=30,
+    )
+    _raise_databricks_http_error(
+        response,
+        "Volume access check",
+    )
+    return True
+
+
 def create_volume_directory(path):
     encoded = quote(path, safe="/")
     response = requests.put(
@@ -189,7 +227,10 @@ def create_volume_directory(path):
         headers=_user_headers(),
         timeout=30,
     )
-    response.raise_for_status()
+    _raise_databricks_http_error(
+        response,
+        f"Create volume directory {path}",
+    )
 
 
 def upload_volume_file(path, file_bytes):
@@ -200,7 +241,10 @@ def upload_volume_file(path, file_bytes):
         data=file_bytes,
         timeout=120,
     )
-    response.raise_for_status()
+    _raise_databricks_http_error(
+        response,
+        f"Upload file {path}",
+    )
 
 
 def register_analysis_group(
@@ -338,6 +382,8 @@ def create_analysis(
         if identity["email"] != "unknown"
         else identity["username"]
     )
+
+    check_volume_access()
 
     analysis_id = f"analysis_{uuid.uuid4().hex}"
     analysis_directory = f"{SOURCE_VOLUME_PATH}/{analysis_id}"
