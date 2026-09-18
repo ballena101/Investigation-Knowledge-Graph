@@ -35,6 +35,19 @@ dbutils.widgets.dropdown(
 
 # COMMAND ----------
 
+# MAGIC %pip install neo4j==6.3.1 databricks-sdk==0.139.0
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
+analysis_id = dbutils.widgets.get("analysis_id").strip()
+model_service = dbutils.widgets.get("model_service").strip()
+
+# COMMAND ----------
+
 import hashlib
 import json
 import re
@@ -88,9 +101,6 @@ ALLOWED_EVIDENCE_CLASSES = {
     "SYNTHESISED",
     "INSUFFICIENT_EVIDENCE",
 }
-
-analysis_id = dbutils.widgets.get("analysis_id").strip()
-model_service = dbutils.widgets.get("model_service").strip()
 
 if not re.fullmatch(r"analysis_[0-9a-f]{32}", analysis_id):
     raise ValueError(
