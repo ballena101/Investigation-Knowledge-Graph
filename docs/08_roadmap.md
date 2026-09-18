@@ -30,11 +30,11 @@ Next after successful mapping-review validation:
 - optionally add a controlled export of review records to Delta / Unity Catalog;
 - freeze the controlled Commodore Clipper demonstrator before moving to generic ingestion.
 
-## Phase 1 — Generic controlled ingestion
+## Phase 1 — Generic document-group analysis
 
-Deferred until the controlled PoC review workflow is proven.
+Status: starting.
 
-Goal: parameterise the existing workflow so new investigation material does not require case-specific code.
+Goal: allow a user to upload a group of PDFs/documents and create one evidence-grounded analysis for the group. The group, identified by `analysis_id`, becomes the unit of analysis rather than an individual report.
 
 Reuse MAIRA document-processing components where practical for source acquisition, extraction, passaging and provenance, while keeping this project separate.
 
@@ -42,8 +42,11 @@ Estimated work for a usable multi-document controlled PoC: approximately **32–
 
 Main work items:
 
+- analysis-group metadata model;
+- governed raw-document storage;
+- multi-file upload UI;
 - remove case-specific constants;
-- generic case/source IDs;
+- generic analysis/source IDs;
 - connect to reusable extraction/passaging;
 - generic node extraction;
 - generic relationship extraction;
