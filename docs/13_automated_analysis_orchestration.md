@@ -125,3 +125,65 @@ EMCIP review patterns will be generalised to generic AnalysisGroups.
 
 Notebooks 15 and 16 may still be run manually by a developer for debugging or
 validation. Manual execution is not part of the normal investigator workflow.
+
+
+## Visible process timeline
+
+The App must expose the whole processing lifecycle, not only the current
+high-level status. For every AnalysisGroup, the Analyses tab displays the
+ordered pipeline:
+
+1. Analysis created
+2. Workflow queued
+3. Evidence extraction
+4. Evidence ready
+5. Candidate extraction
+6. Cross-document resolution
+7. Knowledge graph construction
+8. Completed
+
+Each stage is shown as one of:
+
+- Pending
+- Running
+- Completed
+- Failed
+
+Where available, progress counters are displayed alongside the relevant stage:
+
+- documents processed / total;
+- pages processed / total;
+- passages created;
+- analysis batches processed / total;
+- graph nodes;
+- graph relationships.
+
+Failure remains attached to the exact processing stage through
+`processing_stage` and `processing_error`.
+
+This status view is part of the normal investigator workflow so the user never
+has to infer whether processing is still running or has finished.
+
+## Source-of-truth and deployment decision
+
+The long-term source of truth for the Investigation Knowledge Graph project is
+the GitHub repository:
+
+`ballena101/Investigation-Knowledge-Graph`
+
+The current Databricks workspace source folder is transitional only.
+
+Target state:
+
+1. all application code, processing notebooks and documentation are maintained
+   in GitHub;
+2. the Databricks App is deployed from the Git-backed project source rather
+   than a manually copied workspace folder;
+3. processing jobs reference the Git-backed source consistently;
+4. after successful Git-based deployment and validation, the old workspace App
+   source folder can be retired;
+5. no future feature should require maintaining two independent copies of the
+   App source.
+
+The workspace folder must not be deleted until the Git-based deployment,
+Lakeflow Job execution and rollback path have all been validated successfully.
