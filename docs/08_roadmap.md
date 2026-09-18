@@ -6,25 +6,34 @@ Status: active / substantially complete.
 
 Scope: Commodore Clipper only.
 
-Deliverables:
+Completed:
 
 - reviewed graph;
 - evidence-linked relationships;
 - EMCIP mapping layer;
 - Neo4j projection;
-- Databricks interactive app.
+- Databricks interactive graph app;
+- relationship-review UI;
+- auditable human-review table design;
+- Databricks App resource setup notebook for review persistence.
 
-Next recommended task:
+Current implementation step:
 
-- add manual relationship and EMCIP mapping review to the app.
+- create the governed relationship-review table;
+- attach a SQL warehouse and the review table to the App;
+- deploy and test Validate / Reject / Amend end to end.
+
+Next after successful relationship-review validation:
+
+- implement EMCIP mapping review using the same provenance pattern.
 
 ## Phase 1 — Generic controlled ingestion
 
-Deferred.
+Deferred until the controlled PoC review workflow is proven.
 
-Goal: parameterise the existing workflow so a new investigation source does not require case-specific code.
+Goal: parameterise the existing workflow so new investigation material does not require case-specific code.
 
-Reuse MAIRA document-processing components where practical.
+Reuse MAIRA document-processing components where practical for source acquisition, extraction, passaging and provenance, while keeping this project separate.
 
 Estimated work for a usable multi-document controlled PoC: approximately **32–55 hours** based on the current prototype and existing MAIRA PDF infrastructure.
 
