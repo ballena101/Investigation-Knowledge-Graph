@@ -13,8 +13,5 @@ env:
   - name: NEO4J_PASSWORD
     valueFrom: neo4j_password
 
-  - name: SOURCE_VOLUME_PATH
-    valueFrom: investigation_sources
-
   - name: STREAMLIT_GATHER_USAGE_STATS
     value: "false"
