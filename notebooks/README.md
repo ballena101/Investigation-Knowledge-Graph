@@ -20,3 +20,20 @@ Notebook 08 creates the uniqueness constraint for EMCIP mapping reviews.
 The current App reads the published Neo4j graph and writes append-only relationship and EMCIP mapping review records to Neo4j. It does not require an additional SQL warehouse resource for the controlled PoC.
 
 Future generic ingestion and LLM-assisted extraction notebooks are intentionally not implemented here yet because the agreed current scope remains Commodore Clipper only.
+
+
+## Generic document-library workflow
+
+- `13_register_analysis_from_volume_folder.py` — fallback notebook-only route: one volume folder becomes one analysis.
+- `14_index_volume_documents_to_neo4j.py` — preferred App-assisted route: scan a user-accessible UC volume and publish document metadata to Neo4j. The App can then select existing documents without direct volume access.
+
+The preferred PoC pattern is:
+
+```text
+User-managed UC volume
+  → notebook 14 metadata index
+  → Neo4j SourceDocument catalogue
+  → App document selection
+  → Neo4j AnalysisGroup
+  → processing notebook under user identity
+```
