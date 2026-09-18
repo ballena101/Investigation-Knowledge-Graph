@@ -1,0 +1,17 @@
+command:
+  - streamlit
+  - run
+  - app.py
+
+env:
+  - name: NEO4J_URI
+    valueFrom: neo4j_uri
+
+  - name: NEO4J_USERNAME
+    valueFrom: neo4j_username
+
+  - name: NEO4J_PASSWORD
+    valueFrom: neo4j_password
+
+  - name: STREAMLIT_GATHER_USAGE_STATS
+    value: "false"
