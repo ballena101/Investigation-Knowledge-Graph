@@ -2,9 +2,9 @@
 
 ## Purpose
 
-The current PoC now supports a human-validation layer inside the Databricks App.
+The current PoC supports a human-validation layer inside the Databricks App.
 
-The review workflow is deliberately separate from the assistant review. A human decision is appended as a new governed record rather than overwriting the original graph or assistant provenance.
+The review workflow is deliberately separate from assistant review. A human decision is appended as a new review record rather than overwriting the original graph relationship or assistant provenance.
 
 ## Reviewable relationships
 
@@ -34,7 +34,7 @@ Each saved review stores:
 
 - unique review ID;
 - case and graph version;
-- edge ID;
+- original edge ID;
 - source and target concept IDs and labels;
 - original relationship;
 - assistant review status;
@@ -46,29 +46,25 @@ Each saved review stores:
 
 Reviewer identity is obtained from Databricks Apps forwarded identity headers.
 
-## Storage
+## Current PoC storage
 
-Authoritative review table:
+For the PoC, review decisions are stored in Neo4j as append-only `RelationshipReview` nodes.
 
-`bdw_analysis_prod.kg_poc.relationship_human_review`
+Each review node is linked to the corresponding source and target KG nodes using:
 
-The table is append-only from the App perspective. This preserves review history and allows later decisions to supersede earlier ones without deleting provenance.
+- `REVIEWS_SOURCE`
+- `REVIEWS_TARGET`
 
-## App resources
+The original relationship is not altered.
 
-The App needs:
+This design uses the same Neo4j credentials already attached to the Databricks App, so no SQL warehouse or additional Databricks resource permissions are required.
 
-- `review_warehouse` — SQL warehouse, `CAN_USE`;
-- `relationship_review_table` — Unity Catalog table, `MODIFY`.
+## Governance note
 
-The existing Neo4j secret resources remain unchanged.
+Neo4j review storage is intentionally pragmatic for the PoC.
 
-## Current architectural rule
-
-Neo4j remains the graph projection/query layer.
-
-Human review is written to governed Delta / Unity Catalog first. A later step may project human-review status back into Neo4j for visual highlighting, but Neo4j is not the authoritative audit store.
+If the project later requires a governed institutional audit store, the review records can be exported to Delta / Unity Catalog from a controlled Databricks notebook or workflow under an authorised identity.
 
 ## Next step
 
-After the relationship-review flow is tested successfully, the same pattern should be applied to EMCIP mapping review.
+After the relationship-review flow is tested successfully, apply the same pattern to EMCIP mapping review.
