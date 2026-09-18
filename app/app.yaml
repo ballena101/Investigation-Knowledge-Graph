@@ -13,5 +13,11 @@ env:
   - name: NEO4J_PASSWORD
     valueFrom: neo4j_password
 
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: review_warehouse
+
+  - name: RELATIONSHIP_REVIEW_TABLE
+    valueFrom: relationship_review_table
+
   - name: STREAMLIT_GATHER_USAGE_STATS
     value: "false"
