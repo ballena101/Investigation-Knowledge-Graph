@@ -1,152 +1,91 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # 07 — Configure relationship review resources
+# MAGIC # 07 — Enable relationship review in Neo4j
 # MAGIC
-# MAGIC Creates the governed human-review table and atomically attaches:
+# MAGIC The Databricks App uses the same Neo4j credentials already configured for
+# MAGIC graph exploration. Human relationship reviews are stored as separate,
+# MAGIC append-only RelationshipReview nodes.
 # MAGIC
-# MAGIC - the existing three Neo4j secret resources;
-# MAGIC - one SQL warehouse resource with CAN_USE;
-# MAGIC - the relationship review table with MODIFY.
-# MAGIC
-# MAGIC Note: some Databricks Runtime environments expose an Apps SDK model whose
-# MAGIC generated enums lag the live Apps REST API. To avoid that mismatch, this
-# MAGIC notebook sends the documented resource JSON directly through
-# MAGIC WorkspaceClient.api_client.
-# MAGIC
-# MAGIC The app continues to use Neo4j only for graph projection. Human review is
-# MAGIC stored in Delta / Unity Catalog.
+# MAGIC This avoids requiring a SQL warehouse or additional Databricks App
+# MAGIC resources for the current PoC.
 
 # COMMAND ----------
 
-from databricks.sdk import WorkspaceClient
+from neo4j import GraphDatabase
 
-w = WorkspaceClient()
-
-# COMMAND ----------
-
-WAREHOUSE_ID = "372b5b52ba082619"
-REVIEW_TABLE = "bdw_analysis_prod.kg_poc.relationship_human_review"
-
-spark.sql("""
-CREATE SCHEMA IF NOT EXISTS bdw_analysis_prod.kg_poc
-""")
-
-spark.sql(f"""
-CREATE TABLE IF NOT EXISTS {REVIEW_TABLE} (
-    review_id STRING NOT NULL,
-    case_id STRING NOT NULL,
-    graph_version STRING,
-    edge_id STRING NOT NULL,
-    source_node_id STRING,
-    source_label STRING,
-    original_relationship STRING,
-    target_node_id STRING,
-    target_label STRING,
-    assistant_review_status STRING,
-    human_review_decision STRING NOT NULL,
-    human_review_status STRING NOT NULL,
-    amended_relationship STRING,
-    reviewer_email STRING,
-    reviewer_user_id STRING,
-    reviewer_username STRING,
-    reviewed_at TIMESTAMP NOT NULL,
-    review_comment STRING
+NEO4J_URI = dbutils.secrets.get(
+    catalog="bdw_analysis_prod",
+    schema="kg_poc",
+    key="neo4j_uri",
 )
-USING DELTA
-""")
-
-print("Review table ready:", REVIEW_TABLE)
-print("Warehouse:", WAREHOUSE_ID)
-
-# COMMAND ----------
-
-APP_NAME = "investigation-kg-poc"
-SECRET_SCOPE = "kg-poc-app"
-
-payload = {
-    "resources": [
-        {
-            "name": "neo4j_uri",
-            "secret": {
-                "scope": SECRET_SCOPE,
-                "key": "neo4j_uri",
-                "permission": "READ",
-            },
-        },
-        {
-            "name": "neo4j_username",
-            "secret": {
-                "scope": SECRET_SCOPE,
-                "key": "neo4j_username",
-                "permission": "READ",
-            },
-        },
-        {
-            "name": "neo4j_password",
-            "secret": {
-                "scope": SECRET_SCOPE,
-                "key": "neo4j_password",
-                "permission": "READ",
-            },
-        },
-        {
-            "name": "review_warehouse",
-            "sql_warehouse": {
-                "id": WAREHOUSE_ID,
-                "permission": "CAN_USE",
-            },
-        },
-        {
-            "name": "relationship_review_table",
-            "uc_securable": {
-                "securable_full_name": REVIEW_TABLE,
-                "securable_type": "TABLE",
-                "permission": "MODIFY",
-            },
-        },
-    ]
-}
-
-response = w.api_client.do(
-    "PATCH",
-    f"/api/2.0/apps/{APP_NAME}",
-    body=payload,
+NEO4J_USERNAME = dbutils.secrets.get(
+    catalog="bdw_analysis_prod",
+    schema="kg_poc",
+    key="neo4j_username",
+)
+NEO4J_PASSWORD = dbutils.secrets.get(
+    catalog="bdw_analysis_prod",
+    schema="kg_poc",
+    key="neo4j_password",
 )
 
-print("App resources updated via Apps REST API.")
+driver = GraphDatabase.driver(
+    NEO4J_URI,
+    auth=(NEO4J_USERNAME, NEO4J_PASSWORD),
+)
+driver.verify_connectivity()
+
+print("Neo4j connection established.")
 
 # COMMAND ----------
 
-app_json = w.api_client.do(
-    "GET",
-    f"/api/2.0/apps/{APP_NAME}",
-)
+# Optional but recommended uniqueness constraint for review IDs.
 
-print("APP RESOURCES")
-print("-------------")
+with driver.session() as session:
+    session.run("""
+        CREATE CONSTRAINT relationship_review_id_unique
+        IF NOT EXISTS
+        FOR (r:RelationshipReview)
+        REQUIRE r.review_id IS UNIQUE
+    """)
 
-resources = app_json.get("resources", [])
-for resource in resources:
-    print(resource)
+print("RelationshipReview constraint ready.")
 
-expected = {
-    "neo4j_uri",
-    "neo4j_username",
-    "neo4j_password",
-    "review_warehouse",
-    "relationship_review_table",
-}
+# COMMAND ----------
 
-actual = {
-    resource.get("name")
-    for resource in resources
-}
+# Safe write-capability test: create and immediately remove one temporary node.
 
-missing = expected - actual
+TEST_ID = "__kg_poc_review_write_test__"
 
-if missing:
-    raise RuntimeError(
-        f"Missing app resources after update: {sorted(missing)}"
+with driver.session() as session:
+    session.run(
+        """
+        MERGE (r:RelationshipReview {review_id: $review_id})
+        SET r.test_only = true
+        """,
+        review_id=TEST_ID,
     )
 
-print("All five required resources are attached.")
+    count = session.run(
+        """
+        MATCH (r:RelationshipReview {review_id: $review_id})
+        RETURN count(r) AS count
+        """,
+        review_id=TEST_ID,
+    ).single()["count"]
+
+    session.run(
+        """
+        MATCH (r:RelationshipReview {review_id: $review_id})
+        DETACH DELETE r
+        """,
+        review_id=TEST_ID,
+    )
+
+if count != 1:
+    raise RuntimeError("Neo4j write test did not create exactly one temporary review node.")
+
+print("Neo4j write capability confirmed.")
+print("Temporary test node removed.")
+
+driver.close()
