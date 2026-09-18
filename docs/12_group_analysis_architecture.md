@@ -252,3 +252,16 @@ The existing Neo4j secrets may continue to use App authorization.
    - one PDF;
    - several PDFs for the same investigation;
    - heterogeneous evidence for one investigation.
+
+
+## Raw document volume
+
+Initial PoC volume:
+
+`bdw_analysis_prod.kg_poc.investigation_sources`
+
+Path:
+
+`/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/<analysis_id>/`
+
+Each analysis receives its own directory. Source filenames are preserved in metadata, while the stored object name should include the deterministic document ID to avoid collisions.
