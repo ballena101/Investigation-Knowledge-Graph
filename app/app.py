@@ -14,7 +14,7 @@ GRAPH_VERSION = "CASE_GRAPH_V0.2"
 
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
 MAX_DOCUMENTS_PER_ANALYSIS = 5
-APP_BUILD = "2026-09-18-document-library-v2"
+APP_BUILD = "2026-09-18-document-library-v3"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -194,6 +194,87 @@ def load_recent_analyses():
             record.data()
             for record in session.run(query)
         ]
+
+
+@st.cache_data(ttl=30)
+def load_analysis_groups():
+    query = """
+    MATCH (a:AnalysisGroup)
+    OPTIONAL MATCH (a)-[:HAS_SOURCE]->(d:SourceDocument)
+    RETURN
+        a.analysis_id AS analysis_id,
+        a.analysis_title AS analysis_title,
+        a.analysis_objective AS analysis_objective,
+        a.status AS status,
+        a.language_mode AS language_mode,
+        a.output_language AS output_language,
+        a.created_by AS created_by,
+        toString(a.created_at) AS created_at,
+        count(d) AS document_count
+    ORDER BY a.created_at DESC
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(query)
+        ]
+
+
+@st.cache_data(ttl=30)
+def load_analysis_sources(analysis_id):
+    query = """
+    MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+          -[:HAS_SOURCE]->
+          (d:SourceDocument)
+    RETURN
+        d.document_id AS document_id,
+        d.filename AS filename,
+        d.volume_path AS volume_path,
+        d.relative_path AS relative_path,
+        d.source_type AS source_type,
+        d.byte_size AS byte_size,
+        coalesce(
+            properties(d)["detected_language"],
+            "PENDING"
+        ) AS detected_language
+    ORDER BY d.filename, d.relative_path
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(
+                query,
+                analysis_id=analysis_id,
+            )
+        ]
+
+
+@st.cache_data(ttl=30)
+def load_analysis_graph_counts(analysis_id):
+    query = """
+    MATCH (n:KGNode {analysis_id: $analysis_id})
+    WITH count(n) AS nodes
+    OPTIONAL MATCH (:KGNode {analysis_id: $analysis_id})
+                   -[r]->
+                   (:KGNode {analysis_id: $analysis_id})
+    RETURN nodes, count(r) AS relationships
+    """
+
+    with get_driver().session() as session:
+        record = session.run(
+            query,
+            analysis_id=analysis_id,
+        ).single()
+
+    if not record:
+        return {
+            "nodes": 0,
+            "relationships": 0,
+        }
+
+    return record.data()
 
 
 @st.cache_data(ttl=60)
@@ -656,9 +737,10 @@ edge_styles = [
     ),
 ]
 
-tab_new_analysis, tab_graph, tab_review, tab_mapping_review, tab_about = st.tabs(
+tab_new_analysis, tab_analyses, tab_graph, tab_review, tab_mapping_review, tab_about = st.tabs(
     [
         "New analysis",
+        "Analyses",
         "Reference graph",
         "Relationship review",
         "EMCIP mapping review",
@@ -820,9 +902,11 @@ with tab_new_analysis:
                     f"Analysis output language: {output_language}"
                 )
                 st.info(
-                    "Status: PENDING_PROCESSING. The processing notebook "
-                    "can now resolve the selected volume paths and extract "
-                    "the document group under your Databricks identity."
+                    "Status: PENDING_PROCESSING. The analysis definition is "
+                    "saved, but no analytical outcome exists yet. Open the "
+                    "Analyses tab to follow its status. After the processing "
+                    "pipeline runs, that tab will expose the resulting "
+                    "summary, evidence and graph."
                 )
 
             except Exception as exc:
@@ -849,6 +933,124 @@ with tab_new_analysis:
             "Recent analyses could not be loaded."
         )
         st.exception(exc)
+
+with tab_analyses:
+    st.subheader("Analyses")
+    st.caption(
+        "Select an analysis group to inspect its source documents and "
+        "processing status. Analytical outputs will appear here as the "
+        "generic processing pipeline is connected."
+    )
+
+    try:
+        analysis_groups = load_analysis_groups()
+    except Exception as exc:
+        analysis_groups = []
+        st.error("Analyses could not be loaded from Neo4j.")
+        st.exception(exc)
+
+    if not analysis_groups:
+        st.info("No analysis groups have been created yet.")
+    else:
+        analyses_by_id = {
+            analysis["analysis_id"]: analysis
+            for analysis in analysis_groups
+        }
+
+        def analysis_label(analysis_id):
+            analysis = analyses_by_id[analysis_id]
+            return (
+                f"{analysis['analysis_title']} · "
+                f"{analysis['document_count']} document(s) · "
+                f"{analysis['status']}"
+            )
+
+        selected_analysis_id = st.selectbox(
+            "Analysis",
+            options=list(analyses_by_id),
+            format_func=analysis_label,
+            key="analysis_results_selector",
+        )
+
+        selected_analysis = analyses_by_id[selected_analysis_id]
+
+        a1, a2, a3 = st.columns(3)
+        a1.metric(
+            "Status",
+            selected_analysis["status"] or "UNKNOWN",
+        )
+        a2.metric(
+            "Documents",
+            selected_analysis["document_count"],
+        )
+
+        graph_counts = load_analysis_graph_counts(
+            selected_analysis_id
+        )
+        a3.metric(
+            "Graph nodes",
+            graph_counts.get("nodes", 0),
+        )
+
+        st.markdown("**Analysis title**")
+        st.write(selected_analysis["analysis_title"])
+
+        if selected_analysis.get("analysis_objective"):
+            st.markdown("**Objective / question**")
+            st.write(selected_analysis["analysis_objective"])
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Source language handling**")
+            st.write(
+                selected_analysis.get("language_mode")
+                or "—"
+            )
+        with c2:
+            st.markdown("**Output language**")
+            st.write(
+                selected_analysis.get("output_language")
+                or "—"
+            )
+
+        st.markdown("**Source documents**")
+
+        sources = load_analysis_sources(
+            selected_analysis_id
+        )
+
+        for source in sources:
+            st.write(
+                "• "
+                f"{source['filename']} · "
+                f"{source['source_type']} · "
+                f"{source['detected_language']}"
+            )
+            st.caption(source["volume_path"])
+
+        st.divider()
+
+        if selected_analysis["status"] == "PENDING_PROCESSING":
+            st.warning(
+                "No analytical outcome exists yet. This analysis has been "
+                "defined and its source documents have been linked, but "
+                "document extraction and group-level analysis have not run."
+            )
+            st.markdown(
+                "**Next pipeline stage:** extract → passage → "
+                "cross-document resolution → relationships → graph."
+            )
+        else:
+            st.success(
+                "Processing has started or completed. Generic analytical "
+                "results will be displayed here as pipeline outputs are "
+                "connected."
+            )
+
+        st.caption(
+            f"Analysis ID: {selected_analysis_id}"
+        )
+
 
 with tab_graph:
     st.subheader("Commodore Clipper reference demonstrator")
