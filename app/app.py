@@ -192,11 +192,11 @@ def load_latest_relationship_reviews():
         latest.review_id AS review_id,
         latest.human_review_decision AS decision,
         latest.human_review_status AS status,
-        latest.amended_relationship AS amended_relationship,
+        properties(latest)["amended_relationship"] AS amended_relationship,
         latest.reviewer_email AS reviewer_email,
         latest.reviewer_username AS reviewer_username,
         toString(latest.reviewed_at) AS reviewed_at,
-        latest.review_comment AS review_comment
+        properties(latest)["review_comment"] AS review_comment
     """
 
     with get_driver().session() as session:
