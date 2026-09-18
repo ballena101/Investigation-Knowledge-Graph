@@ -2,6 +2,7 @@ import hashlib
 import os
 import uuid
 import streamlit as st
+from databricks.sdk import WorkspaceClient
 from neo4j import GraphDatabase
 from streamlit_cytoscape import (
     streamlit_cytoscape,
@@ -13,8 +14,9 @@ CASE_ID = "commodore_clipper_2010"
 GRAPH_VERSION = "CASE_GRAPH_V0.2"
 
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
+ANALYSIS_JOB_ID = os.getenv("ANALYSIS_JOB_ID")
 MAX_DOCUMENTS_PER_ANALYSIS = 5
-APP_BUILD = "2026-09-18-analysis-pipeline-v1"
+APP_BUILD = "2026-09-18-automated-pipeline-v1"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -77,6 +79,69 @@ def get_driver():
     )
     driver.verify_connectivity()
     return driver
+
+
+@st.cache_resource
+def get_workspace_client():
+    return WorkspaceClient()
+
+
+def trigger_analysis_job(analysis_id):
+    if not ANALYSIS_JOB_ID:
+        raise RuntimeError(
+            "No analysis job is attached to the App. Add the Lakeflow Job "
+            "resource with key 'analysis_job' and Can manage run permission."
+        )
+
+    response = get_workspace_client().api_client.do(
+        "POST",
+        "/api/2.2/jobs/run-now",
+        body={
+            "job_id": int(ANALYSIS_JOB_ID),
+            "job_parameters": {
+                "analysis_id": analysis_id,
+            },
+        },
+    )
+
+    run_id = response.get("run_id")
+
+    if not run_id:
+        raise RuntimeError(
+            "Databricks accepted the job trigger but did not return a run_id."
+        )
+
+    with get_driver().session() as session:
+        session.run(
+            """
+            MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+            SET
+                a.status = 'QUEUED',
+                a.processing_stage = 'JOB_QUEUED',
+                a.job_id = $job_id,
+                a.job_run_id = $run_id,
+                a.processing_updated_at = datetime(),
+                a.processing_error = NULL
+            """,
+            analysis_id=analysis_id,
+            job_id=str(ANALYSIS_JOB_ID),
+            run_id=str(run_id),
+        ).consume()
+
+    return str(run_id)
+
+
+def get_analysis_job_run(run_id):
+    if not run_id:
+        return None
+
+    try:
+        return get_workspace_client().api_client.do(
+            "GET",
+            f"/api/2.2/jobs/runs/get?run_id={run_id}",
+        )
+    except Exception:
+        return None
 
 
 @st.cache_data(ttl=30)
@@ -213,6 +278,8 @@ def load_analysis_groups():
         a.pages_processed AS pages_processed,
         a.passages_total AS passages_total,
         properties(a)["processing_error"] AS processing_error,
+        properties(a)["job_run_id"] AS job_run_id,
+        properties(a)["job_id"] AS job_id,
         properties(a)["detected_language"] AS detected_language,
         a.language_mode AS language_mode,
         a.output_language AS output_language,
@@ -1162,13 +1229,38 @@ with tab_new_analysis:
                 st.write(
                     f"Analysis output language: {output_language}"
                 )
-                st.info(
-                    "Status: PENDING_PROCESSING. The analysis definition is "
-                    "saved, but no analytical outcome exists yet. Open the "
-                    "Analyses tab to follow its status. After the processing "
-                    "pipeline runs, that tab will expose the resulting "
-                    "summary, evidence and graph."
-                )
+
+                if ANALYSIS_JOB_ID:
+                    try:
+                        run_id = trigger_analysis_job(
+                            analysis_id
+                        )
+                        load_analysis_groups.clear()
+                        load_recent_analyses.clear()
+
+                        st.success(
+                            "Automated processing started."
+                        )
+                        st.write(
+                            f"Databricks Job run ID: {run_id}"
+                        )
+                        st.info(
+                            "You can stay in the App. Open the Analyses tab "
+                            "and use Refresh status to follow extraction, "
+                            "analysis and graph construction."
+                        )
+                    except Exception as exc:
+                        st.error(
+                            "The analysis was created, but automated "
+                            "processing could not be started."
+                        )
+                        st.exception(exc)
+                else:
+                    st.warning(
+                        "The analysis was created, but no Lakeflow Job "
+                        "resource is attached yet. Automated processing "
+                        "will become available after the one-time job setup."
+                    )
 
             except Exception as exc:
                 st.error("The analysis could not be created.")
@@ -1246,6 +1338,34 @@ with tab_analyses:
         )
 
         selected_analysis = analyses_by_id[selected_analysis_id]
+
+        if selected_analysis.get("job_run_id"):
+            run_info = get_analysis_job_run(
+                selected_analysis["job_run_id"]
+            )
+
+            if run_info:
+                state = run_info.get("state") or {}
+                life_cycle_state = (
+                    state.get("life_cycle_state")
+                    or state.get("life_cycle_state_message")
+                    or "UNKNOWN"
+                )
+                result_state = (
+                    state.get("result_state")
+                    or ""
+                )
+
+                st.caption(
+                    "Databricks workflow run: "
+                    f"{selected_analysis['job_run_id']} · "
+                    f"{life_cycle_state}"
+                    + (
+                        f" · {result_state}"
+                        if result_state
+                        else ""
+                    )
+                )
 
         evidence_counts = load_analysis_evidence_counts(
             selected_analysis_id
@@ -1328,7 +1448,12 @@ with tab_analyses:
 
         status = selected_analysis["status"] or "UNKNOWN"
 
-        if status == "PENDING_PROCESSING":
+        if status == "QUEUED":
+            st.info(
+                "Automated processing is queued in Databricks."
+            )
+
+        elif status == "PENDING_PROCESSING":
             st.warning(
                 "This analysis is defined, but evidence extraction has not "
                 "started yet. Run notebook 15 for this analysis_id."
