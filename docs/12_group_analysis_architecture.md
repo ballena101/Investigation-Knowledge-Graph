@@ -281,3 +281,32 @@ The model separates:
 Original source text is always preserved. Any future translation is derivative material and must retain a link to the original evidence passage.
 
 This allows one analysis group to contain, for example, an English investigation report, a Spanish witness statement and a Portuguese technical note without collapsing their provenance.
+
+
+## Preferred PoC ingestion route
+
+Where the investigator can write to a Unity Catalog volume but cannot delegate
+the parent catalog to a Databricks App service principal, the PoC uses a
+user-driven volume-folder workflow.
+
+```text
+User creates folder in own accessible UC volume
+        ↓
+User uploads all documents for one analysis
+        ↓
+Notebook 13 registers folder as one analysis_id
+        ↓
+Extraction / passaging notebook
+        ↓
+Group-level analytical pipeline
+        ↓
+Neo4j graph + review App
+```
+
+This deliberately separates **source ingestion** from the review App. The source
+files remain governed by Unity Catalog under the investigator's normal
+permissions. The App does not need direct access to the source volume.
+
+One folder represents one analysis group. A `manifest.json` is written into the
+folder to preserve the analysis ID, document IDs, hashes, language settings and
+source provenance.
