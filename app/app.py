@@ -1,3 +1,4 @@
+import hashlib
 import os
 import uuid
 
@@ -206,6 +207,105 @@ def load_latest_relationship_reviews():
         }
 
 
+
+def mapping_key(node_id: str, original_mapping: str) -> str:
+    raw = f"{node_id}|{original_mapping}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:24]
+
+
+def save_mapping_review(
+    mapping,
+    decision: str,
+    amended_mapping: str | None,
+    comment: str,
+):
+    reviewer = get_reviewer_identity()
+
+    status_by_decision = {
+        "VALIDATED": "HUMAN_VALIDATED",
+        "REJECTED": "HUMAN_REJECTED",
+        "AMENDED": "HUMAN_AMENDED",
+    }
+
+    review_id = str(uuid.uuid4())
+
+    query = """
+    MATCH (concept:KGNode {node_id: $node_id})
+    CREATE (review:EMCIPMappingReview {
+        review_id: $review_id,
+        case_id: $case_id,
+        graph_version: $graph_version,
+        mapping_key: $mapping_key,
+        node_id: $node_id,
+        node_label: $node_label,
+        node_kind: $node_kind,
+        proposed_emcip_entity: $proposed_emcip_entity,
+        assistant_mapping_status: $assistant_mapping_status,
+        original_mapping: $original_mapping,
+        human_review_decision: $human_review_decision,
+        human_review_status: $human_review_status,
+        amended_mapping: $amended_mapping,
+        reviewer_email: $reviewer_email,
+        reviewer_user_id: $reviewer_user_id,
+        reviewer_username: $reviewer_username,
+        reviewed_at: datetime(),
+        review_comment: $review_comment
+    })
+    CREATE (review)-[:REVIEWS_MAPPING_OF]->(concept)
+    RETURN review.review_id AS review_id
+    """
+
+    params = {
+        "review_id": review_id,
+        "case_id": CASE_ID,
+        "graph_version": GRAPH_VERSION,
+        "mapping_key": mapping["mapping_key"],
+        "node_id": mapping["node_id"],
+        "node_label": mapping["node_label"],
+        "node_kind": mapping["node_kind"],
+        "proposed_emcip_entity": mapping["proposed_emcip_entity"],
+        "assistant_mapping_status": mapping["mapping_disposition"],
+        "original_mapping": mapping["original_mapping"],
+        "human_review_decision": decision,
+        "human_review_status": status_by_decision[decision],
+        "amended_mapping": amended_mapping,
+        "reviewer_email": reviewer["email"],
+        "reviewer_user_id": reviewer["user_id"],
+        "reviewer_username": reviewer["username"],
+        "review_comment": comment or None,
+    }
+
+    with get_driver().session() as session:
+        record = session.run(query, **params).single()
+
+    return record["review_id"] if record else review_id
+
+
+def load_latest_mapping_reviews():
+    query = """
+    MATCH (review:EMCIPMappingReview {case_id: $case_id})
+    WITH review
+    ORDER BY review.reviewed_at DESC
+    WITH review.mapping_key AS mapping_key, collect(review)[0] AS latest
+    RETURN
+        mapping_key,
+        latest.review_id AS review_id,
+        latest.human_review_decision AS decision,
+        latest.human_review_status AS status,
+        properties(latest)["amended_mapping"] AS amended_mapping,
+        latest.reviewer_email AS reviewer_email,
+        latest.reviewer_username AS reviewer_username,
+        toString(latest.reviewed_at) AS reviewed_at,
+        properties(latest)["review_comment"] AS review_comment
+    """
+
+    with get_driver().session() as session:
+        return {
+            record["mapping_key"]: record.data()
+            for record in session.run(query, case_id=CASE_ID)
+        }
+
+
 try:
     rows = load_graph()
 except Exception as exc:
@@ -275,6 +375,44 @@ elements = {
     "nodes": list(nodes.values()),
     "edges": edges,
 }
+
+
+mapping_rows_by_key = {}
+
+for node in nodes.values():
+    data = node["data"]
+    original_mappings = data.get("emcip_mappings")
+
+    if (
+        not original_mappings
+        or original_mappings == "No validated EMCIP mapping"
+    ):
+        continue
+
+    for original_mapping in original_mappings.split(" | "):
+        original_mapping = original_mapping.strip()
+        if not original_mapping:
+            continue
+
+        key = mapping_key(data["id"], original_mapping)
+        mapping_rows_by_key[key] = {
+            "mapping_key": key,
+            "node_id": data["id"],
+            "node_label": data["name"],
+            "node_kind": data["node_kind"],
+            "proposed_emcip_entity": data["proposed_emcip_entity"],
+            "mapping_disposition": data["mapping_disposition"],
+            "original_mapping": original_mapping,
+        }
+
+mapping_rows = sorted(
+    mapping_rows_by_key.values(),
+    key=lambda item: (
+        item["node_label"],
+        item["original_mapping"],
+    ),
+)
+
 
 validated_edges = sum(
     1 for edge in edges
@@ -363,8 +501,13 @@ edge_styles = [
     ),
 ]
 
-tab_graph, tab_review, tab_about = st.tabs(
-    ["Knowledge graph", "Relationship review", "About"]
+tab_graph, tab_review, tab_mapping_review, tab_about = st.tabs(
+    [
+        "Knowledge graph",
+        "Relationship review",
+        "EMCIP mapping review",
+        "About",
+    ]
 )
 
 with tab_graph:
@@ -495,6 +638,7 @@ with tab_review:
         "Human decision",
         options=["VALIDATED", "REJECTED", "AMENDED"],
         horizontal=True,
+        key="relationship_decision",
     )
 
     amended_relationship = None
@@ -507,6 +651,7 @@ with tab_review:
                 "AFFECTED",
                 "FOLLOWED_BY",
             ],
+            key="relationship_amended_value",
         )
 
     comment = st.text_area(
@@ -515,6 +660,7 @@ with tab_review:
             "Optional for validation; strongly recommended for rejection "
             "or amendment."
         ),
+        key="relationship_review_comment",
     )
 
     reviewer = get_reviewer_identity()
@@ -547,6 +693,183 @@ with tab_review:
             )
             st.exception(exc)
 
+
+with tab_mapping_review:
+    st.subheader("EMCIP mapping review")
+    st.caption(
+        "Review the analytical mapping between a case concept and an EMCIP "
+        "taxonomy value. Human review is appended separately; the original "
+        "assistant mapping is not overwritten."
+    )
+
+    try:
+        latest_mapping_reviews = load_latest_mapping_reviews()
+    except Exception as exc:
+        latest_mapping_reviews = {}
+        st.warning(
+            "The graph is readable, but existing EMCIP mapping-review "
+            "records could not be loaded."
+        )
+        st.exception(exc)
+
+    reviewed_mapping_keys = set(latest_mapping_reviews)
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Reviewable mappings", len(mapping_rows))
+    m2.metric("Human reviewed", len(reviewed_mapping_keys))
+    m3.metric(
+        "Remaining",
+        max(0, len(mapping_rows) - len(reviewed_mapping_keys)),
+    )
+
+    if not mapping_rows:
+        st.info("No validated EMCIP mappings are available for review.")
+    else:
+        def mapping_option_label(index):
+            mapping = mapping_rows[index]
+            latest_mapping = latest_mapping_reviews.get(
+                mapping["mapping_key"]
+            )
+
+            if latest_mapping:
+                marker = {
+                    "VALIDATED": "✓",
+                    "REJECTED": "✕",
+                    "AMENDED": "✎",
+                }.get(latest_mapping["decision"], "•")
+                prefix = f"{marker} "
+            else:
+                prefix = ""
+
+            return (
+                f"{prefix}{mapping['node_label']} "
+                f"→ {mapping['original_mapping']}"
+            )
+
+        selected_mapping_index = st.selectbox(
+            "Mapping",
+            options=list(range(len(mapping_rows))),
+            format_func=mapping_option_label,
+            key="mapping_selector",
+        )
+
+        selected_mapping = mapping_rows[selected_mapping_index]
+        latest_mapping = latest_mapping_reviews.get(
+            selected_mapping["mapping_key"]
+        )
+
+        st.markdown("**Case concept**")
+        st.write(selected_mapping["node_label"])
+
+        mc1, mc2 = st.columns(2)
+        with mc1:
+            st.markdown("**Concept type**")
+            st.write(selected_mapping["node_kind"])
+        with mc2:
+            st.markdown("**EMCIP entity**")
+            st.write(selected_mapping["proposed_emcip_entity"])
+
+        st.markdown("**Assistant mapping**")
+        st.info(selected_mapping["original_mapping"])
+
+        st.markdown("**Assistant mapping disposition**")
+        st.write(selected_mapping["mapping_disposition"])
+
+        if latest_mapping:
+            st.markdown("**Latest human review**")
+            st.write(
+                f"{latest_mapping['decision']} · "
+                f"{latest_mapping['reviewed_at']} · "
+                f"{latest_mapping['reviewer_email'] or latest_mapping['reviewer_username'] or 'unknown'}"
+            )
+
+            if latest_mapping["amended_mapping"]:
+                st.write(
+                    "Proposed amended mapping:",
+                    latest_mapping["amended_mapping"],
+                )
+
+            if latest_mapping["review_comment"]:
+                st.write(
+                    "Comment:",
+                    latest_mapping["review_comment"],
+                )
+
+        st.divider()
+
+        mapping_decision = st.radio(
+            "Human mapping decision",
+            options=["VALIDATED", "REJECTED", "AMENDED"],
+            horizontal=True,
+            key="mapping_decision",
+        )
+
+        amended_mapping = None
+        if mapping_decision == "AMENDED":
+            amended_mapping = st.text_input(
+                "Proposed amended EMCIP mapping",
+                placeholder=(
+                    "Enter the replacement taxonomy path/value. "
+                    "It will be stored as a proposal and will not overwrite "
+                    "the original mapping."
+                ),
+                key="mapping_amended_value",
+            ).strip()
+
+            if not amended_mapping:
+                st.info(
+                    "An amended mapping value is required before an "
+                    "AMENDED review can be saved."
+                )
+
+        mapping_comment = st.text_area(
+            "Mapping review comment",
+            placeholder=(
+                "Optional for validation; strongly recommended for rejection "
+                "or amendment."
+            ),
+            key="mapping_review_comment",
+        )
+
+        mapping_reviewer = get_reviewer_identity()
+        mapping_reviewer_display = (
+            mapping_reviewer["email"]
+            if mapping_reviewer["email"] != "unknown"
+            else mapping_reviewer["username"]
+        )
+        st.caption(
+            f"Reviewer recorded as: {mapping_reviewer_display}"
+        )
+
+        mapping_save_disabled = (
+            mapping_decision == "AMENDED"
+            and not amended_mapping
+        )
+
+        if st.button(
+            "Save mapping review",
+            type="primary",
+            disabled=mapping_save_disabled,
+            key="save_mapping_review",
+        ):
+            try:
+                mapping_review_id = save_mapping_review(
+                    selected_mapping,
+                    decision=mapping_decision,
+                    amended_mapping=amended_mapping,
+                    comment=mapping_comment.strip(),
+                )
+                st.success(
+                    f"Mapping review saved: {mapping_decision} — "
+                    f"review ID {mapping_review_id}"
+                )
+                st.rerun()
+            except Exception as exc:
+                st.error(
+                    "The EMCIP mapping review could not be saved to Neo4j."
+                )
+                st.exception(exc)
+
 with tab_about:
     st.markdown(
         f"""
@@ -573,8 +896,8 @@ investigation-report evidence.
 Assistant review and human review are separate provenance layers.
 
 For this PoC, human review is stored as append-only
-`RelationshipReview` nodes in Neo4j. The reviewed graph edges are not
-silently modified.
+`RelationshipReview` and `EMCIPMappingReview` nodes in Neo4j. The
+reviewed graph edges and original EMCIP mappings are not silently modified.
 
 If the project later requires a governed institutional audit store, these
 review records can be exported to Delta / Unity Catalog from a controlled
