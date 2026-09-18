@@ -14,7 +14,7 @@ GRAPH_VERSION = "CASE_GRAPH_V0.2"
 
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
 MAX_DOCUMENTS_PER_ANALYSIS = 5
-APP_BUILD = "2026-09-18-evidence-pipeline-v1"
+APP_BUILD = "2026-09-18-analysis-pipeline-v1"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -307,6 +307,81 @@ def load_analysis_graph_counts(analysis_id):
         }
 
     return record.data()
+
+
+@st.cache_data(ttl=30)
+def load_analysis_result(analysis_id):
+    query = """
+    MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+    RETURN
+        properties(a)["analysis_summary"] AS overview,
+        coalesce(properties(a)["key_findings"], []) AS key_findings,
+        coalesce(properties(a)["uncertainties"], []) AS uncertainties,
+        coalesce(properties(a)["source_conflicts"], []) AS source_conflicts,
+        properties(a)["analysis_version"] AS analysis_version,
+        properties(a)["model_service"] AS model_service,
+        coalesce(properties(a)["analysis_batches_total"], 0) AS batches_total,
+        coalesce(properties(a)["analysis_batches_processed"], 0) AS batches_processed
+    """
+
+    with get_driver().session() as session:
+        record = session.run(
+            query,
+            analysis_id=analysis_id,
+        ).single()
+
+    return record.data() if record else {}
+
+
+@st.cache_data(ttl=30)
+def load_analysis_graph(analysis_id):
+    node_query = """
+    MATCH (n:KGNode {analysis_id: $analysis_id})
+    RETURN
+        n.node_id AS node_id,
+        n.label AS label,
+        n.node_kind AS node_kind,
+        properties(n)["description"] AS description,
+        coalesce(properties(n)["evidence_passage_ids"], []) AS passage_ids
+    ORDER BY n.label
+    """
+
+    edge_query = """
+    MATCH (source:KGNode {analysis_id: $analysis_id})
+          -[r]->
+          (target:KGNode {analysis_id: $analysis_id})
+    RETURN
+        r.edge_id AS edge_id,
+        type(r) AS relationship,
+        source.node_id AS source_id,
+        source.label AS source_label,
+        target.node_id AS target_id,
+        target.label AS target_label,
+        properties(r)["evidence_class"] AS evidence_class,
+        coalesce(properties(r)["evidence_passage_ids"], []) AS passage_ids
+    ORDER BY source.label, relationship, target.label
+    """
+
+    with get_driver().session() as session:
+        nodes = [
+            record.data()
+            for record in session.run(
+                node_query,
+                analysis_id=analysis_id,
+            )
+        ]
+        edges = [
+            record.data()
+            for record in session.run(
+                edge_query,
+                analysis_id=analysis_id,
+            )
+        ]
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+    }
 
 
 @st.cache_data(ttl=60)
@@ -769,6 +844,160 @@ edge_styles = [
     ),
 ]
 
+analysis_node_styles = [
+    NodeStyle(
+        label="Event",
+        caption="name",
+        custom_styles={
+            "shape": "ellipse",
+            "width": 110,
+            "height": 110,
+            "text-wrap": "wrap",
+            "text-max-width": 150,
+            "font-size": 11,
+            "border-width": 2,
+        },
+    ),
+    NodeStyle(
+        label="ContributingFactor",
+        caption="name",
+        custom_styles={
+            "shape": "diamond",
+            "width": 115,
+            "height": 115,
+            "text-wrap": "wrap",
+            "text-max-width": 150,
+            "font-size": 11,
+            "border-width": 2,
+        },
+    ),
+    NodeStyle(
+        label="Finding",
+        caption="name",
+        custom_styles={
+            "shape": "round-rectangle",
+            "width": 125,
+            "height": 80,
+            "text-wrap": "wrap",
+            "text-max-width": 165,
+            "font-size": 11,
+            "border-width": 2,
+        },
+    ),
+    NodeStyle(
+        label="SafetyIssue",
+        caption="name",
+        custom_styles={
+            "shape": "hexagon",
+            "width": 120,
+            "height": 105,
+            "text-wrap": "wrap",
+            "text-max-width": 160,
+            "font-size": 11,
+            "border-width": 2,
+        },
+    ),
+    NodeStyle(
+        label="Recommendation",
+        caption="name",
+        custom_styles={
+            "shape": "round-rectangle",
+            "width": 130,
+            "height": 85,
+            "text-wrap": "wrap",
+            "text-max-width": 170,
+            "font-size": 11,
+            "border-width": 2,
+        },
+    ),
+    NodeStyle(
+        label="Actor",
+        caption="name",
+        custom_styles={
+            "shape": "ellipse",
+            "width": 100,
+            "height": 100,
+            "text-wrap": "wrap",
+            "text-max-width": 140,
+            "font-size": 11,
+            "border-width": 2,
+        },
+    ),
+    NodeStyle(
+        label="Vessel",
+        caption="name",
+        custom_styles={
+            "shape": "round-rectangle",
+            "width": 110,
+            "height": 70,
+            "text-wrap": "wrap",
+            "text-max-width": 150,
+            "font-size": 11,
+            "border-width": 2,
+        },
+    ),
+    NodeStyle(
+        label="System",
+        caption="name",
+        custom_styles={
+            "shape": "rectangle",
+            "width": 110,
+            "height": 75,
+            "text-wrap": "wrap",
+            "text-max-width": 150,
+            "font-size": 11,
+            "border-width": 2,
+        },
+    ),
+    NodeStyle(
+        label="Claim",
+        caption="name",
+        custom_styles={
+            "shape": "round-rectangle",
+            "width": 125,
+            "height": 80,
+            "text-wrap": "wrap",
+            "text-max-width": 165,
+            "font-size": 11,
+            "border-width": 2,
+        },
+    ),
+]
+
+analysis_edge_styles = [
+    EdgeStyle(
+        label="RESULTED_IN",
+        caption="label",
+        directed=True,
+        curve_style="bezier",
+    ),
+    EdgeStyle(
+        label="CONTRIBUTED_TO",
+        caption="label",
+        directed=True,
+        curve_style="bezier",
+    ),
+    EdgeStyle(
+        label="AFFECTED",
+        caption="label",
+        directed=True,
+        curve_style="bezier",
+    ),
+    EdgeStyle(
+        label="FOLLOWED_BY",
+        caption="label",
+        directed=True,
+        curve_style="bezier",
+    ),
+    EdgeStyle(
+        label="SUPPORTS",
+        caption="label",
+        directed=True,
+        curve_style="bezier",
+    ),
+]
+
+
 tab_new_analysis, tab_analyses, tab_graph, tab_review, tab_mapping_review, tab_about = st.tabs(
     [
         "New analysis",
@@ -982,6 +1211,8 @@ with tab_analyses:
         load_analysis_sources.clear()
         load_analysis_graph_counts.clear()
         load_analysis_evidence_counts.clear()
+        load_analysis_result.clear()
+        load_analysis_graph.clear()
         st.rerun()
 
     try:
@@ -1148,10 +1379,157 @@ with tab_analyses:
                 evidence_counts.get("detected_language") or "UNKNOWN",
             )
             st.info(
-                "Next stage: analyse the evidence group across documents, "
-                "resolve concepts, identify supported relationships and "
-                "build the generic knowledge graph."
+                "Next stage: run notebook 16 for this analysis_id to "
+                "analyse the evidence group, resolve concepts and build "
+                "the knowledge graph."
             )
+            st.code(
+                selected_analysis_id,
+                language=None,
+            )
+
+        elif status == "ANALYSING":
+            result_meta = load_analysis_result(
+                selected_analysis_id
+            )
+
+            stage = (
+                selected_analysis.get("processing_stage")
+                or evidence_counts.get("processing_stage")
+                or "ANALYSING"
+            )
+            st.info(
+                f"Analytical processing is running: {stage}"
+            )
+
+            batches_total = int(
+                result_meta.get("batches_total") or 0
+            )
+            batches_processed = int(
+                result_meta.get("batches_processed") or 0
+            )
+
+            if batches_total > 0:
+                st.progress(
+                    min(
+                        batches_processed / batches_total,
+                        1.0,
+                    ),
+                    text=(
+                        f"Evidence batches: "
+                        f"{batches_processed} / {batches_total}"
+                    ),
+                )
+
+        elif status == "COMPLETED":
+            result_meta = load_analysis_result(
+                selected_analysis_id
+            )
+            st.success(
+                "Group analysis completed."
+            )
+
+            if result_meta.get("overview"):
+                st.markdown("### Analysis summary")
+                st.write(result_meta["overview"])
+
+            key_findings = result_meta.get(
+                "key_findings"
+            ) or []
+            if key_findings:
+                st.markdown("### Key findings")
+                for item in key_findings:
+                    st.write(f"• {item}")
+
+            uncertainties = result_meta.get(
+                "uncertainties"
+            ) or []
+            if uncertainties:
+                st.markdown("### Uncertainties")
+                for item in uncertainties:
+                    st.write(f"• {item}")
+
+            source_conflicts = result_meta.get(
+                "source_conflicts"
+            ) or []
+            if source_conflicts:
+                st.markdown("### Source conflicts")
+                for item in source_conflicts:
+                    st.write(f"• {item}")
+
+            st.caption(
+                "Model service: "
+                f"{result_meta.get('model_service') or '—'} · "
+                "Analysis version: "
+                f"{result_meta.get('analysis_version') or '—'}"
+            )
+
+            analysis_graph = load_analysis_graph(
+                selected_analysis_id
+            )
+
+            analysis_elements = {
+                "nodes": [
+                    {
+                        "data": {
+                            "id": node["node_id"],
+                            "label": node["node_kind"],
+                            "name": node["label"],
+                            "node_kind": node["node_kind"],
+                            "description": (
+                                node.get("description")
+                                or ""
+                            ),
+                            "passage_ids": node.get(
+                                "passage_ids"
+                            ) or [],
+                        }
+                    }
+                    for node in analysis_graph["nodes"]
+                ],
+                "edges": [
+                    {
+                        "data": {
+                            "id": edge["edge_id"],
+                            "label": edge["relationship"],
+                            "source": edge["source_id"],
+                            "target": edge["target_id"],
+                            "relationship": edge["relationship"],
+                            "evidence_class": (
+                                edge.get("evidence_class")
+                                or "—"
+                            ),
+                            "passage_ids": edge.get(
+                                "passage_ids"
+                            ) or [],
+                        }
+                    }
+                    for edge in analysis_graph["edges"]
+                ],
+            }
+
+            if analysis_elements["nodes"]:
+                st.markdown("### Knowledge graph")
+                st.caption(
+                    "Machine-generated analytical graph. Relationships "
+                    "remain candidates until human review."
+                )
+                streamlit_cytoscape(
+                    elements=analysis_elements,
+                    layout="fcose",
+                    node_styles=analysis_node_styles,
+                    edge_styles=analysis_edge_styles,
+                    height=700,
+                    key=(
+                        "analysis_graph_"
+                        + selected_analysis_id
+                    ),
+                )
+            else:
+                st.warning(
+                    "The analysis completed but no graph nodes were "
+                    "published."
+                )
 
         elif status == "FAILED":
             st.error(
