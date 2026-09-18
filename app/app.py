@@ -1,4 +1,6 @@
+import base64
 import hashlib
+import json
 import os
 import re
 import time
@@ -28,7 +30,7 @@ SOURCE_VOLUME_PATH = (
 ANALYSIS_GROUP_TABLE = "bdw_analysis_prod.kg_poc.analysis_group"
 ANALYSIS_DOCUMENT_TABLE = "bdw_analysis_prod.kg_poc.analysis_document"
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
-APP_BUILD = "2026-09-18-group-upload-v4"
+APP_BUILD = "2026-09-18-group-upload-v5"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -91,6 +93,65 @@ def get_user_access_token():
         )
     except Exception:
         return None
+
+
+def get_user_token_diagnostics():
+    token = get_user_access_token()
+
+    result = {
+        "token_present": bool(token),
+        "scopes": [],
+        "expires_at": None,
+        "identity_status": None,
+        "identity_user": None,
+    }
+
+    if not token:
+        return result
+
+    # Decode JWT payload only for non-sensitive diagnostic claims.
+    # No token value is logged or displayed.
+    try:
+        parts = token.split(".")
+        if len(parts) >= 2:
+            payload = parts[1]
+            payload += "=" * (-len(payload) % 4)
+            claims = json.loads(
+                base64.urlsafe_b64decode(payload.encode("ascii"))
+                .decode("utf-8")
+            )
+
+            raw_scope = claims.get("scope") or claims.get("scp") or []
+            if isinstance(raw_scope, str):
+                result["scopes"] = sorted(
+                    s for s in raw_scope.replace(",", " ").split() if s
+                )
+            elif isinstance(raw_scope, list):
+                result["scopes"] = sorted(str(s) for s in raw_scope)
+
+            result["expires_at"] = claims.get("exp")
+    except Exception:
+        pass
+
+    try:
+        response = requests.get(
+            _api_url("/api/2.0/preview/scim/v2/Me"),
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
+        result["identity_status"] = response.status_code
+
+        if response.ok:
+            data = response.json()
+            result["identity_user"] = (
+                data.get("userName")
+                or data.get("displayName")
+                or data.get("id")
+            )
+    except Exception as exc:
+        result["identity_status"] = f"ERROR: {type(exc).__name__}"
+
+    return result
 
 
 def _user_headers(content_type=None):
@@ -935,6 +996,35 @@ with tab_new_analysis:
         st.success(
             "User authorization is active for this App session."
         )
+
+    oauth_diag = get_user_token_diagnostics()
+
+    with st.expander("Forwarded OAuth diagnostic", expanded=True):
+        st.write("Token present:", oauth_diag["token_present"])
+        st.write(
+            "Forwarded token scopes:",
+            oauth_diag["scopes"] or "No readable scope claim",
+        )
+        st.write(
+            "Current-user API status:",
+            oauth_diag["identity_status"],
+        )
+        if oauth_diag["identity_user"]:
+            st.write(
+                "Current-user identity:",
+                oauth_diag["identity_user"],
+            )
+
+        if oauth_diag["scopes"] and "files" not in oauth_diag["scopes"]:
+            st.error(
+                "The running App token does not contain the 'files' scope, "
+                "even though the App configuration requests it. This points "
+                "to stale or missing OAuth consent."
+            )
+        elif "files" in oauth_diag["scopes"]:
+            st.success(
+                "The forwarded token contains the 'files' scope."
+            )
 
     with st.form(
         "new_analysis_form",
