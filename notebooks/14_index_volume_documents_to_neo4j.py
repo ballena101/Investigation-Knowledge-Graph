@@ -31,6 +31,14 @@ print("Document library:", library_root)
 
 # COMMAND ----------
 
+# MAGIC %pip install neo4j==6.3.1
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
 import hashlib
 import mimetypes
 import os
