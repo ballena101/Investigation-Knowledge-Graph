@@ -28,7 +28,7 @@ SOURCE_VOLUME_PATH = (
 ANALYSIS_GROUP_TABLE = "bdw_analysis_prod.kg_poc.analysis_group"
 ANALYSIS_DOCUMENT_TABLE = "bdw_analysis_prod.kg_poc.analysis_document"
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
-APP_BUILD = "2026-09-18-group-upload-v2"
+APP_BUILD = "2026-09-18-group-upload-v3"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -210,6 +210,7 @@ def register_analysis_group(
     creator,
     document_count,
     language_mode,
+    output_language,
 ):
     statement = f"""
     INSERT INTO {ANALYSIS_GROUP_TABLE} (
@@ -223,7 +224,8 @@ def register_analysis_group(
         pipeline_version,
         graph_version,
         error_message,
-        language_mode
+        language_mode,
+        output_language
     )
     VALUES (
         :analysis_id,
@@ -236,7 +238,8 @@ def register_analysis_group(
         :pipeline_version,
         NULL,
         NULL,
-        :language_mode
+        :language_mode,
+        :output_language
     )
     """
 
@@ -254,6 +257,7 @@ def register_analysis_group(
             ),
             sql_parameter("pipeline_version", PIPELINE_VERSION),
             sql_parameter("language_mode", language_mode),
+            sql_parameter("output_language", output_language),
         ],
     )
 
@@ -321,7 +325,13 @@ def register_analysis_document(
     )
 
 
-def create_analysis(title, objective, uploaded_files, language_mode):
+def create_analysis(
+    title,
+    objective,
+    uploaded_files,
+    language_mode,
+    output_language,
+):
     identity = get_reviewer_identity()
     uploader = (
         identity["email"]
@@ -369,6 +379,7 @@ def create_analysis(title, objective, uploaded_files, language_mode):
         creator=uploader,
         document_count=len(documents),
         language_mode=language_mode,
+        output_language=output_language,
     )
 
     for document in documents:
@@ -909,6 +920,32 @@ with tab_new_analysis:
             ),
         )
 
+        output_language = st.selectbox(
+            "Analysis output language",
+            options=[
+                "English",
+                "Spanish",
+                "Portuguese",
+                "French",
+                "German",
+                "Italian",
+                "Dutch",
+                "Norwegian",
+                "Icelandic",
+                "Danish",
+                "Swedish",
+                "Finnish",
+                "Polish",
+                "Greek",
+            ],
+            index=0,
+            help=(
+                "This controls the language used for future summaries and "
+                "analytical explanations. Source evidence remains in its "
+                "original language."
+            ),
+        )
+
         uploaded_files = st.file_uploader(
             "Source documents",
             type=["pdf", "docx", "txt"],
@@ -941,6 +978,7 @@ with tab_new_analysis:
                         objective=analysis_objective.strip(),
                         uploaded_files=uploaded_files,
                         language_mode=language_mode,
+                        output_language=output_language,
                     )
 
                 st.success(
@@ -955,7 +993,8 @@ with tab_new_analysis:
                     f"Registered {len(registered_documents)} source "
                     "document(s)."
                 )
-                st.write(f"Language handling: {language_mode}")
+                st.write(f"Source language handling: {language_mode}")
+                st.write(f"Analysis output language: {output_language}")
 
                 for document in registered_documents:
                     st.write(
