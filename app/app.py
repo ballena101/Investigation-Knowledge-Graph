@@ -16,7 +16,12 @@ GRAPH_VERSION = "CASE_GRAPH_V0.2"
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
 ANALYSIS_JOB_ID = os.getenv("ANALYSIS_JOB_ID")
 MAX_DOCUMENTS_PER_ANALYSIS = 5
-APP_BUILD = "2026-09-18-automated-pipeline-v2"
+DEFAULT_MODEL_SERVICE = "system.ai.gpt-5-6-sol"
+AVAILABLE_MODEL_SERVICES = [
+    "system.ai.gpt-5-6-sol",
+    "system.ai.claude-sonnet-4-5",
+]
+APP_BUILD = "2026-09-19-compliance-model-disclosure-v1"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -48,6 +53,75 @@ st.caption(
     "Create document-group analyses and review evidence-grounded investigation graphs."
 )
 st.caption(f"App build: {APP_BUILD}")
+
+with st.expander(
+    "Compliance, confidentiality and AI-use notice",
+    expanded=False,
+):
+    st.markdown(
+        """
+**Directive alignment status:** **PoC design-aligned / conditionally aligned — not a legal certification of compliance.**
+
+The design is intended to support the confidentiality requirements of
+**Article 9 of Directive 2009/18/EC, as amended by Directive (EU) 2024/3017**.
+Article 9 protects specified safety-investigation records from use or
+disclosure for purposes other than the safety investigation, subject to the
+competent-authority public-interest test, and operates without prejudice to
+the GDPR.
+
+**How the design respects Article 9 principles**
+
+- source material remains in governed Databricks storage;
+- access is intended to follow least privilege;
+- evidence provenance is preserved from document → page → passage → analysis;
+- model-generated statements are kept separate from source evidence;
+- the App does not require direct raw-volume browsing in the preferred design;
+- Neo4j is intended primarily for graph references/authorised derivatives,
+  rather than as a raw-evidence store;
+- routine logs should use identifiers/counters, not protected source text;
+- confidential/protected material must not be sent to an LLM merely because
+  the pipeline is technically capable of doing so.
+
+**Information classes used by this PoC**
+
+- **Class A — Code / public technical documentation:** suitable for GitHub.
+- **Class B — Published / non-sensitive investigation material:** preferred
+  validation material for the PoC.
+- **Class C — Internal analytical derivatives:** passages, candidates,
+  mappings, summaries and reviews; treat as internal unless approved otherwise.
+- **Class D — Confidential / protected investigation material:** witness
+  statements, identities, sensitive personal/health information,
+  investigators' notes/opinions, draft reports, operational communications,
+  VTS material and VDR/S-VDR material. Use only after the authorised processing
+  path has been confirmed.
+
+**Current AI processing policy**
+
+The automated analysis uses a Databricks Unity Catalog model service in
+`system.ai`. The exact model is recorded per analysis and shown in the
+Analyses tab.
+
+For Databricks Model Serving, Databricks documents logical isolation,
+authentication/authorisation and encryption in transit/at rest. For paid
+accounts, Databricks states that Model Serving inputs/outputs are not used to
+train models or improve Databricks services. Foundation Model APIs may,
+however, temporarily process/store inputs and outputs for abuse/safety
+purposes, and partner-model terms may add further requirements.
+
+For **OpenAI GPT-5.6 Sol**, Databricks lists the applicable OpenAI **Usage
+Policy** and **high-risk use-case mitigation requirements** in addition to the
+customer's Databricks agreement.
+
+**Operational rule:** Class D material is not automatically approved for LLM
+processing. Specific organisational/legal/security approval remains required
+for the model/service, data classification, residency/transfer, retention,
+logging and vendor/processor arrangements.
+
+See repository documentation:
+`docs/14_tooling_inventory.md` and
+`docs/15_data_protection_confidentiality.md`.
+        """
+    )
 
 NEO4J_URI = os.getenv("NEO4J_URI")
 NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
@@ -86,7 +160,7 @@ def get_workspace_client():
     return WorkspaceClient()
 
 
-def trigger_analysis_job(analysis_id):
+def trigger_analysis_job(analysis_id, model_service):
     if not ANALYSIS_JOB_ID:
         raise RuntimeError(
             "No analysis job is attached to the App. Add the Lakeflow Job "
@@ -100,6 +174,7 @@ def trigger_analysis_job(analysis_id):
             "job_id": int(ANALYSIS_JOB_ID),
             "job_parameters": {
                 "analysis_id": analysis_id,
+                "model_service": model_service,
             },
         },
     )
@@ -177,6 +252,7 @@ def create_analysis_from_documents(
     selected_document_ids,
     language_mode,
     output_language,
+    model_service,
 ):
     reviewer = get_reviewer_identity()
 
@@ -195,6 +271,7 @@ def create_analysis_from_documents(
         analysis_objective: $analysis_objective,
         language_mode: $language_mode,
         output_language: $output_language,
+        requested_model_service: $model_service,
         status: 'PENDING_PROCESSING',
         created_by: $created_by,
         created_at: datetime(),
@@ -217,6 +294,7 @@ def create_analysis_from_documents(
         "analysis_objective": objective or None,
         "language_mode": language_mode,
         "output_language": output_language,
+        "model_service": model_service,
         "created_by": creator,
         "pipeline_version": PIPELINE_VERSION,
         "document_ids": selected_document_ids,
@@ -280,6 +358,8 @@ def load_analysis_groups():
         properties(a)["processing_error"] AS processing_error,
         properties(a)["job_run_id"] AS job_run_id,
         properties(a)["job_id"] AS job_id,
+        properties(a)["requested_model_service"] AS requested_model_service,
+        properties(a)["model_service"] AS effective_model_service,
         properties(a)["detected_language"] AS detected_language,
         a.language_mode AS language_mode,
         a.output_language AS output_language,
@@ -1303,6 +1383,26 @@ with tab_new_analysis:
             index=0,
         )
 
+        model_service = st.selectbox(
+            "AI model service",
+            options=AVAILABLE_MODEL_SERVICES,
+            index=AVAILABLE_MODEL_SERVICES.index(
+                DEFAULT_MODEL_SERVICE
+            ),
+            help=(
+                "The exact Databricks system.ai model service used for "
+                "candidate extraction and cross-document resolution. "
+                "The selected value is stored with the analysis."
+            ),
+        )
+
+        st.caption(
+            "AI governance: model use is subject to Databricks Model Serving "
+            "data-protection controls plus the applicable provider/model terms. "
+            "Selection of a model does not authorise Class D confidential "
+            "investigation material for LLM processing."
+        )
+
         create_submitted = st.form_submit_button(
             "Create analysis",
             type="primary",
@@ -1327,6 +1427,7 @@ with tab_new_analysis:
                         selected_document_ids=selected_document_ids,
                         language_mode=language_mode,
                         output_language=output_language,
+                        model_service=model_service,
                     )
                 )
 
@@ -1344,11 +1445,15 @@ with tab_new_analysis:
                 st.write(
                     f"Analysis output language: {output_language}"
                 )
+                st.write(
+                    f"AI model service: {model_service}"
+                )
 
                 if ANALYSIS_JOB_ID:
                     try:
                         run_id = trigger_analysis_job(
-                            analysis_id
+                            analysis_id,
+                            model_service,
                         )
                         load_analysis_groups.clear()
                         load_recent_analyses.clear()
@@ -1554,6 +1659,32 @@ with tab_analyses:
             st.write(
                 selected_analysis.get("output_language")
                 or "—"
+            )
+
+        st.markdown("**AI model / policy**")
+        configured_model = (
+            selected_analysis.get("effective_model_service")
+            or selected_analysis.get("requested_model_service")
+            or DEFAULT_MODEL_SERVICE
+        )
+        st.code(
+            configured_model,
+            language=None,
+        )
+        if configured_model == "system.ai.gpt-5-6-sol":
+            st.caption(
+                "Databricks Unity Catalog system.ai model service. "
+                "Applicable model terms include OpenAI Usage Policy and "
+                "OpenAI high-risk use-case mitigation requirements, in "
+                "addition to Databricks Model Serving / Foundation Model API "
+                "data-protection and retention terms."
+            )
+        else:
+            st.caption(
+                "Databricks Unity Catalog system.ai model service. "
+                "Use remains subject to Databricks Model Serving / "
+                "Foundation Model API data-protection and retention terms "
+                "and the applicable provider/model terms."
             )
 
         st.markdown("**Source documents**")
