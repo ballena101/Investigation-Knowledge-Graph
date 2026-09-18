@@ -24,13 +24,11 @@ DATABRICKS_HOST = os.getenv("DATABRICKS_HOST")
 if DATABRICKS_HOST and not DATABRICKS_HOST.startswith(("http://", "https://")):
     DATABRICKS_HOST = "https://" + DATABRICKS_HOST
 WAREHOUSE_ID = "372b5b52ba082619"
-SOURCE_VOLUME_PATH = (
-    "/Volumes/bdw_analysis_prod/kg_poc/investigation_sources"
-)
+SOURCE_VOLUME_PATH = os.getenv("SOURCE_VOLUME_PATH")
 ANALYSIS_GROUP_TABLE = "bdw_analysis_prod.kg_poc.analysis_group"
 ANALYSIS_DOCUMENT_TABLE = "bdw_analysis_prod.kg_poc.analysis_document"
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
-APP_BUILD = "2026-09-18-group-upload-v6"
+APP_BUILD = "2026-09-18-volume-resource-v1"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -437,6 +435,12 @@ def create_analysis(
     language_mode,
     output_language,
 ):
+    if not SOURCE_VOLUME_PATH:
+        raise RuntimeError(
+            "SOURCE_VOLUME_PATH is unavailable. Attach a UC volume "
+            "resource with key 'investigation_sources'."
+        )
+
     identity = get_reviewer_identity()
     uploader = (
         identity["email"]
@@ -444,12 +448,13 @@ def create_analysis(
         else identity["username"]
     )
 
-    check_volume_access()
-
     analysis_id = f"analysis_{uuid.uuid4().hex}"
-    analysis_directory = f"{SOURCE_VOLUME_PATH}/{analysis_id}"
+    analysis_directory = os.path.join(
+        SOURCE_VOLUME_PATH,
+        analysis_id,
+    )
 
-    create_volume_directory(analysis_directory)
+    os.makedirs(analysis_directory, exist_ok=False)
 
     documents = []
 
@@ -458,11 +463,14 @@ def create_analysis(
         sha256 = hashlib.sha256(file_bytes).hexdigest()
         document_id = f"doc_{sha256[:24]}"
         filename = safe_source_filename(uploaded_file.name)
-        storage_uri = (
-            f"{analysis_directory}/{document_id}_{filename}"
+        stored_filename = f"{document_id}_{filename}"
+        storage_uri = os.path.join(
+            analysis_directory,
+            stored_filename,
         )
 
-        upload_volume_file(storage_uri, file_bytes)
+        with open(storage_uri, "wb") as handle:
+            handle.write(file_bytes)
 
         extension = os.path.splitext(filename)[1].lower().lstrip(".")
         source_type = extension.upper() if extension else "UNKNOWN"
@@ -471,29 +479,48 @@ def create_analysis(
             {
                 "document_id": document_id,
                 "original_filename": uploaded_file.name,
+                "stored_filename": stored_filename,
                 "mime_type": uploaded_file.type or None,
                 "byte_size": len(file_bytes),
                 "sha256": sha256,
                 "storage_uri": storage_uri,
                 "source_type": source_type,
+                "extraction_status": "PENDING",
             }
         )
 
-    register_analysis_group(
-        analysis_id=analysis_id,
-        title=title,
-        objective=objective,
-        creator=uploader,
-        document_count=len(documents),
-        language_mode=language_mode,
-        output_language=output_language,
+    manifest = {
+        "analysis_id": analysis_id,
+        "analysis_title": title,
+        "analysis_objective": objective or None,
+        "created_by": uploader,
+        "created_at_utc": time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ",
+            time.gmtime(),
+        ),
+        "status": "UPLOADED",
+        "document_count": len(documents),
+        "pipeline_version": PIPELINE_VERSION,
+        "language_mode": language_mode,
+        "output_language": output_language,
+        "documents": documents,
+    }
+
+    manifest_path = os.path.join(
+        analysis_directory,
+        "manifest.json",
     )
 
-    for document in documents:
-        register_analysis_document(
-            analysis_id=analysis_id,
-            document=document,
-            uploader=uploader,
+    with open(
+        manifest_path,
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(
+            manifest,
+            handle,
+            ensure_ascii=False,
+            indent=2,
         )
 
     return analysis_id, documents
@@ -986,52 +1013,16 @@ with tab_new_analysis:
         "Each source remains individually traceable inside the group."
     )
 
-    if not get_user_access_token():
-        st.warning(
-            "User authorization is not active yet. The App needs the "
-            "'files' and 'sql' scopes before it can store uploads and "
-            "register analysis metadata."
-        )
-    else:
+    if SOURCE_VOLUME_PATH:
         st.success(
-            "User authorization is active for this App session."
+            "Persistent source volume is attached to the App."
         )
-
-    oauth_diag = get_user_token_diagnostics()
-    required_user_scopes = {"files", "sql"}
-    forwarded_user_scopes = set(oauth_diag["scopes"] or [])
-    missing_user_scopes = sorted(
-        required_user_scopes - forwarded_user_scopes
-    )
-
-    with st.expander("Forwarded OAuth diagnostic", expanded=True):
-        st.write("Token present:", oauth_diag["token_present"])
-        st.write(
-            "Forwarded token scopes:",
-            oauth_diag["scopes"] or "No readable scope claim",
+        st.caption(f"Storage: {SOURCE_VOLUME_PATH}")
+    else:
+        st.error(
+            "No source volume is attached. Add a UC volume resource with "
+            "resource key 'investigation_sources' and redeploy the App."
         )
-        st.write(
-            "Current-user API status:",
-            oauth_diag["identity_status"],
-        )
-        if oauth_diag["identity_user"]:
-            st.write(
-                "Current-user identity:",
-                oauth_diag["identity_user"],
-            )
-
-        if missing_user_scopes:
-            st.error(
-                "The running App token is missing required scope(s): "
-                + ", ".join(missing_user_scopes)
-                + ". The App configuration requests them, so the user "
-                  "OAuth consent/token must be refreshed."
-            )
-        else:
-            st.success(
-                "The forwarded token contains the required 'files' and "
-                "'sql' scopes."
-            )
 
     with st.form(
         "new_analysis_form",
@@ -1103,10 +1094,7 @@ with tab_new_analysis:
         create_submitted = st.form_submit_button(
             "Create analysis",
             type="primary",
-            disabled=(
-                not bool(get_user_access_token())
-                or bool(missing_user_scopes)
-            ),
+            disabled=not bool(SOURCE_VOLUME_PATH),
         )
 
     if create_submitted:
@@ -1136,7 +1124,7 @@ with tab_new_analysis:
                 )
 
                 st.write(
-                    f"Registered {len(registered_documents)} source "
+                    f"Stored {len(registered_documents)} source "
                     "document(s)."
                 )
                 st.write(f"Source language handling: {language_mode}")
@@ -1150,9 +1138,9 @@ with tab_new_analysis:
                     )
 
                 st.info(
-                    "The files are stored and registered. "
-                    "Extraction and group-level analysis are the next "
-                    "pipeline step."
+                    "The source files and manifest.json are stored in the "
+                    "attached Unity Catalog volume. Extraction and group-level "
+                    "analysis are the next pipeline step."
                 )
 
             except Exception as exc:
