@@ -1,13 +1,6 @@
-import base64
 import hashlib
-import json
 import os
-import re
-import time
 import uuid
-from urllib.parse import quote
-
-import requests
 import streamlit as st
 from neo4j import GraphDatabase
 from streamlit_cytoscape import (
@@ -19,16 +12,8 @@ from streamlit_cytoscape import (
 CASE_ID = "commodore_clipper_2010"
 GRAPH_VERSION = "CASE_GRAPH_V0.2"
 
-DATABRICKS_HOST = os.getenv("DATABRICKS_HOST")
-
-if DATABRICKS_HOST and not DATABRICKS_HOST.startswith(("http://", "https://")):
-    DATABRICKS_HOST = "https://" + DATABRICKS_HOST
-WAREHOUSE_ID = "372b5b52ba082619"
-SOURCE_VOLUME_PATH = os.getenv("SOURCE_VOLUME_PATH")
-ANALYSIS_GROUP_TABLE = "bdw_analysis_prod.kg_poc.analysis_group"
-ANALYSIS_DOCUMENT_TABLE = "bdw_analysis_prod.kg_poc.analysis_document"
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
-APP_BUILD = "2026-09-18-volume-resource-v1"
+APP_BUILD = "2026-09-18-document-library-v1"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -83,449 +68,6 @@ if missing_variables:
     st.stop()
 
 
-def get_user_access_token():
-    try:
-        return (
-            st.context.headers.get("x-forwarded-access-token")
-            or st.context.headers.get("X-Forwarded-Access-Token")
-        )
-    except Exception:
-        return None
-
-
-def get_user_token_diagnostics():
-    token = get_user_access_token()
-
-    result = {
-        "token_present": bool(token),
-        "scopes": [],
-        "expires_at": None,
-        "identity_status": None,
-        "identity_user": None,
-    }
-
-    if not token:
-        return result
-
-    # Decode JWT payload only for non-sensitive diagnostic claims.
-    # No token value is logged or displayed.
-    try:
-        parts = token.split(".")
-        if len(parts) >= 2:
-            payload = parts[1]
-            payload += "=" * (-len(payload) % 4)
-            claims = json.loads(
-                base64.urlsafe_b64decode(payload.encode("ascii"))
-                .decode("utf-8")
-            )
-
-            raw_scope = claims.get("scope") or claims.get("scp") or []
-            if isinstance(raw_scope, str):
-                result["scopes"] = sorted(
-                    s for s in raw_scope.replace(",", " ").split() if s
-                )
-            elif isinstance(raw_scope, list):
-                result["scopes"] = sorted(str(s) for s in raw_scope)
-
-            result["expires_at"] = claims.get("exp")
-    except Exception:
-        pass
-
-    try:
-        response = requests.get(
-            _api_url("/api/2.0/preview/scim/v2/Me"),
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=15,
-        )
-        result["identity_status"] = response.status_code
-
-        if response.ok:
-            data = response.json()
-            result["identity_user"] = (
-                data.get("userName")
-                or data.get("displayName")
-                or data.get("id")
-            )
-    except Exception as exc:
-        result["identity_status"] = f"ERROR: {type(exc).__name__}"
-
-    return result
-
-
-def _user_headers(content_type=None):
-    token = get_user_access_token()
-    if not token:
-        raise RuntimeError(
-            "User authorization token is unavailable. Configure the App "
-            "with the 'files' and 'sql' user authorization scopes, then "
-            "re-open the App and grant consent."
-        )
-
-    headers = {"Authorization": f"Bearer {token}"}
-    if content_type:
-        headers["Content-Type"] = content_type
-    return headers
-
-
-def _api_url(path):
-    if not DATABRICKS_HOST:
-        raise RuntimeError("DATABRICKS_HOST is unavailable in the App runtime.")
-
-    host = DATABRICKS_HOST.strip().rstrip("/")
-    if not host.startswith(("http://", "https://")):
-        host = "https://" + host
-
-    return f"{host}{path}"
-
-
-def execute_user_sql(statement, parameters=None):
-    payload = {
-        "warehouse_id": WAREHOUSE_ID,
-        "statement": statement,
-        "parameters": parameters or [],
-        "wait_timeout": "10s",
-        "on_wait_timeout": "CONTINUE",
-    }
-
-    response = requests.post(
-        _api_url("/api/2.0/sql/statements"),
-        headers=_user_headers("application/json"),
-        json=payload,
-        timeout=30,
-    )
-    response.raise_for_status()
-    data = response.json()
-
-    statement_id = data.get("statement_id")
-
-    for _ in range(60):
-        state = (data.get("status") or {}).get("state")
-
-        if state == "SUCCEEDED":
-            return data
-
-        if state in {"FAILED", "CANCELED", "CLOSED"}:
-            error = (data.get("status") or {}).get("error")
-            raise RuntimeError(
-                f"SQL statement ended with state {state}: {error}"
-            )
-
-        if not statement_id:
-            raise RuntimeError(
-                "Databricks SQL did not return a statement ID."
-            )
-
-        time.sleep(0.5)
-
-        poll = requests.get(
-            _api_url(f"/api/2.0/sql/statements/{statement_id}"),
-            headers=_user_headers(),
-            timeout=30,
-        )
-        poll.raise_for_status()
-        data = poll.json()
-
-    raise TimeoutError("Databricks SQL statement did not finish in time.")
-
-
-def sql_parameter(name, value, data_type=None):
-    item = {"name": name, "value": value}
-    if data_type:
-        item["type"] = data_type
-    return item
-
-
-def safe_source_filename(filename):
-    base = os.path.basename(filename or "document")
-    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._")
-    return cleaned or "document"
-
-
-def _raise_databricks_http_error(response, action):
-    if response.ok:
-        return
-
-    body = (response.text or "").strip()
-    if len(body) > 3000:
-        body = body[:3000] + "..."
-
-    scope_hint = ""
-    if response.status_code == 403:
-        scope_hint = (
-            " A 403 can mean that the forwarded user token has not been "
-            "granted/refreshed with the required OAuth scope, or that the "
-            "user lacks a required Unity Catalog privilege."
-        )
-
-    raise RuntimeError(
-        f"{action} failed with HTTP {response.status_code} "
-        f"{response.reason}.{scope_hint}\n"
-        f"Databricks response: {body or '<empty response body>'}"
-    )
-
-
-def check_volume_access():
-    path = SOURCE_VOLUME_PATH.rstrip("/") + "/"
-    encoded = quote(path, safe="/")
-    response = requests.head(
-        _api_url(f"/api/2.0/fs/directories{encoded}"),
-        headers=_user_headers(),
-        timeout=30,
-    )
-    _raise_databricks_http_error(
-        response,
-        "Volume access check",
-    )
-    return True
-
-
-def create_volume_directory(path):
-    encoded = quote(path, safe="/")
-    response = requests.put(
-        _api_url(f"/api/2.0/fs/directories{encoded}/"),
-        headers=_user_headers(),
-        timeout=30,
-    )
-    _raise_databricks_http_error(
-        response,
-        f"Create volume directory {path}",
-    )
-
-
-def upload_volume_file(path, file_bytes):
-    encoded = quote(path, safe="/")
-    response = requests.put(
-        _api_url(f"/api/2.0/fs/files{encoded}?overwrite=false"),
-        headers=_user_headers("application/octet-stream"),
-        data=file_bytes,
-        timeout=120,
-    )
-    _raise_databricks_http_error(
-        response,
-        f"Upload file {path}",
-    )
-
-
-def register_analysis_group(
-    analysis_id,
-    title,
-    objective,
-    creator,
-    document_count,
-    language_mode,
-    output_language,
-):
-    statement = f"""
-    INSERT INTO {ANALYSIS_GROUP_TABLE} (
-        analysis_id,
-        analysis_title,
-        analysis_objective,
-        created_by,
-        created_at,
-        status,
-        document_count,
-        pipeline_version,
-        graph_version,
-        error_message,
-        language_mode,
-        output_language
-    )
-    VALUES (
-        :analysis_id,
-        :analysis_title,
-        :analysis_objective,
-        :created_by,
-        current_timestamp(),
-        'UPLOADED',
-        :document_count,
-        :pipeline_version,
-        NULL,
-        NULL,
-        :language_mode,
-        :output_language
-    )
-    """
-
-    execute_user_sql(
-        statement,
-        [
-            sql_parameter("analysis_id", analysis_id),
-            sql_parameter("analysis_title", title),
-            sql_parameter("analysis_objective", objective or None),
-            sql_parameter("created_by", creator),
-            sql_parameter(
-                "document_count",
-                str(document_count),
-                "INT",
-            ),
-            sql_parameter("pipeline_version", PIPELINE_VERSION),
-            sql_parameter("language_mode", language_mode),
-            sql_parameter("output_language", output_language),
-        ],
-    )
-
-
-def register_analysis_document(
-    analysis_id,
-    document,
-    uploader,
-):
-    statement = f"""
-    INSERT INTO {ANALYSIS_DOCUMENT_TABLE} (
-        analysis_id,
-        document_id,
-        original_filename,
-        mime_type,
-        byte_size,
-        sha256,
-        storage_uri,
-        source_type,
-        page_count,
-        uploaded_by,
-        uploaded_at,
-        extraction_status,
-        extraction_version,
-        error_message
-    )
-    VALUES (
-        :analysis_id,
-        :document_id,
-        :original_filename,
-        :mime_type,
-        :byte_size,
-        :sha256,
-        :storage_uri,
-        :source_type,
-        NULL,
-        :uploaded_by,
-        current_timestamp(),
-        'PENDING',
-        NULL,
-        NULL
-    )
-    """
-
-    execute_user_sql(
-        statement,
-        [
-            sql_parameter("analysis_id", analysis_id),
-            sql_parameter("document_id", document["document_id"]),
-            sql_parameter(
-                "original_filename",
-                document["original_filename"],
-            ),
-            sql_parameter("mime_type", document["mime_type"]),
-            sql_parameter(
-                "byte_size",
-                str(document["byte_size"]),
-                "BIGINT",
-            ),
-            sql_parameter("sha256", document["sha256"]),
-            sql_parameter("storage_uri", document["storage_uri"]),
-            sql_parameter("source_type", document["source_type"]),
-            sql_parameter("uploaded_by", uploader),
-        ],
-    )
-
-
-def create_analysis(
-    title,
-    objective,
-    uploaded_files,
-    language_mode,
-    output_language,
-):
-    if not SOURCE_VOLUME_PATH:
-        raise RuntimeError(
-            "SOURCE_VOLUME_PATH is unavailable. Attach a UC volume "
-            "resource with key 'investigation_sources'."
-        )
-
-    identity = get_reviewer_identity()
-    uploader = (
-        identity["email"]
-        if identity["email"] != "unknown"
-        else identity["username"]
-    )
-
-    analysis_id = f"analysis_{uuid.uuid4().hex}"
-    analysis_directory = os.path.join(
-        SOURCE_VOLUME_PATH,
-        analysis_id,
-    )
-
-    os.makedirs(analysis_directory, exist_ok=False)
-
-    documents = []
-
-    for uploaded_file in uploaded_files:
-        file_bytes = uploaded_file.getvalue()
-        sha256 = hashlib.sha256(file_bytes).hexdigest()
-        document_id = f"doc_{sha256[:24]}"
-        filename = safe_source_filename(uploaded_file.name)
-        stored_filename = f"{document_id}_{filename}"
-        storage_uri = os.path.join(
-            analysis_directory,
-            stored_filename,
-        )
-
-        with open(storage_uri, "wb") as handle:
-            handle.write(file_bytes)
-
-        extension = os.path.splitext(filename)[1].lower().lstrip(".")
-        source_type = extension.upper() if extension else "UNKNOWN"
-
-        documents.append(
-            {
-                "document_id": document_id,
-                "original_filename": uploaded_file.name,
-                "stored_filename": stored_filename,
-                "mime_type": uploaded_file.type or None,
-                "byte_size": len(file_bytes),
-                "sha256": sha256,
-                "storage_uri": storage_uri,
-                "source_type": source_type,
-                "extraction_status": "PENDING",
-            }
-        )
-
-    manifest = {
-        "analysis_id": analysis_id,
-        "analysis_title": title,
-        "analysis_objective": objective or None,
-        "created_by": uploader,
-        "created_at_utc": time.strftime(
-            "%Y-%m-%dT%H:%M:%SZ",
-            time.gmtime(),
-        ),
-        "status": "UPLOADED",
-        "document_count": len(documents),
-        "pipeline_version": PIPELINE_VERSION,
-        "language_mode": language_mode,
-        "output_language": output_language,
-        "documents": documents,
-    }
-
-    manifest_path = os.path.join(
-        analysis_directory,
-        "manifest.json",
-    )
-
-    with open(
-        manifest_path,
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(
-            manifest,
-            handle,
-            ensure_ascii=False,
-            indent=2,
-        )
-
-    return analysis_id, documents
-
-
 @st.cache_resource
 def get_driver():
     driver = GraphDatabase.driver(
@@ -534,6 +76,120 @@ def get_driver():
     )
     driver.verify_connectivity()
     return driver
+
+
+@st.cache_data(ttl=30)
+def load_source_documents():
+    query = """
+    MATCH (d:SourceDocument)
+    RETURN
+        d.document_id AS document_id,
+        d.filename AS filename,
+        d.volume_path AS volume_path,
+        d.relative_path AS relative_path,
+        d.source_type AS source_type,
+        d.byte_size AS byte_size,
+        d.sha256 AS sha256,
+        d.detected_language AS detected_language,
+        toString(d.indexed_at) AS indexed_at
+    ORDER BY d.filename, d.volume_path
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(query)
+        ]
+
+
+def create_analysis_from_documents(
+    title,
+    objective,
+    selected_document_ids,
+    language_mode,
+    output_language,
+):
+    reviewer = get_reviewer_identity()
+
+    creator = (
+        reviewer["email"]
+        if reviewer["email"] != "unknown"
+        else reviewer["username"]
+    )
+
+    analysis_id = f"analysis_{uuid.uuid4().hex}"
+
+    query = """
+    CREATE (a:AnalysisGroup {
+        analysis_id: $analysis_id,
+        analysis_title: $analysis_title,
+        analysis_objective: $analysis_objective,
+        language_mode: $language_mode,
+        output_language: $output_language,
+        status: 'PENDING_PROCESSING',
+        created_by: $created_by,
+        created_at: datetime(),
+        pipeline_version: $pipeline_version
+    })
+    WITH a
+    UNWIND $document_ids AS document_id
+    MATCH (d:SourceDocument {document_id: document_id})
+    MERGE (a)-[:HAS_SOURCE]->(d)
+    WITH a, count(d) AS linked_documents
+    SET a.document_count = linked_documents
+    RETURN
+        a.analysis_id AS analysis_id,
+        linked_documents
+    """
+
+    params = {
+        "analysis_id": analysis_id,
+        "analysis_title": title,
+        "analysis_objective": objective or None,
+        "language_mode": language_mode,
+        "output_language": output_language,
+        "created_by": creator,
+        "pipeline_version": PIPELINE_VERSION,
+        "document_ids": selected_document_ids,
+    }
+
+    with get_driver().session() as session:
+        record = session.run(query, **params).single()
+
+    if not record:
+        raise RuntimeError("Neo4j did not return the created analysis.")
+
+    if record["linked_documents"] != len(selected_document_ids):
+        raise RuntimeError(
+            "The analysis was created, but not all selected documents "
+            "could be linked. Refresh the document index and try again."
+        )
+
+    return record["analysis_id"], record["linked_documents"]
+
+
+@st.cache_data(ttl=30)
+def load_recent_analyses():
+    query = """
+    MATCH (a:AnalysisGroup)
+    OPTIONAL MATCH (a)-[:HAS_SOURCE]->(d:SourceDocument)
+    RETURN
+        a.analysis_id AS analysis_id,
+        a.analysis_title AS analysis_title,
+        a.status AS status,
+        a.output_language AS output_language,
+        a.created_by AS created_by,
+        toString(a.created_at) AS created_at,
+        count(d) AS document_count
+    ORDER BY a.created_at DESC
+    LIMIT 20
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(query)
+        ]
 
 
 @st.cache_data(ttl=60)
@@ -1009,19 +665,47 @@ tab_new_analysis, tab_graph, tab_review, tab_mapping_review, tab_about = st.tabs
 with tab_new_analysis:
     st.subheader("New document-group analysis")
     st.caption(
-        "Create one analysis from a group of source documents. "
-        "Each source remains individually traceable inside the group."
+        "Select any combination of documents already indexed from your "
+        "Unity Catalog volume. The App stores only the analysis definition "
+        "and document links in Neo4j; it does not need access to the files."
     )
 
-    if SOURCE_VOLUME_PATH:
+    try:
+        source_documents = load_source_documents()
+    except Exception as exc:
+        source_documents = []
+        st.error("The document catalogue could not be loaded from Neo4j.")
+        st.exception(exc)
+
+    if source_documents:
         st.success(
-            "Persistent source volume is attached to the App."
+            f"{len(source_documents)} indexed source document(s) available."
         )
-        st.caption(f"Storage: {SOURCE_VOLUME_PATH}")
     else:
-        st.error(
-            "No source volume is attached. Add a UC volume resource with "
-            "resource key 'investigation_sources' and redeploy the App."
+        st.warning(
+            "No indexed source documents are available yet. Run notebook "
+            "14_index_volume_documents_to_neo4j.py after placing documents "
+            "in your Unity Catalog volume."
+        )
+
+    documents_by_id = {
+        document["document_id"]: document
+        for document in source_documents
+    }
+
+    def source_document_label(document_id):
+        document = documents_by_id[document_id]
+        relative = (
+            document.get("relative_path")
+            or document.get("volume_path")
+            or ""
+        )
+        source_type = document.get("source_type") or "FILE"
+        language = document.get("detected_language") or "language pending"
+
+        return (
+            f"{document['filename']} · {source_type} · "
+            f"{language} · {relative}"
         )
 
     with st.form(
@@ -1030,15 +714,26 @@ with tab_new_analysis:
     ):
         analysis_title = st.text_input(
             "Analysis title",
-            placeholder="e.g. Fire investigation evidence set",
+            placeholder="e.g. Engine-room fire evidence set",
         )
 
         analysis_objective = st.text_area(
             "Analysis objective or question",
             placeholder=(
-                "Optional. Describe what you want the group analysed for. "
-                "This will later guide the analytical extraction, but it "
-                "does not alter source evidence."
+                "Optional. State the analytical objective. This guides "
+                "later extraction and synthesis but never changes the "
+                "underlying source evidence."
+            ),
+        )
+
+        selected_document_ids = st.multiselect(
+            "Available documents",
+            options=list(documents_by_id),
+            format_func=source_document_label,
+            help=(
+                "Select all documents that should be treated as one "
+                "analysis group. The same source document may be reused "
+                "in more than one analysis."
             ),
         )
 
@@ -1047,10 +742,9 @@ with tab_new_analysis:
             options=SUPPORTED_LANGUAGES,
             index=0,
             help=(
-                "Choose Auto-detect when the group may contain documents "
-                "in different languages. Original-language evidence will be "
-                "preserved; language detection and optional translation are "
-                "handled later in the extraction pipeline."
+                "Use auto-detect when the selected documents may use "
+                "different languages. Original-language evidence is always "
+                "preserved."
             ),
         )
 
@@ -1073,80 +767,75 @@ with tab_new_analysis:
                 "Greek",
             ],
             index=0,
-            help=(
-                "This controls the language used for future summaries and "
-                "analytical explanations. Source evidence remains in its "
-                "original language."
-            ),
-        )
-
-        uploaded_files = st.file_uploader(
-            "Source documents",
-            type=["pdf", "docx", "txt"],
-            accept_multiple_files=True,
-            help=(
-                "Upload all documents that belong to one analysis group. "
-                "PDF, DOCX and TXT are accepted for registration; "
-                "extraction support will be added in the next step."
-            ),
         )
 
         create_submitted = st.form_submit_button(
             "Create analysis",
             type="primary",
-            disabled=not bool(SOURCE_VOLUME_PATH),
+            disabled=not bool(source_documents),
         )
 
     if create_submitted:
         if not analysis_title.strip():
             st.error("Enter an analysis title.")
-        elif not uploaded_files:
-            st.error("Upload at least one source document.")
+        elif not selected_document_ids:
+            st.error("Select at least one source document.")
         else:
             try:
-                with st.spinner(
-                    "Creating analysis and storing source documents..."
-                ):
-                    analysis_id, registered_documents = create_analysis(
+                analysis_id, linked_documents = (
+                    create_analysis_from_documents(
                         title=analysis_title.strip(),
                         objective=analysis_objective.strip(),
-                        uploaded_files=uploaded_files,
+                        selected_document_ids=selected_document_ids,
                         language_mode=language_mode,
                         output_language=output_language,
                     )
+                )
+
+                load_recent_analyses.clear()
 
                 st.success(
                     f"Analysis created: {analysis_id}"
                 )
-
-                st.session_state["last_created_analysis_id"] = (
-                    analysis_id
-                )
-
                 st.write(
-                    f"Stored {len(registered_documents)} source "
-                    "document(s)."
+                    f"Linked source documents: {linked_documents}"
                 )
-                st.write(f"Source language handling: {language_mode}")
-                st.write(f"Analysis output language: {output_language}")
-
-                for document in registered_documents:
-                    st.write(
-                        "• "
-                        f"{document['original_filename']} "
-                        f"→ {document['document_id']}"
-                    )
-
+                st.write(
+                    f"Source language handling: {language_mode}"
+                )
+                st.write(
+                    f"Analysis output language: {output_language}"
+                )
                 st.info(
-                    "The source files and manifest.json are stored in the "
-                    "attached Unity Catalog volume. Extraction and group-level "
-                    "analysis are the next pipeline step."
+                    "Status: PENDING_PROCESSING. The processing notebook "
+                    "can now resolve the selected volume paths and extract "
+                    "the document group under your Databricks identity."
                 )
 
             except Exception as exc:
                 st.error("The analysis could not be created.")
                 st.exception(exc)
 
+    st.divider()
+    st.markdown("**Recent analyses**")
+
+    try:
+        recent_analyses = load_recent_analyses()
+        if recent_analyses:
+            for analysis in recent_analyses:
+                st.write(
+                    f"{analysis['analysis_title']} · "
+                    f"{analysis['document_count']} document(s) · "
+                    f"{analysis['status']} · "
+                    f"{analysis['analysis_id']}"
+                )
+        else:
+            st.caption("No analysis groups have been created yet.")
+    except Exception as exc:
+        st.caption(
+            "Recent analyses could not be loaded."
+        )
+        st.exception(exc)
 
 with tab_graph:
     st.subheader("Commodore Clipper reference demonstrator")
