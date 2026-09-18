@@ -19,6 +19,16 @@ dbutils.widgets.text(
     "Document library root",
 )
 
+# COMMAND ----------
+
+# MAGIC %pip install neo4j==6.3.1
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
 library_root = dbutils.widgets.get("library_root").strip().rstrip("/")
 
 if not library_root.startswith("/Volumes/"):
@@ -28,14 +38,6 @@ if not library_root.startswith("/Volumes/"):
     )
 
 print("Document library:", library_root)
-
-# COMMAND ----------
-
-# MAGIC %pip install neo4j==6.3.1
-
-# COMMAND ----------
-
-dbutils.library.restartPython()
 
 # COMMAND ----------
 
