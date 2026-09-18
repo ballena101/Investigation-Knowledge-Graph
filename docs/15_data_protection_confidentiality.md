@@ -672,3 +672,121 @@ assessment must confirm the permitted processing path for:
 - data residency/transfers;
 - vendor/subprocessor arrangements.
 
+
+
+## 13. In-App compliance and AI disclosure
+
+The Databricks App must display a visible disclosure covering legal alignment,
+information classification and AI/model use.
+
+### 13.1 Directive conformity statement
+
+The App must use the following status wording:
+
+**PoC design-aligned / conditionally aligned — not a legal certification of
+compliance.**
+
+This wording is deliberate. The technical design implements safeguards intended
+to support Article 9 of Directive 2009/18/EC, as amended by Directive (EU)
+2024/3017, but legal conformity also depends on matters outside the software
+itself, including:
+
+- the legal purpose of each processing activity;
+- the competent authority's disclosure/public-interest decisions;
+- organisational information classification;
+- user/service-principal permissions;
+- approved storage and processing locations;
+- model/service approval;
+- processor/subprocessor and contractual terms;
+- data retention/deletion;
+- applicable GDPR obligations.
+
+The App must therefore distinguish:
+
+- **design alignment**: controls implemented in the software architecture;
+- **conditional operational conformity**: possible only when the authorised
+  organisational/legal processing path is confirmed;
+- **legal certification**: not claimed by this PoC.
+
+### 13.2 Article 9 safeguards reflected in the App
+
+The App disclosure explains that the design supports Article 9 confidentiality
+through:
+
+- governed Databricks source storage;
+- least-privilege access design;
+- preservation of source provenance;
+- separation of evidence from model-generated analysis;
+- avoidance of direct raw-volume access by the App where not needed;
+- graph references/authorised derivatives rather than unrestricted raw evidence
+  replication;
+- logging minimisation;
+- prohibition on treating technical model access as permission to process
+  protected investigation material.
+
+### 13.3 Information classes shown to the user
+
+The App displays four operational information classes:
+
+- **Class A — Code / public technical documentation**
+- **Class B — Published / non-sensitive investigation material**
+- **Class C — Internal analytical derivatives**
+- **Class D — Confidential / protected investigation material**
+
+Class D includes, in particular, material corresponding to Article 9 protected
+records such as witness statements, identities, sensitive/private information,
+investigator notes/opinions, draft reports, operational communications, VTS
+material and VDR/S-VDR material.
+
+Class D is **not authorised for LLM processing by default**.
+
+### 13.4 Exact model disclosure
+
+The App must display the exact Databricks model-service identifier for every
+analysis.
+
+Current default:
+
+`system.ai.gpt-5-6-sol`
+
+The selected model service is:
+
+1. selected/displayed in the App;
+2. stored on the AnalysisGroup as `requested_model_service`;
+3. passed as a Lakeflow Job parameter;
+4. consumed by the analysis notebook;
+5. recorded after execution as the effective `model_service`;
+6. displayed again with the completed result.
+
+This prevents a hidden model default from differing from what the investigator
+believes was used.
+
+### 13.5 Applicable AI/model policy
+
+For the current default OpenAI GPT-5.6 Sol model service, the App states that
+use is governed by:
+
+1. the organisation's Databricks agreement;
+2. Databricks Model Serving / Foundation Model API data-protection and
+   retention terms;
+3. Databricks' applicable model terms for OpenAI GPT-5.6 Sol;
+4. OpenAI Usage Policy;
+5. OpenAI high-risk use-case mitigation requirements.
+
+Relevant Databricks references:
+
+- https://docs.databricks.com/aws/en/machine-learning/model-serving
+- https://docs.databricks.com/aws/en/machine-learning/foundation-model-apis/compliance
+- https://docs.databricks.com/aws/en/machine-learning/model-serving/acceptable-use-models
+- https://docs.databricks.com/aws/en/ai-gateway/model-services
+
+Databricks documents that Model Serving requests are logically isolated,
+authenticated and authorised, and encrypted in transit and at rest. For paid
+accounts, Databricks states that inputs/outputs submitted to Model Serving are
+not used to train models or improve Databricks services. Foundation Model APIs
+may temporarily process/store inputs and outputs for abuse/security purposes,
+subject to the documented retention conditions.
+
+These platform assurances do **not** by themselves authorise Article 9
+protected material for LLM processing. The Class D approval rule remains in
+force.
