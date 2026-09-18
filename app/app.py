@@ -13,7 +13,8 @@ CASE_ID = "commodore_clipper_2010"
 GRAPH_VERSION = "CASE_GRAPH_V0.2"
 
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
-APP_BUILD = "2026-09-18-document-library-v1"
+MAX_DOCUMENTS_PER_ANALYSIS = 5
+APP_BUILD = "2026-09-18-document-library-v2"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -729,14 +730,19 @@ with tab_new_analysis:
             ),
         )
 
+        st.caption(
+            f"Maximum documents per analysis: {MAX_DOCUMENTS_PER_ANALYSIS}"
+        )
+
         selected_document_ids = st.multiselect(
             "Available documents",
             options=list(documents_by_id),
             format_func=source_document_label,
+            max_selections=MAX_DOCUMENTS_PER_ANALYSIS,
             help=(
-                "Select all documents that should be treated as one "
-                "analysis group. The same source document may be reused "
-                "in more than one analysis."
+                "Select between 1 and 5 documents to analyse together. "
+                "The same source document may be reused in more than one "
+                "analysis."
             ),
         )
 
@@ -783,6 +789,10 @@ with tab_new_analysis:
             st.error("Enter an analysis title.")
         elif not selected_document_ids:
             st.error("Select at least one source document.")
+        elif len(selected_document_ids) > MAX_DOCUMENTS_PER_ANALYSIS:
+            st.error(
+                f"Select no more than {MAX_DOCUMENTS_PER_ANALYSIS} documents."
+            )
         else:
             try:
                 analysis_id, linked_documents = (
