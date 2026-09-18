@@ -70,6 +70,10 @@ job_settings = {
         {
             "name": "analysis_id",
             "default": "analysis_NOT_SET",
+        },
+        {
+            "name": "model_service",
+            "default": "system.ai.gpt-5-6-sol",
         }
     ],
     "tasks": [
