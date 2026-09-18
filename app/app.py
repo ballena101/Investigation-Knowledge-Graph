@@ -1,7 +1,11 @@
 import hashlib
 import os
+import re
+import time
 import uuid
+from urllib.parse import quote
 
+import requests
 import streamlit as st
 from neo4j import GraphDatabase
 from streamlit_cytoscape import (
@@ -13,15 +17,24 @@ from streamlit_cytoscape import (
 CASE_ID = "commodore_clipper_2010"
 GRAPH_VERSION = "CASE_GRAPH_V0.2"
 
+DATABRICKS_HOST = os.getenv("DATABRICKS_HOST")
+WAREHOUSE_ID = "372b5b52ba082619"
+SOURCE_VOLUME_PATH = (
+    "/Volumes/bdw_analysis_prod/kg_poc/investigation_sources"
+)
+ANALYSIS_GROUP_TABLE = "bdw_analysis_prod.kg_poc.analysis_group"
+ANALYSIS_DOCUMENT_TABLE = "bdw_analysis_prod.kg_poc.analysis_document"
+PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
+
 st.set_page_config(
-    page_title="Commodore Clipper Knowledge Graph",
+    page_title="Investigation Knowledge Graph",
     page_icon="🔗",
     layout="wide",
 )
 
-st.title("Commodore Clipper Knowledge Graph")
+st.title("Investigation Knowledge Graph")
 st.caption(
-    "Evidence-grounded knowledge graph and investigator review workspace."
+    "Create document-group analyses and review evidence-grounded investigation graphs."
 )
 
 NEO4J_URI = os.getenv("NEO4J_URI")
@@ -44,6 +57,294 @@ if missing_variables:
         + ", ".join(missing_variables)
     )
     st.stop()
+
+
+def get_user_access_token():
+    try:
+        return (
+            st.context.headers.get("x-forwarded-access-token")
+            or st.context.headers.get("X-Forwarded-Access-Token")
+        )
+    except Exception:
+        return None
+
+
+def _user_headers(content_type=None):
+    token = get_user_access_token()
+    if not token:
+        raise RuntimeError(
+            "User authorization token is unavailable. Configure the App "
+            "with the 'files' and 'sql' user authorization scopes, then "
+            "re-open the App and grant consent."
+        )
+
+    headers = {"Authorization": f"Bearer {token}"}
+    if content_type:
+        headers["Content-Type"] = content_type
+    return headers
+
+
+def _api_url(path):
+    if not DATABRICKS_HOST:
+        raise RuntimeError("DATABRICKS_HOST is unavailable in the App runtime.")
+    return f"{DATABRICKS_HOST.rstrip('/')}{path}"
+
+
+def execute_user_sql(statement, parameters=None):
+    payload = {
+        "warehouse_id": WAREHOUSE_ID,
+        "statement": statement,
+        "parameters": parameters or [],
+        "wait_timeout": "10s",
+        "on_wait_timeout": "CONTINUE",
+    }
+
+    response = requests.post(
+        _api_url("/api/2.0/sql/statements"),
+        headers=_user_headers("application/json"),
+        json=payload,
+        timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    statement_id = data.get("statement_id")
+
+    for _ in range(60):
+        state = (data.get("status") or {}).get("state")
+
+        if state == "SUCCEEDED":
+            return data
+
+        if state in {"FAILED", "CANCELED", "CLOSED"}:
+            error = (data.get("status") or {}).get("error")
+            raise RuntimeError(
+                f"SQL statement ended with state {state}: {error}"
+            )
+
+        if not statement_id:
+            raise RuntimeError(
+                "Databricks SQL did not return a statement ID."
+            )
+
+        time.sleep(0.5)
+
+        poll = requests.get(
+            _api_url(f"/api/2.0/sql/statements/{statement_id}"),
+            headers=_user_headers(),
+            timeout=30,
+        )
+        poll.raise_for_status()
+        data = poll.json()
+
+    raise TimeoutError("Databricks SQL statement did not finish in time.")
+
+
+def sql_parameter(name, value, data_type=None):
+    item = {"name": name, "value": value}
+    if data_type:
+        item["type"] = data_type
+    return item
+
+
+def safe_source_filename(filename):
+    base = os.path.basename(filename or "document")
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._")
+    return cleaned or "document"
+
+
+def create_volume_directory(path):
+    encoded = quote(path, safe="/")
+    response = requests.put(
+        _api_url(f"/api/2.0/fs/directories{encoded}/"),
+        headers=_user_headers(),
+        timeout=30,
+    )
+    response.raise_for_status()
+
+
+def upload_volume_file(path, file_bytes):
+    encoded = quote(path, safe="/")
+    response = requests.put(
+        _api_url(f"/api/2.0/fs/files{encoded}?overwrite=false"),
+        headers=_user_headers("application/octet-stream"),
+        data=file_bytes,
+        timeout=120,
+    )
+    response.raise_for_status()
+
+
+def register_analysis_group(
+    analysis_id,
+    title,
+    objective,
+    creator,
+    document_count,
+):
+    statement = f"""
+    INSERT INTO {ANALYSIS_GROUP_TABLE} (
+        analysis_id,
+        analysis_title,
+        analysis_objective,
+        created_by,
+        created_at,
+        status,
+        document_count,
+        pipeline_version,
+        graph_version,
+        error_message
+    )
+    VALUES (
+        :analysis_id,
+        :analysis_title,
+        :analysis_objective,
+        :created_by,
+        current_timestamp(),
+        'UPLOADED',
+        :document_count,
+        :pipeline_version,
+        NULL,
+        NULL
+    )
+    """
+
+    execute_user_sql(
+        statement,
+        [
+            sql_parameter("analysis_id", analysis_id),
+            sql_parameter("analysis_title", title),
+            sql_parameter("analysis_objective", objective or None),
+            sql_parameter("created_by", creator),
+            sql_parameter(
+                "document_count",
+                str(document_count),
+                "INT",
+            ),
+            sql_parameter("pipeline_version", PIPELINE_VERSION),
+        ],
+    )
+
+
+def register_analysis_document(
+    analysis_id,
+    document,
+    uploader,
+):
+    statement = f"""
+    INSERT INTO {ANALYSIS_DOCUMENT_TABLE} (
+        analysis_id,
+        document_id,
+        original_filename,
+        mime_type,
+        byte_size,
+        sha256,
+        storage_uri,
+        source_type,
+        page_count,
+        uploaded_by,
+        uploaded_at,
+        extraction_status,
+        extraction_version,
+        error_message
+    )
+    VALUES (
+        :analysis_id,
+        :document_id,
+        :original_filename,
+        :mime_type,
+        :byte_size,
+        :sha256,
+        :storage_uri,
+        :source_type,
+        NULL,
+        :uploaded_by,
+        current_timestamp(),
+        'PENDING',
+        NULL,
+        NULL
+    )
+    """
+
+    execute_user_sql(
+        statement,
+        [
+            sql_parameter("analysis_id", analysis_id),
+            sql_parameter("document_id", document["document_id"]),
+            sql_parameter(
+                "original_filename",
+                document["original_filename"],
+            ),
+            sql_parameter("mime_type", document["mime_type"]),
+            sql_parameter(
+                "byte_size",
+                str(document["byte_size"]),
+                "BIGINT",
+            ),
+            sql_parameter("sha256", document["sha256"]),
+            sql_parameter("storage_uri", document["storage_uri"]),
+            sql_parameter("source_type", document["source_type"]),
+            sql_parameter("uploaded_by", uploader),
+        ],
+    )
+
+
+def create_analysis(title, objective, uploaded_files):
+    identity = get_reviewer_identity()
+    uploader = (
+        identity["email"]
+        if identity["email"] != "unknown"
+        else identity["username"]
+    )
+
+    analysis_id = f"analysis_{uuid.uuid4().hex}"
+    analysis_directory = f"{SOURCE_VOLUME_PATH}/{analysis_id}"
+
+    create_volume_directory(analysis_directory)
+
+    documents = []
+
+    for uploaded_file in uploaded_files:
+        file_bytes = uploaded_file.getvalue()
+        sha256 = hashlib.sha256(file_bytes).hexdigest()
+        document_id = f"doc_{sha256[:24]}"
+        filename = safe_source_filename(uploaded_file.name)
+        storage_uri = (
+            f"{analysis_directory}/{document_id}_{filename}"
+        )
+
+        upload_volume_file(storage_uri, file_bytes)
+
+        extension = os.path.splitext(filename)[1].lower().lstrip(".")
+        source_type = extension.upper() if extension else "UNKNOWN"
+
+        documents.append(
+            {
+                "document_id": document_id,
+                "original_filename": uploaded_file.name,
+                "mime_type": uploaded_file.type or None,
+                "byte_size": len(file_bytes),
+                "sha256": sha256,
+                "storage_uri": storage_uri,
+                "source_type": source_type,
+            }
+        )
+
+    register_analysis_group(
+        analysis_id=analysis_id,
+        title=title,
+        objective=objective,
+        creator=uploader,
+        document_count=len(documents),
+    )
+
+    for document in documents:
+        register_analysis_document(
+            analysis_id=analysis_id,
+            document=document,
+            uploader=uploader,
+        )
+
+    return analysis_id, documents
 
 
 @st.cache_resource
@@ -516,16 +817,122 @@ edge_styles = [
     ),
 ]
 
-tab_graph, tab_review, tab_mapping_review, tab_about = st.tabs(
+tab_new_analysis, tab_graph, tab_review, tab_mapping_review, tab_about = st.tabs(
     [
-        "Knowledge graph",
+        "New analysis",
+        "Reference graph",
         "Relationship review",
         "EMCIP mapping review",
         "About",
     ]
 )
 
+with tab_new_analysis:
+    st.subheader("New document-group analysis")
+    st.caption(
+        "Create one analysis from a group of source documents. "
+        "Each source remains individually traceable inside the group."
+    )
+
+    if not get_user_access_token():
+        st.warning(
+            "User authorization is not active yet. The App needs the "
+            "'files' and 'sql' scopes before it can store uploads and "
+            "register analysis metadata."
+        )
+    else:
+        st.success(
+            "User authorization is active for this App session."
+        )
+
+    with st.form(
+        "new_analysis_form",
+        clear_on_submit=False,
+    ):
+        analysis_title = st.text_input(
+            "Analysis title",
+            placeholder="e.g. Fire investigation evidence set",
+        )
+
+        analysis_objective = st.text_area(
+            "Analysis objective or question",
+            placeholder=(
+                "Optional. Describe what you want the group analysed for. "
+                "This will later guide the analytical extraction, but it "
+                "does not alter source evidence."
+            ),
+        )
+
+        uploaded_files = st.file_uploader(
+            "Source documents",
+            type=["pdf", "docx", "txt"],
+            accept_multiple_files=True,
+            help=(
+                "Upload all documents that belong to one analysis group. "
+                "PDF, DOCX and TXT are accepted for registration; "
+                "extraction support will be added in the next step."
+            ),
+        )
+
+        create_submitted = st.form_submit_button(
+            "Create analysis",
+            type="primary",
+            disabled=not bool(get_user_access_token()),
+        )
+
+    if create_submitted:
+        if not analysis_title.strip():
+            st.error("Enter an analysis title.")
+        elif not uploaded_files:
+            st.error("Upload at least one source document.")
+        else:
+            try:
+                with st.spinner(
+                    "Creating analysis and storing source documents..."
+                ):
+                    analysis_id, registered_documents = create_analysis(
+                        title=analysis_title.strip(),
+                        objective=analysis_objective.strip(),
+                        uploaded_files=uploaded_files,
+                    )
+
+                st.success(
+                    f"Analysis created: {analysis_id}"
+                )
+
+                st.session_state["last_created_analysis_id"] = (
+                    analysis_id
+                )
+
+                st.write(
+                    f"Registered {len(registered_documents)} source "
+                    "document(s)."
+                )
+
+                for document in registered_documents:
+                    st.write(
+                        "• "
+                        f"{document['original_filename']} "
+                        f"→ {document['document_id']}"
+                    )
+
+                st.info(
+                    "The files are stored and registered. "
+                    "Extraction and group-level analysis are the next "
+                    "pipeline step."
+                )
+
+            except Exception as exc:
+                st.error("The analysis could not be created.")
+                st.exception(exc)
+
+
 with tab_graph:
+    st.subheader("Commodore Clipper reference demonstrator")
+    st.caption(
+        "The existing controlled case remains available while the generic "
+        "document-group workflow is being implemented."
+    )
     c1, c2, c3 = st.columns(3)
     c1.metric("Nodes", len(nodes))
     c2.metric("Relationships", len(edges))
