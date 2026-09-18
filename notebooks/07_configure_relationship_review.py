@@ -8,13 +8,46 @@
 # MAGIC - one SQL warehouse resource with CAN_USE;
 # MAGIC - the relationship review table with MODIFY.
 # MAGIC
+# MAGIC This notebook requires a recent Databricks SDK because table resources for Databricks Apps are not present in the older 0.67.0 model.
+# MAGIC
 # MAGIC The app continues to use Neo4j only for graph projection. Human review is stored in Delta / Unity Catalog.
 
 # COMMAND ----------
 
+# MAGIC %pip install databricks-sdk==0.139.0
+
+# COMMAND ----------
+
+# MAGIC %restart_python
+
+# COMMAND ----------
+
+import importlib.metadata
+
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.apps import (
+    AppResourceUcSecurableUcSecurablePermission,
+    AppResourceUcSecurableUcSecurableType,
+)
+
+print("databricks-sdk version:", importlib.metadata.version("databricks-sdk"))
+print(
+    "TABLE supported:",
+    hasattr(AppResourceUcSecurableUcSecurableType, "TABLE"),
+)
+print(
+    "MODIFY supported:",
+    hasattr(AppResourceUcSecurableUcSecurablePermission, "MODIFY"),
+)
+
+if not hasattr(AppResourceUcSecurableUcSecurableType, "TABLE"):
+    raise RuntimeError("Installed Databricks SDK does not support TABLE app resources.")
+if not hasattr(AppResourceUcSecurableUcSecurablePermission, "MODIFY"):
+    raise RuntimeError("Installed Databricks SDK does not support MODIFY app resources.")
 
 w = WorkspaceClient()
+
+# COMMAND ----------
 
 warehouse_rows = [
     (
@@ -34,20 +67,7 @@ display(
 
 # COMMAND ----------
 
-# Enter the warehouse ID from the table above in the widget.
-dbutils.widgets.text("warehouse_id", "")
-WAREHOUSE_ID = dbutils.widgets.get("warehouse_id").strip()
-
-if not WAREHOUSE_ID:
-    raise ValueError(
-        "Set the warehouse_id widget to the SQL warehouse you want the app to use, "
-        "then rerun this cell."
-    )
-
-print("Selected warehouse:", WAREHOUSE_ID)
-
-# COMMAND ----------
-
+WAREHOUSE_ID = "372b5b52ba082619"
 REVIEW_TABLE = "bdw_analysis_prod.kg_poc.relationship_human_review"
 
 spark.sql("""
@@ -79,6 +99,7 @@ USING DELTA
 """)
 
 print("Review table ready:", REVIEW_TABLE)
+print("Warehouse:", WAREHOUSE_ID)
 
 # COMMAND ----------
 
