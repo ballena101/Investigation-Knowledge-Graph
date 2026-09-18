@@ -90,7 +90,10 @@ def load_source_documents():
         d.source_type AS source_type,
         d.byte_size AS byte_size,
         d.sha256 AS sha256,
-        d.detected_language AS detected_language,
+        coalesce(
+            properties(d)["detected_language"],
+            "PENDING"
+        ) AS detected_language,
         toString(d.indexed_at) AS indexed_at
     ORDER BY d.filename, d.volume_path
     """
