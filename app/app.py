@@ -1,11 +1,7 @@
 import os
-import re
-import time
 import uuid
 
 import streamlit as st
-from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.sql import StatementParameterListItem
 from neo4j import GraphDatabase
 from streamlit_cytoscape import (
     streamlit_cytoscape,
@@ -31,10 +27,7 @@ NEO4J_URI = os.getenv("NEO4J_URI")
 NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
-WAREHOUSE_ID = os.getenv("DATABRICKS_WAREHOUSE_ID")
-RELATIONSHIP_REVIEW_TABLE = os.getenv("RELATIONSHIP_REVIEW_TABLE")
-
-missing_graph_variables = [
+missing_variables = [
     name
     for name, value in {
         "NEO4J_URI": NEO4J_URI,
@@ -44,31 +37,12 @@ missing_graph_variables = [
     if not value
 ]
 
-if missing_graph_variables:
+if missing_variables:
     st.error(
         "Missing Databricks App environment variables: "
-        + ", ".join(missing_graph_variables)
+        + ", ".join(missing_variables)
     )
     st.stop()
-
-
-def valid_uc_table_name(value: str | None) -> bool:
-    if not value:
-        return False
-    return bool(
-        re.fullmatch(
-            r"[A-Za-z_][A-Za-z0-9_]*\."
-            r"[A-Za-z_][A-Za-z0-9_]*\."
-            r"[A-Za-z_][A-Za-z0-9_]*",
-            value,
-        )
-    )
-
-
-REVIEW_ENABLED = bool(
-    WAREHOUSE_ID
-    and valid_uc_table_name(RELATIONSHIP_REVIEW_TABLE)
-)
 
 
 @st.cache_resource
@@ -79,11 +53,6 @@ def get_driver():
     )
     driver.verify_connectivity()
     return driver
-
-
-@st.cache_resource
-def get_workspace_client():
-    return WorkspaceClient()
 
 
 @st.cache_data(ttl=60)
@@ -120,40 +89,6 @@ def load_graph():
         ]
 
 
-def state_name(response) -> str:
-    state = getattr(getattr(response, "status", None), "state", None)
-    if state is None:
-        return "UNKNOWN"
-    return getattr(state, "value", str(state)).upper()
-
-
-def execute_sql(statement: str, parameters=None):
-    response = get_workspace_client().statement_execution.execute_statement(
-        warehouse_id=WAREHOUSE_ID,
-        statement=statement,
-        parameters=parameters or [],
-        wait_timeout="10s",
-    )
-
-    for _ in range(60):
-        state = state_name(response)
-        if state not in {"PENDING", "RUNNING"}:
-            break
-        time.sleep(0.5)
-        response = get_workspace_client().statement_execution.get_statement(
-            response.statement_id
-        )
-
-    state = state_name(response)
-    if state != "SUCCEEDED":
-        error = getattr(getattr(response, "status", None), "error", None)
-        raise RuntimeError(
-            f"Databricks SQL statement finished with state {state}: {error}"
-        )
-
-    return response
-
-
 def get_reviewer_identity():
     try:
         headers = st.context.headers
@@ -176,13 +111,6 @@ def get_reviewer_identity():
         }
 
 
-def sql_param(name: str, value):
-    return StatementParameterListItem(
-        name=name,
-        value=None if value is None else str(value),
-    )
-
-
 def save_relationship_review(
     edge,
     decision: str,
@@ -197,92 +125,85 @@ def save_relationship_review(
         "AMENDED": "HUMAN_AMENDED",
     }
 
-    statement = f"""
-    INSERT INTO {RELATIONSHIP_REVIEW_TABLE} (
-        review_id,
-        case_id,
-        graph_version,
+    review_id = str(uuid.uuid4())
+
+    query = """
+    MATCH (source:KGNode {node_id: $source_node_id})
+    MATCH (target:KGNode {node_id: $target_node_id})
+    CREATE (review:RelationshipReview {
+        review_id: $review_id,
+        case_id: $case_id,
+        graph_version: $graph_version,
+        edge_id: $edge_id,
+        source_node_id: $source_node_id,
+        source_label: $source_label,
+        original_relationship: $original_relationship,
+        target_node_id: $target_node_id,
+        target_label: $target_label,
+        assistant_review_status: $assistant_review_status,
+        human_review_decision: $human_review_decision,
+        human_review_status: $human_review_status,
+        amended_relationship: $amended_relationship,
+        reviewer_email: $reviewer_email,
+        reviewer_user_id: $reviewer_user_id,
+        reviewer_username: $reviewer_username,
+        reviewed_at: datetime(),
+        review_comment: $review_comment
+    })
+    CREATE (review)-[:REVIEWS_SOURCE]->(source)
+    CREATE (review)-[:REVIEWS_TARGET]->(target)
+    RETURN review.review_id AS review_id
+    """
+
+    params = {
+        "review_id": review_id,
+        "case_id": CASE_ID,
+        "graph_version": GRAPH_VERSION,
+        "edge_id": edge["edge_id"],
+        "source_node_id": edge["source_id"],
+        "source_label": edge["source_name"],
+        "original_relationship": edge["relationship"],
+        "target_node_id": edge["target_id"],
+        "target_label": edge["target_name"],
+        "assistant_review_status": edge["evidence_status"],
+        "human_review_decision": decision,
+        "human_review_status": status_by_decision[decision],
+        "amended_relationship": amended_relationship,
+        "reviewer_email": reviewer["email"],
+        "reviewer_user_id": reviewer["user_id"],
+        "reviewer_username": reviewer["username"],
+        "review_comment": comment or None,
+    }
+
+    with get_driver().session() as session:
+        record = session.run(query, **params).single()
+
+    return record["review_id"] if record else review_id
+
+
+def load_latest_relationship_reviews():
+    query = """
+    MATCH (review:RelationshipReview {case_id: $case_id})
+    WITH review
+    ORDER BY review.reviewed_at DESC
+    WITH review.edge_id AS edge_id, collect(review)[0] AS latest
+    RETURN
         edge_id,
-        source_node_id,
-        source_label,
-        original_relationship,
-        target_node_id,
-        target_label,
-        assistant_review_status,
-        human_review_decision,
-        human_review_status,
-        amended_relationship,
-        reviewer_email,
-        reviewer_user_id,
-        reviewer_username,
-        reviewed_at,
-        review_comment
-    )
-    VALUES (
-        :review_id,
-        :case_id,
-        :graph_version,
-        :edge_id,
-        :source_node_id,
-        :source_label,
-        :original_relationship,
-        :target_node_id,
-        :target_label,
-        :assistant_review_status,
-        :human_review_decision,
-        :human_review_status,
-        :amended_relationship,
-        :reviewer_email,
-        :reviewer_user_id,
-        :reviewer_username,
-        current_timestamp(),
-        :review_comment
-    )
+        latest.review_id AS review_id,
+        latest.human_review_decision AS decision,
+        latest.human_review_status AS status,
+        latest.amended_relationship AS amended_relationship,
+        latest.reviewer_email AS reviewer_email,
+        latest.reviewer_username AS reviewer_username,
+        toString(latest.reviewed_at) AS reviewed_at,
+        latest.review_comment AS review_comment
     """
 
-    parameters = [
-        sql_param("review_id", str(uuid.uuid4())),
-        sql_param("case_id", CASE_ID),
-        sql_param("graph_version", GRAPH_VERSION),
-        sql_param("edge_id", edge["edge_id"]),
-        sql_param("source_node_id", edge["source_id"]),
-        sql_param("source_label", edge["source_name"]),
-        sql_param("original_relationship", edge["relationship"]),
-        sql_param("target_node_id", edge["target_id"]),
-        sql_param("target_label", edge["target_name"]),
-        sql_param("assistant_review_status", edge["evidence_status"]),
-        sql_param("human_review_decision", decision),
-        sql_param("human_review_status", status_by_decision[decision]),
-        sql_param("amended_relationship", amended_relationship),
-        sql_param("reviewer_email", reviewer["email"]),
-        sql_param("reviewer_user_id", reviewer["user_id"]),
-        sql_param("reviewer_username", reviewer["username"]),
-        sql_param("review_comment", comment or None),
-    ]
-
-    execute_sql(statement, parameters)
-
-
-def load_reviewed_edge_ids():
-    if not REVIEW_ENABLED:
-        return set()
-
-    statement = f"""
-    SELECT DISTINCT edge_id
-    FROM {RELATIONSHIP_REVIEW_TABLE}
-    WHERE case_id = :case_id
-    """
-
-    response = execute_sql(
-        statement,
-        [sql_param("case_id", CASE_ID)],
-    )
-
-    data_array = getattr(getattr(response, "result", None), "data_array", None)
-    if not data_array:
-        return set()
-
-    return {row[0] for row in data_array if row and row[0]}
+    with get_driver().session() as session:
+        return {
+            record["edge_id"]: record.data()
+            for record in session.run(query, case_id=CASE_ID)
+        }
 
 
 try:
@@ -470,8 +391,8 @@ with tab_graph:
 with tab_review:
     st.subheader("Relationship review")
     st.caption(
-        "Human review is stored separately from assistant review. "
-        "The original graph is not overwritten by a validation click."
+        "Human review is stored as a separate append-only review record. "
+        "The original graph relationship and assistant review are not overwritten."
     )
 
     reviewable_rows = [
@@ -479,38 +400,41 @@ with tab_review:
         if row["relationship"] != "HAS_VESSEL"
     ]
 
-    if REVIEW_ENABLED:
-        try:
-            reviewed_edge_ids = load_reviewed_edge_ids()
-            r1, r2, r3 = st.columns(3)
-            r1.metric("Reviewable relationships", len(reviewable_rows))
-            r2.metric("Human reviewed", len(reviewed_edge_ids))
-            r3.metric(
-                "Remaining",
-                max(0, len(reviewable_rows) - len(reviewed_edge_ids)),
-            )
-        except Exception as exc:
-            reviewed_edge_ids = set()
-            st.warning(
-                "The review resources are configured, but the review table "
-                "could not yet be queried."
-            )
-            st.exception(exc)
-    else:
-        reviewed_edge_ids = set()
-        st.info(
-            "Relationship review UI is ready, but the SQL warehouse and "
-            "Unity Catalog review-table resources still need to be attached "
-            "to this Databricks App."
+    try:
+        latest_reviews = load_latest_relationship_reviews()
+    except Exception as exc:
+        latest_reviews = {}
+        st.warning(
+            "The graph is readable, but existing human-review records "
+            "could not be loaded."
         )
+        st.exception(exc)
+
+    reviewed_edge_ids = set(latest_reviews)
+
+    r1, r2, r3 = st.columns(3)
+    r1.metric("Reviewable relationships", len(reviewable_rows))
+    r2.metric("Human reviewed", len(reviewed_edge_ids))
+    r3.metric(
+        "Remaining",
+        max(0, len(reviewable_rows) - len(reviewed_edge_ids)),
+    )
 
     def edge_option_label(index):
         edge = reviewable_rows[index]
-        reviewed_marker = (
-            "✓ " if edge["edge_id"] in reviewed_edge_ids else ""
-        )
+        latest = latest_reviews.get(edge["edge_id"])
+        if latest:
+            marker = {
+                "VALIDATED": "✓",
+                "REJECTED": "✕",
+                "AMENDED": "✎",
+            }.get(latest["decision"], "•")
+            prefix = f"{marker} "
+        else:
+            prefix = ""
+
         return (
-            f"{reviewed_marker}{edge['source_name']} "
+            f"{prefix}{edge['source_name']} "
             f"— {edge['relationship']} → {edge['target_name']}"
         )
 
@@ -521,6 +445,7 @@ with tab_review:
     )
 
     selected = reviewable_rows[selected_index]
+    latest = latest_reviews.get(selected["edge_id"])
 
     left, centre, right = st.columns([1, 0.7, 1])
     with left:
@@ -545,6 +470,24 @@ with tab_review:
         selected["evidence"]
         or "No evidence text is currently available for this relationship."
     )
+
+    if latest:
+        st.markdown("**Latest human review**")
+        latest_text = (
+            f"{latest['decision']} · "
+            f"{latest['reviewed_at']} · "
+            f"{latest['reviewer_email'] or latest['reviewer_username'] or 'unknown'}"
+        )
+        st.write(latest_text)
+
+        if latest["amended_relationship"]:
+            st.write(
+                "Amended relationship:",
+                latest["amended_relationship"],
+            )
+
+        if latest["review_comment"]:
+            st.write("Comment:", latest["review_comment"])
 
     st.divider()
 
@@ -575,36 +518,33 @@ with tab_review:
     )
 
     reviewer = get_reviewer_identity()
-    st.caption(
-        "Reviewer recorded as: "
-        + (
-            reviewer["email"]
-            if reviewer["email"] != "unknown"
-            else reviewer["username"]
-        )
+    reviewer_display = (
+        reviewer["email"]
+        if reviewer["email"] != "unknown"
+        else reviewer["username"]
     )
-
-    save_disabled = not REVIEW_ENABLED
+    st.caption(f"Reviewer recorded as: {reviewer_display}")
 
     if st.button(
         "Save human review",
         type="primary",
-        disabled=save_disabled,
     ):
         try:
-            save_relationship_review(
+            review_id = save_relationship_review(
                 selected,
                 decision=decision,
                 amended_relationship=amended_relationship,
                 comment=comment.strip(),
             )
             st.success(
-                f"Review saved: {decision} — {selected['source_name']} "
-                f"{selected['relationship']} {selected['target_name']}"
+                f"Review saved: {decision} — review ID {review_id}"
             )
             st.rerun()
         except Exception as exc:
-            st.error("The review decision could not be saved.")
+            st.error(
+                "The review could not be saved to Neo4j. "
+                "The App credentials may be read-only."
+            )
             st.exception(exc)
 
 with tab_about:
@@ -630,8 +570,14 @@ investigation-report evidence.
 
 ### Review governance
 
-Assistant review and human review are separate provenance layers. Human
-validation is appended to the governed review table and does not silently
-rewrite the original assistant decision.
+Assistant review and human review are separate provenance layers.
+
+For this PoC, human review is stored as append-only
+`RelationshipReview` nodes in Neo4j. The reviewed graph edges are not
+silently modified.
+
+If the project later requires a governed institutional audit store, these
+review records can be exported to Delta / Unity Catalog from a controlled
+Databricks notebook or workflow.
 """
     )
