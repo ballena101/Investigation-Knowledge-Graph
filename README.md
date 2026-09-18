@@ -96,6 +96,11 @@ docs/
     07_future_corpus_analysis.md
     08_roadmap.md
     09_commodore_clipper_case.md
+    10_manual_relationship_review.md
+    11_manual_emcip_mapping_review.md
+    12_group_analysis_architecture.md
+    13_automated_analysis_orchestration.md
+    14_tooling_inventory.md
 
 notebooks/
     01_neo4j_connection_test.py
@@ -117,11 +122,18 @@ Chronology, causality, contribution and effect are distinct concepts and must no
 
 ## Current technology
 
-- Databricks / Unity Catalog / Delta: governed analytical storage
-- Neo4j AuraDB: property-graph projection, traversal and exploration
-- Databricks Apps + Streamlit: investigator-facing interface
-- streamlit-cytoscape: graph visualisation
-- LLM: not currently called by the deployed app; future analytical extraction layer only
+See `docs/14_tooling_inventory.md` for the authoritative tool-by-tool inventory,
+including role, status and transition decisions.
+
+Core stack:
+
+- GitHub: authoritative source control / target single source of truth
+- Databricks Apps + Streamlit: investigator-facing application
+- Databricks Lakeflow Jobs: automated processing orchestration
+- Unity Catalog + Delta Lake: governed source/evidence/provenance persistence
+- Neo4j AuraDB: property-graph projection, traversal and review metadata
+- streamlit-cytoscape: interactive graph visualisation
+- Databricks model services: LLM-assisted analytical extraction and resolution
 
 ## Status
 
