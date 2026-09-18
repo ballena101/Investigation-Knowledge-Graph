@@ -13,5 +13,8 @@ env:
   - name: NEO4J_PASSWORD
     valueFrom: neo4j_password
 
+  - name: ANALYSIS_JOB_ID
+    valueFrom: analysis_job
+
   - name: STREAMLIT_GATHER_USAGE_STATS
     value: "false"
