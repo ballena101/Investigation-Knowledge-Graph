@@ -1030,3 +1030,51 @@ The IKG must document for every model:
 8. approved information class.
 
 If any of these are unknown, the model is not approved for Class D data.
+
+
+## 17. Direct-text ingress
+
+The App supports direct user-authored/pasted source text for Classes A, B and C.
+
+Privacy behaviour:
+
+1. raw text is temporarily stored as a `DirectTextSource`;
+2. a SHA-256 hash is recorded;
+3. the extraction Job converts it to governed Delta passages;
+4. after successful persistence, the raw `text_content` property is removed
+   from Neo4j;
+5. only metadata/provenance remain.
+
+This is a minimisation mechanism, not permission to paste protected evidence.
+
+Class D direct-text input is blocked until a secure direct-to-governed-storage
+ingress is implemented. Protected text must currently use the governed document
+route.
+
+## 18. Model policy enforcement
+
+The App enforces model routing from the information class rather than relying
+on the user to understand provider/security differences.
+
+- A/B → GPT-5.6 Sol via Databricks;
+- C → Databricks-hosted GPT-OSS 120B;
+- D → dedicated GPT-OSS 20B endpoint.
+
+Class D fails closed when the dedicated endpoint is not configured.
+
+## 19. Privacy-validation gate
+
+Before graph publication, analytical derivatives enter
+`PRIVACY_VALIDATION`.
+
+The current deterministic validator redacts:
+
+- email-address patterns;
+- telephone-number patterns;
+- explicitly labelled personal-ID patterns.
+
+The resulting analysis records the privacy mode, validation status and number of
+automatic redactions.
+
+This complements LLM de-identification instructions. It is not yet a complete
+PII/NER guarantee; production hardening must evaluate and extend it.
