@@ -524,3 +524,35 @@ organisation should confirm, as applicable:
 
 Unknown items are treated as blockers for confidential-data use, not as
 assumptions of acceptability.
+
+
+## 14. Information-class model routing
+
+The GUI does not expose arbitrary model choice to the normal investigator.
+The information class selects the permitted model path:
+
+| Class | Model / endpoint | Serving pattern |
+|---|---|---|
+| A | `system.ai.gpt-5-6-sol` | Databricks system.ai |
+| B | `system.ai.gpt-5-6-sol` | Databricks system.ai |
+| C | `system.ai.gpt-oss-120b` | Databricks-hosted open-weight |
+| D | dedicated GPT-OSS 20B endpoint | custom/dedicated Databricks Model Serving |
+
+Class D is fail-closed until `CLASS_D_MODEL_ENDPOINT` is configured and
+approved. No fallback is permitted.
+
+## 15. Explicitly excluded tool
+
+**Lovable is not used by IKG.**
+
+It is not part of:
+
+- application runtime;
+- source ingestion;
+- evidence storage;
+- model inference;
+- graph persistence;
+- deployment.
+
+This avoids adding an unnecessary SaaS/data-processing boundary to the IKG
+architecture.
