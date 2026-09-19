@@ -138,16 +138,22 @@ the GDPR.
   VTS material and VDR/S-VDR material. Use only after the authorised processing
   path has been confirmed.
 
-**Current AI processing policy and model source**
+**AI processing policy and model routing**
 
-The default analytical LLM is **OpenAI GPT-5.6 Sol**, accessed through the
-Databricks governed model service `system.ai.gpt-5-6-sol`.
+The App selects the model path from the declared information class:
 
-The model provenance is therefore:
+- **A / B:** OpenAI GPT-5.6 Sol through Databricks
+  `system.ai.gpt-5-6-sol`.
+- **C:** OpenAI GPT-OSS 120B hosted by Databricks through
+  `system.ai.gpt-oss-120b`.
+- **D:** dedicated IKG GPT-OSS 20B Databricks Model Serving endpoint.
+  There is **no automatic fallback** to A/B/C model routes.
 
-`OpenAI GPT-5.6 Sol → Databricks system.ai model service → IKG analytical pipeline`.
+The exact model/endpoint is disclosed before submission, stored with the
+analysis and displayed with the result.
 
-The exact model is recorded per analysis and shown in the Analyses tab.
+The model developer, serving path and information-class authorisation are
+treated as separate governance properties.
 
 **Privacy-by-design output rule**
 
@@ -179,10 +185,9 @@ For **OpenAI GPT-5.6 Sol**, Databricks lists the applicable OpenAI **Usage
 Policy** and **high-risk use-case mitigation requirements** in addition to the
 customer's Databricks agreement.
 
-**Operational rule:** Class D material is not automatically approved for LLM
-processing. Specific organisational/legal/security approval remains required
-for the model/service, data classification, residency/transfer, retention,
-logging and vendor/processor arrangements.
+**Operational rule:** Class D processing is blocked until the dedicated
+GPT-OSS 20B endpoint and its organisational/legal/security approval are in
+place. The App does not downgrade Class D to a less-private model path.
 
 See repository documentation:
 `docs/14_tooling_inventory.md` and
@@ -577,6 +582,29 @@ def load_analysis_sources(analysis_id):
 
 
 @st.cache_data(ttl=30)
+def load_analysis_text_source(analysis_id):
+    query = """
+    MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+    OPTIONAL MATCH (a)-[:HAS_SOURCE_TEXT]->(s:DirectTextSource)
+    RETURN
+        s.source_id AS source_id,
+        properties(s)["retention_status"] AS retention_status,
+        properties(s)["extraction_status"] AS extraction_status,
+        properties(s)["detected_language"] AS detected_language,
+        properties(s)["passage_count"] AS passage_count,
+        properties(s)["text_sha256"] AS text_sha256
+    """
+
+    with get_driver().session() as session:
+        record = session.run(
+            query,
+            analysis_id=analysis_id,
+        ).single()
+
+    return record.data() if record else {}
+
+
+@st.cache_data(ttl=30)
 def load_analysis_evidence_counts(analysis_id):
     query = """
     MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
@@ -752,6 +780,7 @@ def load_analysis_result(analysis_id):
         coalesce(properties(a)["source_conflicts"], []) AS source_conflicts,
         properties(a)["analysis_version"] AS analysis_version,
         properties(a)["model_service"] AS model_service,
+        properties(a)["privacy_output_mode"] AS privacy_output_mode,
         coalesce(properties(a)["analysis_batches_total"], 0) AS batches_total,
         coalesce(properties(a)["analysis_batches_processed"], 0) AS batches_processed
     """
@@ -1731,6 +1760,7 @@ with tab_analyses:
     ):
         load_analysis_groups.clear()
         load_analysis_sources.clear()
+        load_analysis_text_source.clear()
         load_analysis_graph_counts.clear()
         load_analysis_evidence_counts.clear()
         load_analysis_result.clear()
@@ -1754,9 +1784,18 @@ with tab_analyses:
 
         def analysis_label(analysis_id):
             analysis = analyses_by_id[analysis_id]
+            source_label = (
+                "direct text"
+                if analysis.get("input_mode") == "DIRECT_TEXT"
+                else f"{analysis['document_count']} document(s)"
+            )
+            class_label = (
+                analysis.get("information_class")
+                or "unclassified"
+            )
             return (
                 f"{analysis['analysis_title']} · "
-                f"{analysis['document_count']} document(s) · "
+                f"{source_label} · Class {class_label} · "
                 f"{analysis['status']}"
             )
 
@@ -1908,20 +1947,41 @@ with tab_analyses:
             + class_policy["data_flow"]
         )
 
-        st.markdown("**Source documents**")
-
-        sources = load_analysis_sources(
-            selected_analysis_id
-        )
-
-        for source in sources:
-            st.write(
-                "• "
-                f"{source['filename']} · "
-                f"{source['source_type']} · "
-                f"{source['detected_language']}"
+        if input_mode_value == "DIRECT_TEXT":
+            st.markdown("**Direct text source**")
+            text_source_meta = load_analysis_text_source(
+                selected_analysis_id
             )
-            st.caption(source["volume_path"])
+            if text_source_meta.get("source_id"):
+                st.write(
+                    f"Source ID: {text_source_meta['source_id']}"
+                )
+                st.write(
+                    "Raw source retention: "
+                    f"{text_source_meta.get('retention_status') or 'pending'}"
+                )
+                if text_source_meta.get("passage_count") is not None:
+                    st.write(
+                        "Governed passages: "
+                        f"{text_source_meta.get('passage_count')}"
+                    )
+                st.caption(
+                    "Direct-text raw content is temporary for A/B/C and is "
+                    "removed from Neo4j after governed Delta passages are created."
+                )
+        else:
+            st.markdown("**Source documents**")
+            sources = load_analysis_sources(
+                selected_analysis_id
+            )
+            for source in sources:
+                st.write(
+                    "• "
+                    f"{source['filename']} · "
+                    f"{source['source_type']} · "
+                    f"{source['detected_language']}"
+                )
+                st.caption(source["volume_path"])
 
         st.divider()
 
@@ -2057,6 +2117,8 @@ with tab_analyses:
             st.caption(
                 "Model service: "
                 f"{result_meta.get('model_service') or '—'} · "
+                "Privacy mode: "
+                f"{result_meta.get('privacy_output_mode') or 'DE_IDENTIFIED_BY_DEFAULT'} · "
                 "Analysis version: "
                 f"{result_meta.get('analysis_version') or '—'}"
             )
