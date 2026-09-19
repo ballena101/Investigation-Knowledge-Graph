@@ -1189,19 +1189,77 @@ print(
 
 # COMMAND ----------
 
+# Privacy validation runs before graph publication. It does not alter source
+# evidence; it only minimises personal identifiers in analytical derivatives.
+
+EMAIL_RE = re.compile(
+    r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
+    re.IGNORECASE,
+)
+PHONE_RE = re.compile(
+    r"(?<!\w)(?:\+?\d[\d\s().-]{7,}\d)(?!\w)"
+)
+PERSONAL_ID_RE = re.compile(
+    r"\b(?:passport|national\s+id|identity\s+card|id\s+number)\s*[:#-]?\s*[A-Z0-9-]{4,}\b",
+    re.IGNORECASE,
+)
+
+
+def redact_direct_identifiers(value):
+    text = str(value or "")
+    text = EMAIL_RE.sub("[REDACTED_EMAIL]", text)
+    text = PHONE_RE.sub("[REDACTED_PHONE]", text)
+    text = PERSONAL_ID_RE.sub("[REDACTED_PERSONAL_ID]", text)
+    return text
+
+
+update_analysis(
+    status="ANALYSING",
+    stage="PRIVACY_VALIDATION",
+    batches_total=len(batches),
+    batches_processed=len(batches),
+)
+
+privacy_redaction_count = 0
+
+for node in resolved_nodes:
+    before_label = node["label"]
+    before_description = node["description"]
+    node["label"] = redact_direct_identifiers(
+        node["label"]
+    )
+    node["description"] = redact_direct_identifiers(
+        node["description"]
+    )
+
+    privacy_redaction_count += int(
+        node["label"] != before_label
+    )
+    privacy_redaction_count += int(
+        node["description"] != before_description
+    )
+
+# COMMAND ----------
+
 summary = resolution.get(
     "summary",
     {},
 )
 
-overview = str(
+overview_raw = str(
     summary.get(
         "overview",
         "",
     )
 ).strip()
+overview = redact_direct_identifiers(
+    overview_raw
+)
+privacy_redaction_count += int(
+    overview != overview_raw
+)
 
-key_findings = [
+key_findings_raw = [
     str(x).strip()
     for x in summary.get(
         "key_findings",
@@ -1209,8 +1267,20 @@ key_findings = [
     )
     if str(x).strip()
 ]
+key_findings = [
+    redact_direct_identifiers(x)
+    for x in key_findings_raw
+]
+privacy_redaction_count += sum(
+    1
+    for before, after in zip(
+        key_findings_raw,
+        key_findings,
+    )
+    if before != after
+)
 
-uncertainties = [
+uncertainties_raw = [
     str(x).strip()
     for x in summary.get(
         "uncertainties",
@@ -1218,8 +1288,20 @@ uncertainties = [
     )
     if str(x).strip()
 ]
+uncertainties = [
+    redact_direct_identifiers(x)
+    for x in uncertainties_raw
+]
+privacy_redaction_count += sum(
+    1
+    for before, after in zip(
+        uncertainties_raw,
+        uncertainties,
+    )
+    if before != after
+)
 
-source_conflicts = [
+source_conflicts_raw = [
     str(x).strip()
     for x in summary.get(
         "source_conflicts",
@@ -1227,6 +1309,23 @@ source_conflicts = [
     )
     if str(x).strip()
 ]
+source_conflicts = [
+    redact_direct_identifiers(x)
+    for x in source_conflicts_raw
+]
+privacy_redaction_count += sum(
+    1
+    for before, after in zip(
+        source_conflicts_raw,
+        source_conflicts,
+    )
+    if before != after
+)
+
+print(
+    "Privacy validation redactions:",
+    privacy_redaction_count,
+)
 
 spark.sql(
     f"""
@@ -1397,6 +1496,9 @@ try:
                 a.analysis_version = $analysis_version,
                 a.model_service = $model_service,
                 a.privacy_output_mode = $privacy_output_mode,
+                a.privacy_validation_status = 'PASSED_WITH_AUTOMATIC_REDACTION'
+                    ,
+                a.privacy_redaction_count = $privacy_redaction_count,
                 a.completed_at = datetime(),
                 a.processing_updated_at = datetime(),
                 a.processing_error = NULL
@@ -1413,6 +1515,7 @@ try:
                 resolved_relationships
             ),
             privacy_output_mode=PRIVACY_OUTPUT_MODE,
+            privacy_redaction_count=privacy_redaction_count,
             analysis_version=ANALYSIS_VERSION,
             model_service=model_service,
         ).consume()
