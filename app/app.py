@@ -667,6 +667,7 @@ def render_pipeline_status(
         ("Evidence ready", "EVIDENCE_READY"),
         ("Candidate extraction", "CANDIDATE_EXTRACTION"),
         ("Cross-document resolution", "RESOLVING"),
+        ("Privacy validation", "PRIVACY_VALIDATION"),
         ("Knowledge graph construction", "BUILDING_GRAPH"),
         ("Completed", "COMPLETED"),
     ]
@@ -675,6 +676,7 @@ def render_pipeline_status(
         "EXTRACTION_FAILED": "Evidence extraction",
         "CANDIDATE_EXTRACTION_FAILED": "Candidate extraction",
         "RESOLUTION_FAILED": "Cross-document resolution",
+        "PRIVACY_VALIDATION_FAILED": "Privacy validation",
         "GRAPH_BUILD_FAILED": "Knowledge graph construction",
     }
 
@@ -781,6 +783,8 @@ def load_analysis_result(analysis_id):
         properties(a)["analysis_version"] AS analysis_version,
         properties(a)["model_service"] AS model_service,
         properties(a)["privacy_output_mode"] AS privacy_output_mode,
+        properties(a)["privacy_validation_status"] AS privacy_validation_status,
+        coalesce(properties(a)["privacy_redaction_count"], 0) AS privacy_redaction_count,
         coalesce(properties(a)["analysis_batches_total"], 0) AS batches_total,
         coalesce(properties(a)["analysis_batches_processed"], 0) AS batches_processed
     """
@@ -2121,6 +2125,12 @@ with tab_analyses:
                 f"{result_meta.get('privacy_output_mode') or 'DE_IDENTIFIED_BY_DEFAULT'} · "
                 "Analysis version: "
                 f"{result_meta.get('analysis_version') or '—'}"
+            )
+            st.write(
+                "Privacy validation: "
+                f"{result_meta.get('privacy_validation_status') or '—'}"
+                " · automatic redactions: "
+                f"{result_meta.get('privacy_redaction_count') or 0}"
             )
 
             analysis_graph = load_analysis_graph(
