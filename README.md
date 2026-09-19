@@ -102,6 +102,7 @@ docs/
     13_automated_analysis_orchestration.md
     14_tooling_inventory.md
     15_data_protection_confidentiality.md
+    16_unified_input_and_model_routing.md
 
 notebooks/
     01_neo4j_connection_test.py
@@ -187,3 +188,23 @@ The product follows these default principles:
   personal identity in an analytical output.
 
 This is a product-design objective as well as a compliance safeguard.
+
+
+## Unified analysis entry modes
+
+The App supports two source-ingress methods:
+
+- Documents — select 1–5 indexed source documents;
+- Direct text — write/paste source text and construct a knowledge graph from it.
+
+Both routes use the same evidence-grounded pipeline and privacy controls.
+
+Model routing is determined by information class:
+
+- A/B → `system.ai.gpt-5-6-sol`
+- C → `system.ai.gpt-oss-120b`
+- D → dedicated IKG GPT-OSS 20B endpoint; fail closed if unavailable
+
+See `docs/16_unified_input_and_model_routing.md`.
+
+Lovable is not part of the IKG architecture.
