@@ -21,7 +21,7 @@ AVAILABLE_MODEL_SERVICES = [
     "system.ai.gpt-5-6-sol",
     "system.ai.claude-sonnet-4-5",
 ]
-APP_BUILD = "2026-09-19-compliance-model-disclosure-v1"
+APP_BUILD = "2026-09-19-privacy-by-design-v1"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -95,11 +95,35 @@ the GDPR.
   VTS material and VDR/S-VDR material. Use only after the authorised processing
   path has been confirmed.
 
-**Current AI processing policy**
+**Current AI processing policy and model source**
 
-The automated analysis uses a Databricks Unity Catalog model service in
-`system.ai`. The exact model is recorded per analysis and shown in the
-Analyses tab.
+The default analytical LLM is **OpenAI GPT-5.6 Sol**, accessed through the
+Databricks governed model service `system.ai.gpt-5-6-sol`.
+
+The model provenance is therefore:
+
+`OpenAI GPT-5.6 Sol → Databricks system.ai model service → IKG analytical pipeline`.
+
+The exact model is recorded per analysis and shown in the Analyses tab.
+
+**Privacy-by-design output rule**
+
+The product is designed not merely to state confidentiality requirements but
+to reduce unnecessary exposure of protected information. Analytical outputs
+are **de-identified by default**:
+
+- use functional roles instead of personal names where possible;
+- omit email addresses, phone numbers, home addresses, personal IDs, dates of
+  birth, health details and other unnecessary identifiers;
+- do not reproduce witness identities merely because they appear in source
+  material;
+- avoid combinations of details that could unnecessarily re-identify a person;
+- preserve the protected original evidence separately so authorised users can
+  trace an analytical statement without broadly reproducing the source.
+
+A personal identity should appear in an analytical output only where it is
+strictly necessary for the authorised safety-analysis purpose and the relevant
+processing/disclosure is permitted.
 
 For Databricks Model Serving, Databricks documents logical isolation,
 authentication/authorisation and encryption in transit/at rest. For paid
