@@ -790,3 +790,120 @@ subject to the documented retention conditions.
 These platform assurances do **not** by themselves authorise Article 9
 protected material for LLM processing. The Class D approval rule remains in
 force.
+
+
+## 14. Privacy-by-design analytical output policy
+
+Privacy/confidentiality is a product mission, not only a disclaimer.
+
+The IKG should actively reduce the exposure and propagation of protected
+information throughout the analytical workflow.
+
+### 14.1 Data exposure minimisation
+
+The preferred processing pattern is:
+
+```text
+governed source evidence
+        ↓
+minimum necessary passage(s)
+        ↓
+authorised analytical processing
+        ↓
+de-identified analytical derivative
+        ↓
+graph / summary / review
+```
+
+The system should not send an entire report/evidence corpus to a model when a
+smaller evidence set is sufficient.
+
+### 14.2 De-identified output by default
+
+Machine-generated analytical outputs should not reproduce personal identifiers
+unless identity is strictly necessary for the authorised safety-analysis
+purpose.
+
+By default, summaries, findings, node labels, relationship descriptions and
+other derivatives should omit or generalise:
+
+- personal names;
+- witness identities;
+- email addresses;
+- telephone numbers;
+- home/private addresses;
+- personal/national identifiers;
+- dates of birth;
+- medical/health details;
+- other unnecessary personal or sensitive attributes.
+
+People should normally be represented by functional role, for example:
+
+- master;
+- chief engineer;
+- officer of the watch;
+- crew member;
+- passenger;
+- witness;
+- investigator;
+- shore coordinator.
+
+### 14.3 Re-identification risk
+
+Removing a name alone is not sufficient.
+
+Outputs should avoid unnecessarily combining details that could make a person
+identifiable, such as a unique role, exact age, exact location, exact time and
+sensitive circumstance.
+
+### 14.4 Evidence remains unchanged
+
+De-identification applies to analytical derivatives.
+
+The authorised original evidence remains unchanged in governed storage and is
+linked through provenance identifiers. This preserves evidential integrity while
+reducing unnecessary propagation of protected content.
+
+### 14.5 Current technical implementation
+
+The generic LLM pipeline applies the mode:
+
+`DE_IDENTIFIED_BY_DEFAULT`
+
+Candidate extraction and cross-document resolution instructions explicitly
+prohibit reproducing unnecessary personal names/identifiers and instruct the
+model to use functional roles.
+
+This is an important control but should not be treated as a complete automated
+PII guarantee. Production use with protected records should add deterministic
+or evaluated PII/identifier detection and output validation before publication
+or wider access.
+
+## 15. LLM provenance
+
+The current default model chain is:
+
+```text
+OpenAI
+  GPT-5.6 Sol
+        ↓
+Databricks
+  system.ai.gpt-5-6-sol
+  governed model service
+        ↓
+IKG Lakeflow analytical pipeline
+        ↓
+candidate extraction / resolution / synthesis
+```
+
+The underlying model provider is **OpenAI**.
+
+The IKG does not call a personal ChatGPT session for analysis. The pipeline calls
+the model through Databricks' governed model-service layer.
+
+Databricks documents `system.ai.gpt-5-6-sol` as a ready-to-use model service
+for OpenAI GPT-5.6 Sol.
+
+Model availability through Databricks does not itself authorise confidential
+Article 9 material for model processing. The Class D approval rule remains
+applicable.
