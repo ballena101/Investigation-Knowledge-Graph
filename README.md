@@ -159,3 +159,31 @@ logging and vendor/processor implications have been confirmed.
 
 For the current PoC, published/non-sensitive investigation material is the
 preferred validation dataset.
+
+
+## Privacy-by-design mission
+
+A core mission of the Investigation Knowledge Graph is not merely to document
+legal/confidentiality obligations, but to **actively reduce unnecessary
+exposure of protected investigation and personal information throughout the
+analysis lifecycle**.
+
+The product follows these default principles:
+
+- keep raw evidence in governed storage;
+- expose only the minimum evidence needed to each processing step;
+- prefer passage-level processing over whole-corpus disclosure;
+- preserve original evidence separately from analytical output;
+- de-identify analytical outputs by default;
+- represent people by functional role rather than personal name where possible;
+- omit emails, telephone numbers, addresses, personal IDs, dates of birth,
+  medical details and other unnecessary identifying data from summaries,
+  findings and graph labels;
+- avoid re-identification through combinations of otherwise innocuous details;
+- retain explicit provenance so an authorised investigator can trace an
+  analytical statement back to the protected source without reproducing that
+  source broadly;
+- require explicit authorisation before a workflow deliberately retains a
+  personal identity in an analytical output.
+
+This is a product-design objective as well as a compliance safeguard.
