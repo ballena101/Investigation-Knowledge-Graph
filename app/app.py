@@ -16,12 +16,55 @@ GRAPH_VERSION = "CASE_GRAPH_V0.2"
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
 ANALYSIS_JOB_ID = os.getenv("ANALYSIS_JOB_ID")
 MAX_DOCUMENTS_PER_ANALYSIS = 5
-DEFAULT_MODEL_SERVICE = "system.ai.gpt-5-6-sol"
-AVAILABLE_MODEL_SERVICES = [
-    "system.ai.gpt-5-6-sol",
-    "system.ai.claude-sonnet-4-5",
-]
-APP_BUILD = "2026-09-19-privacy-by-design-v1"
+PUBLIC_MODEL_SERVICE = "system.ai.gpt-5-6-sol"
+INTERNAL_MODEL_SERVICE = "system.ai.gpt-oss-120b"
+CLASS_D_MODEL_ENDPOINT = os.getenv("CLASS_D_MODEL_ENDPOINT")
+
+INFORMATION_CLASSES = {
+    "A": {
+        "label": "A — Public / technical",
+        "description": "Code, public technical material or other non-sensitive content.",
+        "model": PUBLIC_MODEL_SERVICE,
+        "model_name": "OpenAI GPT-5.6 Sol via Databricks system.ai",
+        "data_flow": (
+            "Databricks Foundation Model API / ADI path. Suitable for "
+            "public/non-sensitive material; Databricks retention and applicable "
+            "provider safety terms may apply."
+        ),
+    },
+    "B": {
+        "label": "B — Published investigation material",
+        "description": "Published final reports, published recommendations and other approved non-sensitive investigation material.",
+        "model": PUBLIC_MODEL_SERVICE,
+        "model_name": "OpenAI GPT-5.6 Sol via Databricks system.ai",
+        "data_flow": (
+            "Databricks Foundation Model API / ADI path. Intended for published "
+            "material; Databricks retention and applicable provider safety terms may apply."
+        ),
+    },
+    "C": {
+        "label": "C — Internal / restricted analytical material",
+        "description": "Internal analytical material that is not Article 9/Class D protected evidence.",
+        "model": INTERNAL_MODEL_SERVICE,
+        "model_name": "OpenAI GPT-OSS 120B hosted by Databricks",
+        "data_flow": (
+            "Databricks-hosted open-weight model. Reduces external model-provider "
+            "inference exposure, while Databricks Foundation Model API controls/retention still apply."
+        ),
+    },
+    "D": {
+        "label": "D — Protected / Article 9 confidential evidence",
+        "description": "Witness statements, identities, sensitive personal data, investigator notes/drafts, VTS/VDR material or equivalent protected evidence.",
+        "model": None,
+        "model_name": "Dedicated IKG GPT-OSS 20B endpoint",
+        "data_flow": (
+            "Dedicated/custom Databricks Model Serving endpoint. No fallback to "
+            "GPT-5.6 Sol or a partner-hosted model is permitted."
+        ),
+    },
+}
+
+APP_BUILD = "2026-09-19-unified-input-policy-v1"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -184,6 +227,26 @@ def get_workspace_client():
     return WorkspaceClient()
 
 
+def resolve_model_policy(information_class):
+    policy = INFORMATION_CLASSES[information_class]
+
+    if information_class == "D":
+        return {
+            **policy,
+            "model": CLASS_D_MODEL_ENDPOINT,
+            "ready": bool(CLASS_D_MODEL_ENDPOINT),
+        }
+
+    return {
+        **policy,
+        "ready": True,
+    }
+
+
+def information_class_label(class_code):
+    return INFORMATION_CLASSES[class_code]["label"]
+
+
 def trigger_analysis_job(analysis_id, model_service):
     if not ANALYSIS_JOB_ID:
         raise RuntimeError(
@@ -276,6 +339,7 @@ def create_analysis_from_documents(
     selected_document_ids,
     language_mode,
     output_language,
+    information_class,
     model_service,
 ):
     reviewer = get_reviewer_identity()
@@ -293,6 +357,8 @@ def create_analysis_from_documents(
         analysis_id: $analysis_id,
         analysis_title: $analysis_title,
         analysis_objective: $analysis_objective,
+        input_mode: 'DOCUMENTS',
+        information_class: $information_class,
         language_mode: $language_mode,
         output_language: $output_language,
         requested_model_service: $model_service,
@@ -316,6 +382,7 @@ def create_analysis_from_documents(
         "analysis_id": analysis_id,
         "analysis_title": title,
         "analysis_objective": objective or None,
+        "information_class": information_class,
         "language_mode": language_mode,
         "output_language": output_language,
         "model_service": model_service,
@@ -339,6 +406,81 @@ def create_analysis_from_documents(
     return record["analysis_id"], record["linked_documents"]
 
 
+def create_analysis_from_text(
+    title,
+    objective,
+    direct_text,
+    language_mode,
+    output_language,
+    information_class,
+    model_service,
+):
+    reviewer = get_reviewer_identity()
+    creator = (
+        reviewer["email"]
+        if reviewer["email"] != "unknown"
+        else reviewer["username"]
+    )
+
+    analysis_id = f"analysis_{uuid.uuid4().hex}"
+    source_id = f"text_{uuid.uuid4().hex}"
+    text_sha256 = hashlib.sha256(
+        direct_text.encode("utf-8")
+    ).hexdigest()
+
+    query = """
+    CREATE (a:AnalysisGroup {
+        analysis_id: $analysis_id,
+        analysis_title: $analysis_title,
+        analysis_objective: $analysis_objective,
+        input_mode: 'DIRECT_TEXT',
+        information_class: $information_class,
+        language_mode: $language_mode,
+        output_language: $output_language,
+        requested_model_service: $model_service,
+        status: 'PENDING_PROCESSING',
+        created_by: $created_by,
+        created_at: datetime(),
+        pipeline_version: $pipeline_version,
+        document_count: 1
+    })
+    CREATE (s:DirectTextSource {
+        source_id: $source_id,
+        analysis_id: $analysis_id,
+        source_type: 'DIRECT_TEXT',
+        text_content: $direct_text,
+        text_sha256: $text_sha256,
+        retention_status: 'TRANSIENT_UNTIL_EVIDENCE_READY',
+        created_at: datetime()
+    })
+    CREATE (a)-[:HAS_SOURCE_TEXT]->(s)
+    RETURN a.analysis_id AS analysis_id
+    """
+
+    params = {
+        "analysis_id": analysis_id,
+        "analysis_title": title,
+        "analysis_objective": objective or None,
+        "information_class": information_class,
+        "language_mode": language_mode,
+        "output_language": output_language,
+        "model_service": model_service,
+        "created_by": creator,
+        "pipeline_version": PIPELINE_VERSION,
+        "source_id": source_id,
+        "direct_text": direct_text,
+        "text_sha256": text_sha256,
+    }
+
+    with get_driver().session() as session:
+        record = session.run(query, **params).single()
+
+    if not record:
+        raise RuntimeError("Neo4j did not return the created text analysis.")
+
+    return record["analysis_id"], source_id
+
+
 @st.cache_data(ttl=30)
 def load_recent_analyses():
     query = """
@@ -348,6 +490,8 @@ def load_recent_analyses():
         a.analysis_id AS analysis_id,
         a.analysis_title AS analysis_title,
         a.status AS status,
+        properties(a)["input_mode"] AS input_mode,
+        properties(a)["information_class"] AS information_class,
         a.output_language AS output_language,
         a.created_by AS created_by,
         toString(a.created_at) AS created_at,
@@ -372,6 +516,8 @@ def load_analysis_groups():
         a.analysis_id AS analysis_id,
         a.analysis_title AS analysis_title,
         a.analysis_objective AS analysis_objective,
+        properties(a)["input_mode"] AS input_mode,
+        properties(a)["information_class"] AS information_class,
         a.status AS status,
         a.processing_stage AS processing_stage,
         a.documents_total AS documents_total,
@@ -1296,11 +1442,11 @@ tab_new_analysis, tab_analyses, tab_graph, tab_review, tab_mapping_review, tab_a
 )
 
 with tab_new_analysis:
-    st.subheader("New document-group analysis")
+    st.subheader("New analysis")
     st.caption(
-        "Select any combination of documents already indexed from your "
-        "Unity Catalog volume. The App stores only the analysis definition "
-        "and document links in Neo4j; it does not need access to the files."
+        "Create one evidence-grounded knowledge graph from either indexed "
+        "documents or text you provide directly. The information class controls "
+        "the permitted model path."
     )
 
     try:
@@ -1309,17 +1455,6 @@ with tab_new_analysis:
         source_documents = []
         st.error("The document catalogue could not be loaded from Neo4j.")
         st.exception(exc)
-
-    if source_documents:
-        st.success(
-            f"{len(source_documents)} indexed source document(s) available."
-        )
-    else:
-        st.warning(
-            "No indexed source documents are available yet. Run notebook "
-            "14_index_volume_documents_to_neo4j.py after placing documents "
-            "in your Unity Catalog volume."
-        )
 
     documents_by_id = {
         document["document_id"]: document
@@ -1335,7 +1470,6 @@ with tab_new_analysis:
         )
         source_type = document.get("source_type") or "FILE"
         language = document.get("detected_language") or "language pending"
-
         return (
             f"{document['filename']} · {source_type} · "
             f"{language} · {relative}"
@@ -1345,6 +1479,17 @@ with tab_new_analysis:
         "new_analysis_form",
         clear_on_submit=False,
     ):
+        input_mode = st.radio(
+            "Input source",
+            options=["Documents", "Direct text"],
+            horizontal=True,
+            help=(
+                "Both routes use the same evidence-grounded graph pipeline. "
+                "Class D direct text is disabled until protected text ingress "
+                "to governed Unity Catalog storage is configured."
+            ),
+        )
+
         analysis_title = st.text_input(
             "Analysis title",
             placeholder="e.g. Engine-room fire evidence set",
@@ -1353,37 +1498,79 @@ with tab_new_analysis:
         analysis_objective = st.text_area(
             "Analysis objective or question",
             placeholder=(
-                "Optional. State the analytical objective. This guides "
-                "later extraction and synthesis but never changes the "
-                "underlying source evidence."
+                "Optional. State what you want the analysis to focus on. "
+                "This guides synthesis but does not change source evidence."
             ),
         )
 
-        st.caption(
-            f"Maximum documents per analysis: {MAX_DOCUMENTS_PER_ANALYSIS}"
-        )
-
-        selected_document_ids = st.multiselect(
-            "Available documents",
-            options=list(documents_by_id),
-            format_func=source_document_label,
-            max_selections=MAX_DOCUMENTS_PER_ANALYSIS,
+        information_class = st.selectbox(
+            "Information classification",
+            options=list(INFORMATION_CLASSES),
+            format_func=information_class_label,
             help=(
-                "Select between 1 and 5 documents to analyse together. "
-                "The same source document may be reused in more than one "
-                "analysis."
+                "This is a processing control, not only a label. It determines "
+                "which model path the App is allowed to use."
             ),
         )
+
+        policy = resolve_model_policy(information_class)
+
+        st.markdown("**Processing disclosure**")
+        st.write(policy["description"])
+        st.write(f"**Model path:** {policy['model_name']}")
+        if policy["model"]:
+            st.code(policy["model"], language=None)
+        st.caption(policy["data_flow"])
+
+        if information_class == "D" and not policy["ready"]:
+            st.error(
+                "Class D processing is blocked: the dedicated IKG GPT-OSS 20B "
+                "Model Serving endpoint is not configured. The App will not "
+                "fall back to GPT-5.6 Sol or GPT-OSS 120B."
+            )
+
+        selected_document_ids = []
+        direct_text = ""
+
+        if input_mode == "Documents":
+            st.caption(
+                f"Select 1–{MAX_DOCUMENTS_PER_ANALYSIS} indexed source documents."
+            )
+            selected_document_ids = st.multiselect(
+                "Available documents",
+                options=list(documents_by_id),
+                format_func=source_document_label,
+                max_selections=MAX_DOCUMENTS_PER_ANALYSIS,
+            )
+            if not source_documents:
+                st.warning(
+                    "No indexed documents are currently available."
+                )
+        else:
+            direct_text = st.text_area(
+                "Text to analyse and map",
+                height=260,
+                placeholder=(
+                    "Write or paste the material from which you want the "
+                    "knowledge graph to be constructed."
+                ),
+                help=(
+                    "For Classes A/B/C, the text is held temporarily, converted "
+                    "into governed evidence passages, and then removed from the "
+                    "temporary Neo4j source field. Class D direct text is not "
+                    "accepted in this phase."
+                ),
+            )
+            if information_class == "D":
+                st.warning(
+                    "For protected Class D material, use Documents so the source "
+                    "enters through the governed Unity Catalog volume."
+                )
 
         language_mode = st.selectbox(
-            "Document language handling",
+            "Source language handling",
             options=SUPPORTED_LANGUAGES,
             index=0,
-            help=(
-                "Use auto-detect when the selected documents may use "
-                "different languages. Original-language evidence is always "
-                "preserved."
-            ),
         )
 
         output_language = st.selectbox(
@@ -1407,107 +1594,100 @@ with tab_new_analysis:
             index=0,
         )
 
-        model_service = st.selectbox(
-            "AI model service",
-            options=AVAILABLE_MODEL_SERVICES,
-            index=AVAILABLE_MODEL_SERVICES.index(
-                DEFAULT_MODEL_SERVICE
-            ),
-            help=(
-                "The exact Databricks system.ai model service used for "
-                "candidate extraction and cross-document resolution. "
-                "The selected value is stored with the analysis."
-            ),
-        )
-
         st.caption(
-            "AI governance: model use is subject to Databricks Model Serving "
-            "data-protection controls plus the applicable provider/model terms. "
-            "Selection of a model does not authorise Class D confidential "
-            "investigation material for LLM processing."
+            "Outputs are de-identified by default. Personal names and other "
+            "unnecessary identifiers should not be propagated into graph labels, "
+            "summaries or findings."
         )
 
         create_submitted = st.form_submit_button(
-            "Create analysis",
+            "Create and analyse",
             type="primary",
-            disabled=not bool(source_documents),
         )
 
     if create_submitted:
+        errors = []
+
         if not analysis_title.strip():
-            st.error("Enter an analysis title.")
-        elif not selected_document_ids:
-            st.error("Select at least one source document.")
-        elif len(selected_document_ids) > MAX_DOCUMENTS_PER_ANALYSIS:
-            st.error(
-                f"Select no more than {MAX_DOCUMENTS_PER_ANALYSIS} documents."
+            errors.append("Enter an analysis title.")
+
+        if not policy["ready"]:
+            errors.append(
+                "The model path required by this information class is not configured."
             )
+
+        if input_mode == "Documents":
+            if not selected_document_ids:
+                errors.append("Select at least one source document.")
+        else:
+            if information_class == "D":
+                errors.append(
+                    "Class D direct-text input is disabled. Use governed document input."
+                )
+            if not direct_text.strip():
+                errors.append("Enter text to analyse.")
+
+        if errors:
+            for error in errors:
+                st.error(error)
         else:
             try:
-                analysis_id, linked_documents = (
-                    create_analysis_from_documents(
+                if input_mode == "Documents":
+                    analysis_id, linked_count = create_analysis_from_documents(
                         title=analysis_title.strip(),
                         objective=analysis_objective.strip(),
                         selected_document_ids=selected_document_ids,
                         language_mode=language_mode,
                         output_language=output_language,
-                        model_service=model_service,
+                        information_class=information_class,
+                        model_service=policy["model"],
                     )
-                )
+                    source_description = f"{linked_count} document(s)"
+                else:
+                    analysis_id, source_id = create_analysis_from_text(
+                        title=analysis_title.strip(),
+                        objective=analysis_objective.strip(),
+                        direct_text=direct_text.strip(),
+                        language_mode=language_mode,
+                        output_language=output_language,
+                        information_class=information_class,
+                        model_service=policy["model"],
+                    )
+                    source_description = "direct text"
 
                 load_recent_analyses.clear()
+                load_analysis_groups.clear()
 
-                st.success(
-                    f"Analysis created: {analysis_id}"
-                )
+                st.success(f"Analysis created: {analysis_id}")
+                st.write(f"Input: {source_description}")
                 st.write(
-                    f"Linked source documents: {linked_documents}"
+                    f"Information class: "
+                    f"{INFORMATION_CLASSES[information_class]['label']}"
                 )
-                st.write(
-                    f"Source language handling: {language_mode}"
-                )
-                st.write(
-                    f"Analysis output language: {output_language}"
-                )
-                st.write(
-                    f"AI model service: {model_service}"
-                )
+                st.write(f"AI model path: {policy['model_name']}")
+                st.code(policy["model"], language=None)
 
                 if ANALYSIS_JOB_ID:
-                    try:
-                        run_id = trigger_analysis_job(
-                            analysis_id,
-                            model_service,
-                        )
-                        load_analysis_groups.clear()
-                        load_recent_analyses.clear()
-
-                        st.success(
-                            "Automated processing started."
-                        )
-                        st.write(
-                            f"Databricks Job run ID: {run_id}"
-                        )
-                        st.info(
-                            "You can stay in the App. Open the Analyses tab "
-                            "and use Refresh status to follow extraction, "
-                            "analysis and graph construction."
-                        )
-                    except Exception as exc:
-                        st.error(
-                            "The analysis was created, but automated "
-                            "processing could not be started."
-                        )
-                        st.exception(exc)
+                    run_id = trigger_analysis_job(
+                        analysis_id,
+                        policy["model"],
+                    )
+                    load_analysis_groups.clear()
+                    load_recent_analyses.clear()
+                    st.success("Automated processing started.")
+                    st.write(f"Databricks Job run ID: {run_id}")
+                    st.info(
+                        "Stay in the App and open Analyses to follow every "
+                        "processing stage through to the completed graph."
+                    )
                 else:
                     st.warning(
-                        "The analysis was created, but no Lakeflow Job "
-                        "resource is attached yet. Automated processing "
-                        "will become available after the one-time job setup."
+                        "The analysis was created, but the automated Lakeflow "
+                        "Job resource is not attached yet."
                     )
 
             except Exception as exc:
-                st.error("The analysis could not be created.")
+                st.error("The analysis could not be created or started.")
                 st.exception(exc)
 
     st.divider()
@@ -1517,18 +1697,24 @@ with tab_new_analysis:
         recent_analyses = load_recent_analyses()
         if recent_analyses:
             for analysis in recent_analyses:
+                source_label = (
+                    "text"
+                    if analysis.get("input_mode") == "DIRECT_TEXT"
+                    else f"{analysis['document_count']} document(s)"
+                )
+                class_label = (
+                    analysis.get("information_class")
+                    or "unclassified"
+                )
                 st.write(
                     f"{analysis['analysis_title']} · "
-                    f"{analysis['document_count']} document(s) · "
-                    f"{analysis['status']} · "
-                    f"{analysis['analysis_id']}"
+                    f"{source_label} · Class {class_label} · "
+                    f"{analysis['status']} · {analysis['analysis_id']}"
                 )
         else:
             st.caption("No analysis groups have been created yet.")
     except Exception as exc:
-        st.caption(
-            "Recent analyses could not be loaded."
-        )
+        st.caption("Recent analyses could not be loaded.")
         st.exception(exc)
 
 with tab_analyses:
@@ -1667,6 +1853,20 @@ with tab_analyses:
         st.markdown("**Analysis title**")
         st.write(selected_analysis["analysis_title"])
 
+        st.markdown("**Input / information class**")
+        input_mode_value = (
+            selected_analysis.get("input_mode")
+            or "DOCUMENTS"
+        )
+        class_value = (
+            selected_analysis.get("information_class")
+            or "B"
+        )
+        st.write(
+            f"{'Direct text' if input_mode_value == 'DIRECT_TEXT' else 'Documents'} · "
+            f"{INFORMATION_CLASSES.get(class_value, {}).get('label', class_value)}"
+        )
+
         if selected_analysis.get("analysis_objective"):
             st.markdown("**Objective / question**")
             st.write(selected_analysis["analysis_objective"])
@@ -1689,27 +1889,24 @@ with tab_analyses:
         configured_model = (
             selected_analysis.get("effective_model_service")
             or selected_analysis.get("requested_model_service")
-            or DEFAULT_MODEL_SERVICE
+            or PUBLIC_MODEL_SERVICE
         )
         st.code(
             configured_model,
             language=None,
         )
-        if configured_model == "system.ai.gpt-5-6-sol":
-            st.caption(
-                "Databricks Unity Catalog system.ai model service. "
-                "Applicable model terms include OpenAI Usage Policy and "
-                "OpenAI high-risk use-case mitigation requirements, in "
-                "addition to Databricks Model Serving / Foundation Model API "
-                "data-protection and retention terms."
-            )
-        else:
-            st.caption(
-                "Databricks Unity Catalog system.ai model service. "
-                "Use remains subject to Databricks Model Serving / "
-                "Foundation Model API data-protection and retention terms "
-                "and the applicable provider/model terms."
-            )
+        analysis_class = (
+            selected_analysis.get("information_class")
+            or "B"
+        )
+        class_policy = resolve_model_policy(
+            analysis_class
+        )
+        st.caption(
+            class_policy["model_name"]
+            + " — "
+            + class_policy["data_flow"]
+        )
 
         st.markdown("**Source documents**")
 
