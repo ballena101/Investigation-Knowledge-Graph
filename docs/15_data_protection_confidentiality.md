@@ -907,3 +907,126 @@ for OpenAI GPT-5.6 Sol.
 Model availability through Databricks does not itself authorise confidential
 Article 9 material for model processing. The Class D approval rule remains
 applicable.
+
+
+## 16. Model data-flow assurance levels
+
+The IKG must distinguish model quality from model data-flow assurance.
+
+### 16.1 Current GPT-5.6 Sol path
+
+Current default:
+
+`system.ai.gpt-5-6-sol`
+
+On Azure Databricks, OpenAI models are exposed through **ADI Services** provided
+by Databricks.
+
+Databricks documents that:
+
+- Model Serving requests are logically isolated, authenticated and authorised;
+- data are encrypted in transit and at rest;
+- paid-account inputs/outputs are not used to train models or improve
+  Databricks services;
+- Foundation Model API inputs/outputs may be temporarily processed/stored by
+  Databricks for abuse/security purposes for up to 30 days in the same region;
+- partner model providers may retain data for safety purposes in some cases;
+- OpenAI-specific retention conditions may apply to certain customer/use
+  categories and future models.
+
+Therefore the IKG must **not** state that prompts or outputs are guaranteed to
+remain exclusively inside Databricks or are guaranteed never to be available to
+OpenAI/provider safety systems.
+
+The correct project position is:
+
+**The current GPT-5.6 Sol path is governed by Databricks and protected by
+Databricks Model Serving controls, but it is not treated as a zero-retention /
+zero-provider-exposure path.**
+
+### 16.2 Recommended assurance tiers
+
+#### Tier 1 — Published / non-sensitive material
+
+Permitted model path:
+
+- Databricks Foundation Model APIs / ADI model services such as GPT-5.6 Sol,
+  subject to normal organisational approval.
+
+Suitable for:
+
+- Class B published reports;
+- development;
+- benchmarking;
+- non-sensitive analytical experiments.
+
+#### Tier 2 — Internal analytical derivatives
+
+Preferred model path:
+
+- Databricks-hosted/open-weight model with no external-provider routing;
+- provisioned throughput or custom Model Serving where operationally justified;
+- request/response logging disabled unless explicitly required.
+
+Suitable for:
+
+- Class C internal analytical derivatives,
+  subject to organisational approval.
+
+#### Tier 3 — Confidential / Article 9 protected material
+
+Preferred model path:
+
+- a model deployed as a **custom or dedicated Databricks Model Serving
+  endpoint** using an approved open-weight model;
+- no external model-provider service;
+- no web search/tools that send prompt-derived queries externally;
+- Private Link / private networking where required;
+- explicit logging/retention configuration;
+- strict Unity Catalog access;
+- deterministic privacy/output validation before wider display.
+
+Class D should not use GPT-5.6 Sol or another partner-origin Foundation Model API
+merely because the endpoint is available.
+
+The final operational choice must be approved by the responsible EMSA
+security/data-protection/legal governance function.
+
+### 16.3 Candidate lower-provider-exposure models
+
+Azure Databricks supports open-weight / Databricks-hosted model families such as:
+
+- Meta Llama 3.3 70B Instruct;
+- Meta Llama 4 Maverick;
+- OpenAI GPT-OSS 120B / 20B;
+- other approved custom Hugging Face/MLflow models.
+
+For the highest confidentiality requirement, the preferred architecture is not
+simply selecting another pay-per-token Foundation Model API. It is deploying an
+approved open-weight model as a dedicated/custom Model Serving endpoint under
+the organisation's Databricks controls.
+
+### 16.4 Important distinction
+
+A model can be:
+
+- developed by OpenAI/Meta/etc.;
+- hosted by Databricks;
+- or called as an external provider.
+
+These are different concepts.
+
+**Model developer** does not by itself determine where inference data flows.
+
+The IKG must document for every model:
+
+1. model developer;
+2. serving host;
+3. whether an external provider is contacted at inference time;
+4. retention policy;
+5. safety-monitoring policy;
+6. data residency;
+7. logging;
+8. approved information class.
+
+If any of these are unknown, the model is not approved for Class D data.
