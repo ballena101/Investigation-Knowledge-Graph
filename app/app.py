@@ -1508,21 +1508,47 @@ with tab_new_analysis:
             f"{language} · {relative}"
         )
 
+    input_mode = st.radio(
+        "Input source",
+        options=["Documents", "Direct text"],
+        horizontal=True,
+        help=(
+            "Both routes use the same evidence-grounded graph pipeline. "
+            "Class D direct text is disabled until protected text ingress "
+            "to governed Unity Catalog storage is configured."
+        ),
+    )
+
+    information_class = st.selectbox(
+        "Information classification",
+        options=list(INFORMATION_CLASSES),
+        format_func=information_class_label,
+        help=(
+            "This is a processing control, not only a label. It determines "
+            "which model path the App is allowed to use."
+        ),
+    )
+
+    policy = resolve_model_policy(information_class)
+
+    st.markdown("**Processing disclosure**")
+    st.write(policy["description"])
+    st.write(f"**Model path:** {policy['model_name']}")
+    if policy["model"]:
+        st.code(policy["model"], language=None)
+    st.caption(policy["data_flow"])
+
+    if information_class == "D" and not policy["ready"]:
+        st.error(
+            "Class D processing is blocked: the dedicated IKG GPT-OSS 20B "
+            "Model Serving endpoint is not configured. The App will not "
+            "fall back to GPT-5.6 Sol or GPT-OSS 120B."
+        )
+
     with st.form(
         "new_analysis_form",
         clear_on_submit=False,
     ):
-        input_mode = st.radio(
-            "Input source",
-            options=["Documents", "Direct text"],
-            horizontal=True,
-            help=(
-                "Both routes use the same evidence-grounded graph pipeline. "
-                "Class D direct text is disabled until protected text ingress "
-                "to governed Unity Catalog storage is configured."
-            ),
-        )
-
         analysis_title = st.text_input(
             "Analysis title",
             placeholder="e.g. Engine-room fire evidence set",
@@ -1535,32 +1561,6 @@ with tab_new_analysis:
                 "This guides synthesis but does not change source evidence."
             ),
         )
-
-        information_class = st.selectbox(
-            "Information classification",
-            options=list(INFORMATION_CLASSES),
-            format_func=information_class_label,
-            help=(
-                "This is a processing control, not only a label. It determines "
-                "which model path the App is allowed to use."
-            ),
-        )
-
-        policy = resolve_model_policy(information_class)
-
-        st.markdown("**Processing disclosure**")
-        st.write(policy["description"])
-        st.write(f"**Model path:** {policy['model_name']}")
-        if policy["model"]:
-            st.code(policy["model"], language=None)
-        st.caption(policy["data_flow"])
-
-        if information_class == "D" and not policy["ready"]:
-            st.error(
-                "Class D processing is blocked: the dedicated IKG GPT-OSS 20B "
-                "Model Serving endpoint is not configured. The App will not "
-                "fall back to GPT-5.6 Sol or GPT-OSS 120B."
-            )
 
         selected_document_ids = []
         direct_text = ""
