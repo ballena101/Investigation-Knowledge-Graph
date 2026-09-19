@@ -288,6 +288,12 @@ The default IKG analytical model is:
 
 `system.ai.gpt-5-6-sol`
 
+**Data-flow caveat:** this is not classified by the IKG as a zero-retention or
+zero-provider-exposure path. Databricks Foundation Model API retention rules
+and partner-provider safety retention conditions may apply. It is therefore
+appropriate for published/non-sensitive PoC material, but not automatically
+approved for Article 9/Class D evidence.
+
 This is a Databricks Unity Catalog `system.ai` model service for OpenAI
 GPT-5.6 Sol.
 
