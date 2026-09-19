@@ -139,8 +139,9 @@ ordered pipeline:
 4. Evidence ready
 5. Candidate extraction
 6. Cross-document resolution
-7. Knowledge graph construction
-8. Completed
+7. Privacy validation
+8. Knowledge graph construction
+9. Completed
 
 Each stage is shown as one of:
 
@@ -187,3 +188,26 @@ Target state:
 
 The workspace folder must not be deleted until the Git-based deployment,
 Lakeflow Job execution and rollback path have all been validated successfully.
+
+
+## Input modes and model policy
+
+The automated Job accepts analyses created from either indexed documents or
+Direct text.
+
+The App records `input_mode`, `information_class` and the
+policy-selected `requested_model_service` before the Job starts.
+
+Current routing:
+
+- A/B → `system.ai.gpt-5-6-sol`
+- C → `system.ai.gpt-oss-120b`
+- D → `CLASS_D_MODEL_ENDPOINT` (dedicated GPT-OSS 20B)
+
+The Job receives the exact model service/endpoint as `model_service`.
+
+Direct-text A/B/C sources are converted into Delta passages by notebook 15 and
+then their raw Neo4j `text_content` field is removed. Class D direct text is
+blocked pending secure governed ingress.
+
+See `docs/16_unified_input_and_model_routing.md`.
