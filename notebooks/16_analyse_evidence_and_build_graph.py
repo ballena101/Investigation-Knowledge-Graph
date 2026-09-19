@@ -69,7 +69,8 @@ CANDIDATE_REL_TABLE = (
 )
 SUMMARY_TABLE = "bdw_analysis_prod.kg_poc.analysis_summary"
 
-ANALYSIS_VERSION = "GROUP_ANALYSIS_LLM_V0.1"
+ANALYSIS_VERSION = "GROUP_ANALYSIS_LLM_V0.2"
+PRIVACY_OUTPUT_MODE = "DE_IDENTIFIED_BY_DEFAULT"
 MAX_PASSAGES = 500
 MAX_BATCH_CHARS = 14000
 MAX_BATCH_PASSAGES = 8
@@ -456,7 +457,21 @@ Method rules:
    DIRECT, NORMALISED, INFERRED, SYNTHESISED, INSUFFICIENT_EVIDENCE.
 9. Prefer DIRECT or NORMALISED. Use INFERRED sparingly and never for unsupported
    causality.
-10. Return JSON only.
+10. Protect personal and confidential information in analytical outputs.
+11. Do not reproduce personal names, email addresses, phone numbers, home
+    addresses, personal identifiers, dates of birth, medical details or other
+    unnecessary identifying information in labels, descriptions, summaries or
+    findings.
+12. When a person must be represented analytically, use a functional role
+    such as "master", "chief engineer", "passenger", "witness" or
+    "investigator" rather than the person's name.
+13. Do not combine otherwise innocuous details in a way that makes a person
+    identifiable unless that identity is strictly necessary for the authorised
+    safety-analysis purpose.
+14. Vessel names, equipment names and organisations are not automatically
+    personal data, but still minimise them when they are irrelevant to the
+    analytical purpose.
+15. Return JSON only.
 
 Required JSON shape:
 {
@@ -859,6 +874,11 @@ Critical rules:
 - Node kinds must remain within the supplied controlled node-kind vocabulary.
 - Relationship labels must remain within the supplied controlled relationship
   vocabulary.
+- Protect personal/confidential information in the resolved graph and summary.
+- Do not reproduce personal names or other unnecessary personal identifiers.
+- Represent people by functional role wherever possible.
+- Do not introduce identifying details that were not required for the
+  analytical purpose.
 - Return JSON only.
 
 Required JSON shape:
@@ -1287,6 +1307,7 @@ try:
                     description: $description,
                     evidence_passage_ids: $passage_ids,
                     assistant_review_status: 'ASSISTANT_CANDIDATE',
+                    privacy_output_mode: $privacy_output_mode,
                     analysis_version: $analysis_version,
                     model_service: $model_service,
                     created_at: datetime()
@@ -1299,6 +1320,7 @@ try:
                 label=node["label"],
                 description=node["description"],
                 passage_ids=node["passage_ids"],
+                privacy_output_mode=PRIVACY_OUTPUT_MODE,
                 analysis_version=ANALYSIS_VERSION,
                 model_service=model_service,
             ).consume()
@@ -1374,6 +1396,7 @@ try:
                 a.graph_relationship_count = $graph_relationship_count,
                 a.analysis_version = $analysis_version,
                 a.model_service = $model_service,
+                a.privacy_output_mode = $privacy_output_mode,
                 a.completed_at = datetime(),
                 a.processing_updated_at = datetime(),
                 a.processing_error = NULL
@@ -1389,6 +1412,7 @@ try:
             graph_relationship_count=len(
                 resolved_relationships
             ),
+            privacy_output_mode=PRIVACY_OUTPUT_MODE,
             analysis_version=ANALYSIS_VERSION,
             model_service=model_service,
         ).consume()
