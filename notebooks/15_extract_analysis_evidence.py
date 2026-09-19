@@ -4,8 +4,8 @@
 # MAGIC
 # MAGIC First real processing stage for the generic Investigation Knowledge Graph.
 # MAGIC
-# MAGIC **Input:** one `AnalysisGroup` created in the App, containing 1–5
-# MAGIC `SourceDocument` nodes.
+# MAGIC **Input:** one `AnalysisGroup` created in the App, containing either
+# MAGIC 1–5 `SourceDocument` nodes or one temporary `DirectTextSource`.
 # MAGIC
 # MAGIC **Output:**
 # MAGIC - source text extracted under the current Databricks user's permissions;
@@ -151,12 +151,24 @@ def load_analysis_sources():
     query = """
     MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
     OPTIONAL MATCH (a)-[:HAS_SOURCE]->(d:SourceDocument)
-    WITH a, collect(d) AS documents
+    OPTIONAL MATCH (a)-[:HAS_SOURCE_TEXT]->(t:DirectTextSource)
+    WITH a, collect(DISTINCT d) AS documents, head(collect(DISTINCT t)) AS text_source
     RETURN
         a.analysis_id AS analysis_id,
         a.analysis_title AS analysis_title,
+        properties(a)["input_mode"] AS input_mode,
+        properties(a)["information_class"] AS information_class,
         a.language_mode AS language_mode,
         a.output_language AS output_language,
+        CASE
+            WHEN text_source IS NULL THEN NULL
+            ELSE {
+                source_id: text_source.source_id,
+                source_type: text_source.source_type,
+                text_content: text_source.text_content,
+                text_sha256: text_source.text_sha256
+            }
+        END AS text_source,
         [
             d IN documents
             WHERE d IS NOT NULL |
@@ -186,29 +198,42 @@ if analysis is None:
         f"AnalysisGroup not found in Neo4j: {analysis_id}"
     )
 
-documents = analysis["documents"]
+documents = analysis["documents"] or []
+input_mode = analysis.get("input_mode") or "DOCUMENTS"
+text_source = analysis.get("text_source")
 
-if not documents:
-    raise ValueError(
-        "The analysis contains no linked SourceDocument nodes."
-    )
+if input_mode == "DIRECT_TEXT":
+    if not text_source or not text_source.get("text_content"):
+        raise ValueError(
+            "The analysis is configured for direct text but no temporary "
+            "DirectTextSource content is available."
+        )
+else:
+    if not documents:
+        raise ValueError(
+            "The analysis contains no linked SourceDocument nodes."
+        )
 
-if len(documents) > MAX_DOCUMENTS_PER_ANALYSIS:
-    raise ValueError(
-        f"This PoC supports a maximum of {MAX_DOCUMENTS_PER_ANALYSIS} "
-        f"documents per analysis; found {len(documents)}."
-    )
+    if len(documents) > MAX_DOCUMENTS_PER_ANALYSIS:
+        raise ValueError(
+            f"This PoC supports a maximum of {MAX_DOCUMENTS_PER_ANALYSIS} "
+            f"documents per analysis; found {len(documents)}."
+        )
 
 print("Title:", analysis["analysis_title"])
-print("Documents:", len(documents))
+print("Input mode:", input_mode)
 
-for document in documents:
-    print(
-        " -",
-        document["filename"],
-        "→",
-        document["volume_path"],
-    )
+if input_mode == "DIRECT_TEXT":
+    print("Direct text source:", text_source["source_id"])
+else:
+    print("Documents:", len(documents))
+    for document in documents:
+        print(
+            " -",
+            document["filename"],
+            "→",
+            document["volume_path"],
+        )
 
 # COMMAND ----------
 
@@ -449,6 +474,17 @@ def extract_document(document):
     )
 
 
+def extract_direct_text(source):
+    return [
+        {
+            "page_number": 1,
+            "text": normalize_text(
+                source["text_content"]
+            ),
+        }
+    ]
+
+
 def count_document_pages(document):
     path = document["volume_path"]
     source_type = (
@@ -491,15 +527,20 @@ def passage_id_for(
 created_at = datetime.now(timezone.utc)
 
 try:
-    pages_total = sum(
-        count_document_pages(document)
-        for document in documents
-    )
+    if input_mode == "DIRECT_TEXT":
+        pages_total = 1
+        documents_total = 1
+    else:
+        pages_total = sum(
+            count_document_pages(document)
+            for document in documents
+        )
+        documents_total = len(documents)
 
     update_analysis_status(
         status="EXTRACTING",
         stage="EXTRACTING",
-        documents_total=len(documents),
+        documents_total=documents_total,
         documents_processed=0,
         pages_total=pages_total,
         pages_processed=0,
@@ -519,21 +560,15 @@ try:
     pages_processed = 0
     documents_processed = 0
 
-    for document in documents:
-        print("")
-        print("Extracting:", document["filename"])
-
-        pages = extract_document(document)
-        document_text = []
-        document_passage_count = 0
+    if input_mode == "DIRECT_TEXT":
+        source_id = text_source["source_id"]
+        pages = extract_direct_text(text_source)
         passage_order = 0
+        document_passage_count = 0
 
         for page in pages:
             page_number = page["page_number"]
             page_text = page["text"]
-
-            if page_text:
-                document_text.append(page_text)
 
             chunks = split_text(page_text)
 
@@ -546,9 +581,9 @@ try:
                 passage_rows.append(
                     Row(
                         analysis_id=analysis_id,
-                        document_id=document["document_id"],
+                        document_id=source_id,
                         passage_id=passage_id_for(
-                            document["document_id"],
+                            source_id,
                             page_number,
                             passage_order,
                             text_sha256,
@@ -565,76 +600,142 @@ try:
                         ),
                     )
                 )
-
                 document_passage_count += 1
 
             pages_processed += 1
 
-            # Keep App progress reasonably current without writing for every
-            # tiny operation.
-            if (
-                pages_processed % 10 == 0
-                or pages_processed == pages_total
-            ):
-                update_analysis_status(
-                    status="EXTRACTING",
-                    stage="EXTRACTING",
-                    documents_total=len(documents),
-                    documents_processed=documents_processed,
-                    pages_total=pages_total,
-                    pages_processed=pages_processed,
-                    passages_total=len(passage_rows),
-                )
-
-        full_document_text = "\n\n".join(
-            document_text
-        )
-
-        document_language = detect_language_name(
-            full_document_text
-        )
-
-        with driver.session() as session:
-            session.run(
-                """
-                MATCH (d:SourceDocument {
-                    document_id: $document_id
-                })
-                SET
-                    d.detected_language = $detected_language,
-                    d.page_count = $page_count,
-                    d.passage_count = $passage_count,
-                    d.extraction_status = 'EXTRACTED',
-                    d.extraction_version = $extraction_version,
-                    d.extracted_at = datetime()
-                """,
-                document_id=document["document_id"],
-                detected_language=document_language,
-                page_count=len(pages),
-                passage_count=document_passage_count,
-                extraction_version=EXTRACTION_VERSION,
-            ).consume()
-
-        documents_processed += 1
+        documents_processed = 1
 
         update_analysis_status(
             status="EXTRACTING",
             stage="EXTRACTING",
-            documents_total=len(documents),
-            documents_processed=documents_processed,
-            pages_total=pages_total,
-            pages_processed=pages_processed,
+            documents_total=1,
+            documents_processed=1,
+            pages_total=1,
+            pages_processed=1,
             passages_total=len(passage_rows),
         )
 
         print(
-            "  pages:",
-            len(pages),
-            "| passages:",
+            "Direct text passages:",
             document_passage_count,
-            "| language:",
-            document_language,
         )
+
+    else:
+        for document in documents:
+            print("")
+            print("Extracting:", document["filename"])
+
+            pages = extract_document(document)
+            document_text = []
+            document_passage_count = 0
+            passage_order = 0
+
+            for page in pages:
+                page_number = page["page_number"]
+                page_text = page["text"]
+
+                if page_text:
+                    document_text.append(page_text)
+
+                chunks = split_text(page_text)
+
+                for chunk in chunks:
+                    passage_order += 1
+                    text_sha256 = hashlib.sha256(
+                        chunk.encode("utf-8")
+                    ).hexdigest()
+
+                    passage_rows.append(
+                        Row(
+                            analysis_id=analysis_id,
+                            document_id=document["document_id"],
+                            passage_id=passage_id_for(
+                                document["document_id"],
+                                page_number,
+                                passage_order,
+                                text_sha256,
+                            ),
+                            page_start=page_number,
+                            page_end=page_number,
+                            passage_order=passage_order,
+                            passage_text=chunk,
+                            text_sha256=text_sha256,
+                            extraction_version=EXTRACTION_VERSION,
+                            created_at=created_at,
+                            detected_language=detect_language_name(
+                                chunk
+                            ),
+                        )
+                    )
+
+                    document_passage_count += 1
+
+                pages_processed += 1
+
+                if (
+                    pages_processed % 10 == 0
+                    or pages_processed == pages_total
+                ):
+                    update_analysis_status(
+                        status="EXTRACTING",
+                        stage="EXTRACTING",
+                        documents_total=documents_total,
+                        documents_processed=documents_processed,
+                        pages_total=pages_total,
+                        pages_processed=pages_processed,
+                        passages_total=len(passage_rows),
+                    )
+
+            full_document_text = "\n\n".join(
+                document_text
+            )
+
+            document_language = detect_language_name(
+                full_document_text
+            )
+
+            with driver.session() as session:
+                session.run(
+                    """
+                    MATCH (d:SourceDocument {
+                        document_id: $document_id
+                    })
+                    SET
+                        d.detected_language = $detected_language,
+                        d.page_count = $page_count,
+                        d.passage_count = $passage_count,
+                        d.extraction_status = 'EXTRACTED',
+                        d.extraction_version = $extraction_version,
+                        d.extracted_at = datetime()
+                    """,
+                    document_id=document["document_id"],
+                    detected_language=document_language,
+                    page_count=len(pages),
+                    passage_count=document_passage_count,
+                    extraction_version=EXTRACTION_VERSION,
+                ).consume()
+
+            documents_processed += 1
+
+            update_analysis_status(
+                status="EXTRACTING",
+                stage="EXTRACTING",
+                documents_total=documents_total,
+                documents_processed=documents_processed,
+                pages_total=pages_total,
+                pages_processed=pages_processed,
+                passages_total=len(passage_rows),
+            )
+
+            print(
+                "  pages:",
+                len(pages),
+                "| passages:",
+                document_passage_count,
+                "| language:",
+                document_language,
+            )
 
     if passage_rows:
         passage_schema = spark.table(
@@ -649,6 +750,33 @@ try:
         passage_df.write.mode("append").saveAsTable(
             ANALYSIS_PASSAGE_TABLE
         )
+
+    # Privacy-by-design: after governed passages are persisted, remove raw
+    # direct text from Neo4j. Keep only its hash and processing metadata.
+    if input_mode == "DIRECT_TEXT":
+        direct_language = detect_language_name(
+            text_source["text_content"]
+        )
+        with driver.session() as session:
+            session.run(
+                """
+                MATCH (s:DirectTextSource {
+                    source_id: $source_id
+                })
+                REMOVE s.text_content
+                SET
+                    s.detected_language = $detected_language,
+                    s.passage_count = $passage_count,
+                    s.extraction_status = 'EXTRACTED_AND_PURGED',
+                    s.retention_status = 'RAW_TEXT_PURGED',
+                    s.extraction_version = $extraction_version,
+                    s.extracted_at = datetime()
+                """,
+                source_id=text_source["source_id"],
+                detected_language=direct_language,
+                passage_count=len(passage_rows),
+                extraction_version=EXTRACTION_VERSION,
+            ).consume()
 
     detected_languages = Counter(
         row.detected_language
@@ -686,7 +814,7 @@ try:
                 a.processing_error = NULL
             """,
             analysis_id=analysis_id,
-            documents_total=len(documents),
+            documents_total=documents_total,
             documents_processed=documents_processed,
             pages_total=pages_total,
             pages_processed=pages_processed,
@@ -698,7 +826,7 @@ try:
     print("")
     print("EVIDENCE EXTRACTION COMPLETE")
     print("status: EVIDENCE_READY")
-    print("documents:", documents_processed, "/", len(documents))
+    print("documents:", documents_processed, "/", documents_total)
     print("pages:", pages_processed, "/", pages_total)
     print("passages:", len(passage_rows))
     print("dominant passage language:", dominant_language)
