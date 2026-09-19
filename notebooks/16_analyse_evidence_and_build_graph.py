@@ -1322,8 +1322,16 @@ privacy_redaction_count += sum(
     if before != after
 )
 
+privacy_validation_status = (
+    "PASSED_WITH_AUTOMATIC_REDACTION"
+    if privacy_redaction_count > 0
+    else "PASSED"
+)
+
 print(
-    "Privacy validation redactions:",
+    "Privacy validation:",
+    privacy_validation_status,
+    "| redactions:",
     privacy_redaction_count,
 )
 
@@ -1496,8 +1504,7 @@ try:
                 a.analysis_version = $analysis_version,
                 a.model_service = $model_service,
                 a.privacy_output_mode = $privacy_output_mode,
-                a.privacy_validation_status = 'PASSED_WITH_AUTOMATIC_REDACTION'
-                    ,
+                a.privacy_validation_status = $privacy_validation_status,
                 a.privacy_redaction_count = $privacy_redaction_count,
                 a.completed_at = datetime(),
                 a.processing_updated_at = datetime(),
@@ -1515,6 +1522,7 @@ try:
                 resolved_relationships
             ),
             privacy_output_mode=PRIVACY_OUTPUT_MODE,
+            privacy_validation_status=privacy_validation_status,
             privacy_redaction_count=privacy_redaction_count,
             analysis_version=ANALYSIS_VERSION,
             model_service=model_service,
