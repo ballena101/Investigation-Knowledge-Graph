@@ -2,304 +2,210 @@
 
 ## Purpose
 
-The Investigation Knowledge Graph supports two ways to create one analytical
-knowledge graph:
+IKG has one analytical pipeline and two source-ingress methods:
 
-1. **Documents** — select 1–5 indexed source documents.
-2. **Direct text** — write or paste text directly in the App.
+1. **Documents** — select 1–5 indexed documents.
+2. **Direct text** — write or paste text in the App.
 
-Both routes converge on the same evidence-grounded analytical pipeline.
-
-The source type and the privacy/model policy are separate concerns:
+The information class controls the permitted model route.
 
 ```text
-INPUT SOURCE
-  Documents | Direct text
-          ↓
+INPUT
+Documents | Direct text
+        ↓
+QUESTION / OBJECTIVE
+        ↓
 INFORMATION CLASS
-  A | B | C | D
-          ↓
+A | B | C | D
+        ↓
 MODEL POLICY
-          ↓
-EVIDENCE EXTRACTION / PASSAGING
-          ↓
-CANDIDATE EXTRACTION
-          ↓
-CROSS-DOCUMENT / CROSS-PASSAGE RESOLUTION
-          ↓
+        ↓
+EVIDENCE PASSAGES
+        ↓
+MODEL RUN(S)
+        ↓
 PRIVACY VALIDATION
-          ↓
-KNOWLEDGE GRAPH
-          ↓
+        ↓
+KNOWLEDGE GRAPH(S)
+        ↓
 HUMAN REVIEW
 ```
 
-## 1. Input modes
+## A/B/C routes
 
-### 1.1 Documents
+| Class | Model path | Normal use |
+|---|---|---|
+| A | `system.ai.gpt-5-6-sol` | Public / technical |
+| B | `system.ai.gpt-5-6-sol` | Published investigation material |
+| C | `system.ai.gpt-oss-120b` | Internal/restricted analytical material |
 
-The investigator can select 1–5 documents already indexed from the governed
-Unity Catalog source library.
+A/B use GPT-5.6 Sol through Databricks.
 
-Documents remain in governed storage. The App stores the AnalysisGroup and
-source links, then triggers the automated Lakeflow Job.
+C uses the Databricks-hosted open-weight GPT-OSS 120B route.
 
-### 1.2 Direct text
+## Class D dual-model PoC
 
-The investigator can write or paste text directly and ask the IKG to construct
-the knowledge graph from that material.
+Class D is the current PoC focus.
 
-For Classes A/B/C:
-
-1. the raw text is stored temporarily as a `DirectTextSource`;
-2. a SHA-256 hash and source identifier are created;
-3. the extraction Job converts the text into deterministic governed passages in
-   Delta;
-4. after successful persistence, `text_content` is removed from Neo4j;
-5. the source node retains only metadata, hash, language, passage count and
-   retention status.
-
-Expected final retention state:
-
-`RAW_TEXT_PURGED`
-
-Direct text therefore uses Neo4j only as a temporary ingress buffer, not as a
-permanent raw-evidence repository.
-
-### 1.3 Class D direct text
-
-The Class D PoC supports direct text through encrypted temporary ingress:
-
-```text
-direct text → App encryption → temporary encrypted source
-→ backend decryption → governed Delta passages → encrypted payload purged
-```
-
-The key is supplied through `DIRECT_TEXT_ENCRYPTION_KEY` and must be managed
-as an approved Databricks secret/App resource. Raw Class D text is not passed
-as a Lakeflow Job parameter.
-
-## 2. Information classification and model routing
-
-The investigator declares the information class before analysis.
-
-The class is a technical processing control, not merely metadata.
-
-| Class | Description | Model path | Policy |
-|---|---|---|---|
-| A | Public / technical | `system.ai.gpt-5-6-sol` | Public/non-sensitive route |
-| B | Published investigation material | `system.ai.gpt-5-6-sol` | Published-material route |
-| C | Internal / restricted analytical material | `system.ai.gpt-oss-120b` | Databricks-hosted open-weight route |
-| D | Article 9 / protected confidential evidence | GPT-OSS 20B, Llama 3.3 70B, or both | Dedicated endpoints; no A/B/C fallback |
-
-### A/B
-
-Model:
-
-`system.ai.gpt-5-6-sol`
-
-Developer: OpenAI  
-Serving path: Databricks `system.ai` / Foundation Model API / ADI service.
-
-A/B are the normal routes for public or published non-sensitive PoC material.
-
-### C
-
-Model:
-
-`system.ai.gpt-oss-120b`
-
-Developer: OpenAI  
-Model type: open-weight  
-Serving path: Databricks-hosted model service.
-
-The purpose of the C route is to reduce external model-provider inference
-exposure while retaining strong reasoning capability.
-
-Databricks Foundation Model API controls and retention conditions still apply;
-the C route is not described as zero-retention.
-
-### D
-
-Class D is the dual-model PoC route.
-
-Available choices:
+The investigator may select:
 
 - **GPT-OSS 20B**
-- **Meta Llama 3.3 70B Instruct**
+- **Llama 3.3 70B**
 - **Both models**
+
+The models run independently against the same evidence passages and the same
+question.
 
 Target endpoints:
 
 - `CLASS_D_GPT20_ENDPOINT`
 - `CLASS_D_LLAMA70_ENDPOINT`
 
-When Both is selected, the models receive the same governed evidence passages
-and the same investigation question independently. Outputs use separate
-model-run namespaces and are displayed side by side.
+The App fails closed if a requested endpoint is unavailable.
 
-There is no fallback to GPT-5.6 Sol, GPT-OSS 120B or another model.
+There is no fallback from Class D to A/B/C model routes.
 
-Llama 3.3 70B has a PoC quota of **5 questions per user per day**. A Both-model
-run consumes one Llama question. Only configured `IKG_ADMIN_USERS` may reset
-the daily counter.
+## Class D direct text
 
-**Terminology:** Ollama is a runtime/serving layer, not the model. The larger
-comparison model is Llama 3.3 70B Instruct. If Ollama is later used to host it,
-runtime and model identity are recorded separately.
+Direct text is supported for Class D through encrypted temporary ingress.
 
+Processing:
 
-## 3. Disclosure before processing
+```text
+user text
+  ↓
+Fernet encryption in App
+  ↓
+temporary encrypted DirectTextSource
+  ↓
+backend Job decrypts
+  ↓
+governed Delta passages
+  ↓
+temporary encrypted payload purged
+```
 
-Before the user submits an analysis, the App displays:
+The encryption key is supplied through:
 
-- chosen information class;
-- explanation of that class;
-- exact policy-selected model path;
-- model/deployment description;
-- data-flow/retention caveat;
+`DIRECT_TEXT_ENCRYPTION_KEY`
+
+Raw direct text is never sent as a Lakeflow Job parameter.
+
+## Class D comparison
+
+When both models are selected:
+
+```text
+same evidence + same question
+        ↓
+ ┌───────────────┬─────────────────┐
+ │ GPT-OSS 20B   │ Llama 3.3 70B  │
+ └───────────────┴─────────────────┘
+        ↓                 ↓
+ independent summary   independent summary
+ independent graph     independent graph
+ privacy validation    privacy validation
+        ↓                 ↓
+        side-by-side App view
+```
+
+Each model run receives its own `ModelRun` and graph namespace.
+
+One model cannot overwrite the other model's result.
+
+## Llama daily quota
+
+Llama 3.3 70B is limited to:
+
+**5 questions per user per day**
+
+Timezone:
+
+`Europe/Lisbon`
+
+Running "Both models" consumes one Llama question.
+
+Usage is persisted in Neo4j as `ModelDailyUsage`.
+
+Only users listed in:
+
+`IKG_ADMIN_USERS`
+
+may reset the daily quota.
+
+The administrator can reset any user's current-day quota.
+
+## Model disclosure
+
+Before submission, the App displays:
+
+- information class;
+- selected Class D model(s);
+- endpoint availability;
+- data-flow policy;
 - de-identification rule;
-- Class D availability/blocking status.
+- Llama quota where applicable.
 
-The user does not normally choose arbitrary models. Model selection follows the
-information-class policy.
+After completion, the App displays the actual model endpoint for every
+`ModelRun`.
 
-## 4. Privacy-by-design output
+## Privacy validation
 
-All model routes use:
+Every model run uses:
 
 `DE_IDENTIFIED_BY_DEFAULT`
 
-The LLM instructions require:
+Before graph publication, outputs pass through `PRIVACY_VALIDATION`.
 
-- functional roles instead of personal names where possible;
-- omission of unnecessary emails, phones, addresses, personal IDs, dates of
-  birth and health details;
-- no unnecessary witness identities;
-- avoidance of re-identifying combinations;
-- evidence-grounded output only.
+Current deterministic checks include:
 
-Original evidence is not rewritten or anonymised. De-identification applies to
-the analytical derivative.
-
-## 5. Privacy validation stage
-
-Before graph publication, the generic analysis pipeline enters:
-
-`PRIVACY_VALIDATION`
-
-Current deterministic checks redact direct identifiers including:
-
-- email addresses;
+- email patterns;
 - telephone-number patterns;
 - explicitly labelled personal-ID patterns.
 
-The analysis stores:
+The model run records:
 
-- `privacy_output_mode`;
-- `privacy_validation_status`;
-- `privacy_redaction_count`.
+- privacy-output mode;
+- privacy-validation status;
+- automatic-redaction count.
 
-The App displays the privacy-validation stage and final redaction count.
+This is a PoC privacy layer, not yet a complete PII/NER guarantee.
 
-This deterministic layer complements, but does not replace, model instructions.
-Future production hardening should add evaluated person-name/NER and
-re-identification-risk validation.
+## Visible lifecycle
 
-## 6. Visible lifecycle
-
-The App displays the complete ordered lifecycle:
+For generic runs:
 
 1. Analysis created
 2. Workflow queued
 3. Evidence extraction
 4. Evidence ready
 5. Candidate extraction
-6. Cross-document resolution
+6. Resolution
 7. Privacy validation
-8. Knowledge graph construction
+8. Graph construction
 9. Completed
 
-Every stage is shown as Pending, Running, Completed or Failed.
+For Class D dual-model runs, the App additionally exposes the independent
+model-run results.
 
-## 7. One graph pipeline, not multiple products
+## One product, not separate tools
 
-The IKG does not have one "document LLM" and another unrelated "text graph"
-feature.
+Documents and direct text are source-ingress alternatives.
 
-There is one analytical product:
+GPT-OSS 20B and Llama 3.3 70B are analytical alternatives within the same Class
+D pipeline.
 
-```text
-source evidence
-   ↓
-normalised evidence passages
-   ↓
-policy-selected analytical model
-   ↓
-evidence-grounded candidates
-   ↓
-resolved concepts/relationships
-   ↓
-privacy validation
-   ↓
-knowledge graph
-```
+The knowledge graph is the common analytical output.
 
-Documents and direct text are simply different source-ingress methods.
+## Lovable
 
-## 8. Human-authored text vs model-authored graph
+Lovable is not part of the IKG architecture or data flow.
 
-Direct text means the user supplies the source content.
+## Validation
 
-The system may then construct the graph from that content using the same
-evidence-grounded analytical rules.
+Model validation is defined separately in:
 
-The graph must not introduce causal relationships merely because they are
-plausible. The direct-text route follows the same relationship vocabulary,
-provenance and causality restrictions as document analysis.
+`docs/18_model_validation_and_feedback.md`
 
-## 9. Lovable
-
-Lovable is **not part of the IKG architecture**.
-
-The project uses:
-
-- GitHub as source of truth;
-- Databricks Apps / Streamlit for UI;
-- Lakeflow Jobs for orchestration;
-- Unity Catalog / Delta for governed evidence and analytical persistence;
-- Neo4j for graph projection/traversal;
-- Databricks model services for authorised model inference.
-
-No IKG source evidence or application dependency is routed through Lovable.
-
-## 10. Current implementation status
-
-Implemented:
-
-- unified New analysis GUI;
-- Documents / Direct text input choice;
-- A/B/C/D classification selector;
-- model selected by policy;
-- pre-submission processing disclosure;
-- A/B → GPT-5.6 Sol;
-- C → GPT-OSS 120B;
-- Class D fail-closed dual-model routing;
-- GPT-OSS 20B / Llama 3.3 70B / Both selection;
-- encrypted Class D direct-text ingress;
-- temporary direct-text payload purge after Delta persistence;
-- 5-question/day Llama quota with admin-only reset;
-- side-by-side Class D result presentation;
-- de-identified-by-default model instructions;
-- deterministic privacy-validation stage;
-- process timeline;
-- exact model disclosure in completed analysis.
-
-Pending:
-
-- deploy and approve the dedicated GPT-OSS 20B endpoint;
-- deploy and approve the dedicated Llama 3.3 70B endpoint;
-- configure `CLASS_D_GPT20_ENDPOINT` and `CLASS_D_LLAMA70_ENDPOINT`;
-- validate the Class D networking/logging/retention configuration;
-- add secure direct-text ingress for Class D if operationally required;
-- strengthen deterministic privacy validation with evaluated PII/NER controls.
+The Commodore Clipper graph is a reference/benchmark candidate, not proof that
+either Class D model is validated.
