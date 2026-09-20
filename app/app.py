@@ -1747,8 +1747,8 @@ with tab_new_analysis:
         horizontal=True,
         help=(
             "Both routes use the same evidence-grounded graph pipeline. "
-            "Class D direct text is disabled until protected text ingress "
-            "to governed Unity Catalog storage is configured."
+            "Direct text is encrypted before temporary storage and purged "
+            "after governed passages are created."
         ),
     )
 
@@ -1771,12 +1771,88 @@ with tab_new_analysis:
         st.code(policy["model"], language=None)
     st.caption(policy["data_flow"])
 
-    if information_class == "D" and not policy["ready"]:
-        st.error(
-            "Class D processing is blocked: the dedicated IKG GPT-OSS 20B "
-            "Model Serving endpoint is not configured. The App will not "
-            "fall back to GPT-5.6 Sol or GPT-OSS 120B."
+    class_d_model_selection = None
+
+    if information_class == "D":
+        class_d_model_label = st.radio(
+            "Class D model comparison",
+            options=list(
+                CLASS_D_MODEL_OPTIONS
+            ),
+            horizontal=True,
+            help=(
+                "Run GPT-OSS 20B, Llama 3.3 70B, or both against the same "
+                "evidence and question. Both produces side-by-side results."
+            ),
         )
+        class_d_model_selection = (
+            CLASS_D_MODEL_OPTIONS[
+                class_d_model_label
+            ]
+        )
+
+        needs_gpt20 = (
+            class_d_model_selection
+            in {"GPT20", "BOTH"}
+        )
+        needs_llama70 = (
+            class_d_model_selection
+            in {"LLAMA70", "BOTH"}
+        )
+
+        if needs_gpt20:
+            if CLASS_D_GPT20_ENDPOINT:
+                st.caption(
+                    "GPT-OSS 20B endpoint: "
+                    + CLASS_D_GPT20_ENDPOINT
+                )
+            else:
+                st.error(
+                    "Dedicated GPT-OSS 20B endpoint is not configured."
+                )
+
+        if needs_llama70:
+            if CLASS_D_LLAMA70_ENDPOINT:
+                st.caption(
+                    "Llama 3.3 70B endpoint: "
+                    + CLASS_D_LLAMA70_ENDPOINT
+                )
+            else:
+                st.error(
+                    "Dedicated Llama 3.3 70B endpoint is not configured."
+                )
+
+            llama_used = get_llama_daily_usage()
+            llama_remaining = max(
+                LLAMA_DAILY_QUESTION_LIMIT
+                - llama_used,
+                0,
+            )
+            st.metric(
+                "Llama questions remaining today",
+                llama_remaining,
+                help=(
+                    f"Limit: {LLAMA_DAILY_QUESTION_LIMIT} per user per day "
+                    f"({QUOTA_TIMEZONE}). Running both models consumes one "
+                    "Llama question."
+                ),
+            )
+
+            if llama_remaining == 0:
+                st.warning(
+                    "The daily Llama 3.3 70B question limit has been reached."
+                )
+
+            if is_current_user_admin():
+                if st.button(
+                    "Admin: reset my Llama quota",
+                    key="reset_llama_quota",
+                ):
+                    reset_llama_daily_usage()
+                    st.success(
+                        "Today's Llama quota has been reset."
+                    )
+                    st.rerun()
 
     with st.form(
         "new_analysis_form",
@@ -1821,17 +1897,11 @@ with tab_new_analysis:
                     "knowledge graph to be constructed."
                 ),
                 help=(
-                    "For Classes A/B/C, the text is held temporarily, converted "
-                    "into governed evidence passages, and then removed from the "
-                    "temporary Neo4j source field. Class D direct text is not "
-                    "accepted in this phase."
+                    "The text is encrypted before temporary storage, converted "
+                    "into governed evidence passages, and the temporary encrypted "
+                    "payload is purged after extraction."
                 ),
             )
-            if information_class == "D":
-                st.warning(
-                    "For protected Class D material, use Documents so the source "
-                    "enters through the governed Unity Catalog volume."
-                )
 
         language_mode = st.selectbox(
             "Source language handling",
@@ -1877,7 +1947,38 @@ with tab_new_analysis:
         if not analysis_title.strip():
             errors.append("Enter an analysis title.")
 
-        if not policy["ready"]:
+        if information_class == "D":
+            if not analysis_objective.strip():
+                errors.append(
+                    "Enter the investigation question for the Class D comparison."
+                )
+
+            needs_gpt20 = class_d_model_selection in {
+                "GPT20",
+                "BOTH",
+            }
+            needs_llama70 = class_d_model_selection in {
+                "LLAMA70",
+                "BOTH",
+            }
+
+            if needs_gpt20 and not CLASS_D_GPT20_ENDPOINT:
+                errors.append(
+                    "The dedicated GPT-OSS 20B endpoint is not configured."
+                )
+            if needs_llama70 and not CLASS_D_LLAMA70_ENDPOINT:
+                errors.append(
+                    "The dedicated Llama 3.3 70B endpoint is not configured."
+                )
+            if (
+                needs_llama70
+                and get_llama_daily_usage()
+                >= LLAMA_DAILY_QUESTION_LIMIT
+            ):
+                errors.append(
+                    "The daily Llama 3.3 70B question limit has been reached."
+                )
+        elif not policy["ready"]:
             errors.append(
                 "The model path required by this information class is not configured."
             )
@@ -1886,12 +1987,12 @@ with tab_new_analysis:
             if not selected_document_ids:
                 errors.append("Select at least one source document.")
         else:
-            if information_class == "D":
-                errors.append(
-                    "Class D direct-text input is disabled. Use governed document input."
-                )
             if not direct_text.strip():
                 errors.append("Enter text to analyse.")
+            if not DIRECT_TEXT_ENCRYPTION_KEY:
+                errors.append(
+                    "Secure direct-text encryption is not configured."
+                )
 
         if errors:
             for error in errors:
@@ -1906,7 +2007,12 @@ with tab_new_analysis:
                         language_mode=language_mode,
                         output_language=output_language,
                         information_class=information_class,
-                        model_service=policy["model"],
+                        model_service=(
+                            "CLASS_D_POLICY_ROUTED"
+                            if information_class == "D"
+                            else policy["model"]
+                        ),
+                        model_selection=class_d_model_selection,
                     )
                     source_description = f"{linked_count} document(s)"
                 else:
@@ -1930,27 +2036,57 @@ with tab_new_analysis:
                     f"Information class: "
                     f"{INFORMATION_CLASSES[information_class]['label']}"
                 )
-                st.write(f"AI model path: {policy['model_name']}")
-                st.code(policy["model"], language=None)
+                if information_class == "D":
+                    st.write(
+                        "Class D model selection: "
+                        + class_d_model_label
+                    )
 
-                if ANALYSIS_JOB_ID:
+                    if class_d_model_selection in {
+                        "LLAMA70",
+                        "BOTH",
+                    }:
+                        new_count = (
+                            consume_llama_daily_usage()
+                        )
+                        if new_count is None:
+                            raise RuntimeError(
+                                "The Llama daily quota was reached before "
+                                "the analysis could start."
+                            )
+
+                    run_id = trigger_class_d_analysis_job(
+                        analysis_id,
+                        class_d_model_selection,
+                    )
+                else:
+                    st.write(
+                        f"AI model path: "
+                        f"{policy['model_name']}"
+                    )
+                    st.code(
+                        policy["model"],
+                        language=None,
+                    )
+                    if not ANALYSIS_JOB_ID:
+                        raise RuntimeError(
+                            "The automated Lakeflow Job resource is not attached."
+                        )
                     run_id = trigger_analysis_job(
                         analysis_id,
                         policy["model"],
                     )
-                    load_analysis_groups.clear()
-                    load_recent_analyses.clear()
-                    st.success("Automated processing started.")
-                    st.write(f"Databricks Job run ID: {run_id}")
-                    st.info(
-                        "Stay in the App and open Analyses to follow every "
-                        "processing stage through to the completed graph."
-                    )
-                else:
-                    st.warning(
-                        "The analysis was created, but the automated Lakeflow "
-                        "Job resource is not attached yet."
-                    )
+
+                load_analysis_groups.clear()
+                load_recent_analyses.clear()
+                st.success("Automated processing started.")
+                st.write(
+                    f"Databricks Job run ID: {run_id}"
+                )
+                st.info(
+                    "Stay in the App and open Analyses to follow every "
+                    "processing stage through to the completed graph."
+                )
 
             except Exception as exc:
                 st.error("The analysis could not be created or started.")
