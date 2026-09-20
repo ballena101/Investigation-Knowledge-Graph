@@ -2366,6 +2366,8 @@ with tab_analyses:
         load_analysis_evidence_counts.clear()
         load_analysis_result.clear()
         load_analysis_graph.clear()
+        load_model_runs.clear()
+        load_model_run_graph.clear()
         st.rerun()
 
     try:
@@ -2526,15 +2528,6 @@ with tab_analyses:
             )
 
         st.markdown("**AI model / policy**")
-        configured_model = (
-            selected_analysis.get("effective_model_service")
-            or selected_analysis.get("requested_model_service")
-            or PUBLIC_MODEL_SERVICE
-        )
-        st.code(
-            configured_model,
-            language=None,
-        )
         analysis_class = (
             selected_analysis.get("information_class")
             or "B"
@@ -2542,11 +2535,41 @@ with tab_analyses:
         class_policy = resolve_model_policy(
             analysis_class
         )
-        st.caption(
-            class_policy["model_name"]
-            + " — "
-            + class_policy["data_flow"]
-        )
+
+        if analysis_class == "D":
+            selection = (
+                selected_analysis.get(
+                    "requested_model_selection"
+                )
+                or "—"
+            )
+            st.write(
+                f"Class D comparison selection: {selection}"
+            )
+            st.caption(
+                class_policy["model_name"]
+                + " — "
+                + class_policy["data_flow"]
+            )
+        else:
+            configured_model = (
+                selected_analysis.get(
+                    "effective_model_service"
+                )
+                or selected_analysis.get(
+                    "requested_model_service"
+                )
+                or PUBLIC_MODEL_SERVICE
+            )
+            st.code(
+                configured_model,
+                language=None,
+            )
+            st.caption(
+                class_policy["model_name"]
+                + " — "
+                + class_policy["data_flow"]
+            )
 
         if input_mode_value == "DIRECT_TEXT":
             st.markdown("**Direct text source**")
@@ -2567,8 +2590,9 @@ with tab_analyses:
                         f"{text_source_meta.get('passage_count')}"
                     )
                 st.caption(
-                    "Direct-text raw content is temporary for A/B/C and is "
-                    "removed from Neo4j after governed Delta passages are created."
+                    "Direct-text content is encrypted before temporary storage. "
+                    "The encrypted payload is purged after governed Delta passages "
+                    "are created."
                 )
         else:
             st.markdown("**Source documents**")
@@ -2687,115 +2711,153 @@ with tab_analyses:
                 "Group analysis completed."
             )
 
-            if result_meta.get("overview"):
-                st.markdown("### Analysis summary")
-                st.write(result_meta["overview"])
-
-            key_findings = result_meta.get(
-                "key_findings"
-            ) or []
-            if key_findings:
-                st.markdown("### Key findings")
-                for item in key_findings:
-                    st.write(f"• {item}")
-
-            uncertainties = result_meta.get(
-                "uncertainties"
-            ) or []
-            if uncertainties:
-                st.markdown("### Uncertainties")
-                for item in uncertainties:
-                    st.write(f"• {item}")
-
-            source_conflicts = result_meta.get(
-                "source_conflicts"
-            ) or []
-            if source_conflicts:
-                st.markdown("### Source conflicts")
-                for item in source_conflicts:
-                    st.write(f"• {item}")
-
-            st.caption(
-                "Model service: "
-                f"{result_meta.get('model_service') or '—'} · "
-                "Privacy mode: "
-                f"{result_meta.get('privacy_output_mode') or 'DE_IDENTIFIED_BY_DEFAULT'} · "
-                "Analysis version: "
-                f"{result_meta.get('analysis_version') or '—'}"
-            )
-            st.write(
-                "Privacy validation: "
-                f"{result_meta.get('privacy_validation_status') or '—'}"
-                " · automatic redactions: "
-                f"{result_meta.get('privacy_redaction_count') or 0}"
-            )
-
-            analysis_graph = load_analysis_graph(
-                selected_analysis_id
-            )
-
-            analysis_elements = {
-                "nodes": [
-                    {
-                        "data": {
-                            "id": node["node_id"],
-                            "label": node["node_kind"],
-                            "name": node["label"],
-                            "node_kind": node["node_kind"],
-                            "description": (
-                                node.get("description")
-                                or ""
-                            ),
-                            "passage_ids": node.get(
-                                "passage_ids"
-                            ) or [],
-                        }
-                    }
-                    for node in analysis_graph["nodes"]
-                ],
-                "edges": [
-                    {
-                        "data": {
-                            "id": edge["edge_id"],
-                            "label": edge["relationship"],
-                            "source": edge["source_id"],
-                            "target": edge["target_id"],
-                            "relationship": edge["relationship"],
-                            "evidence_class": (
-                                edge.get("evidence_class")
-                                or "—"
-                            ),
-                            "passage_ids": edge.get(
-                                "passage_ids"
-                            ) or [],
-                        }
-                    }
-                    for edge in analysis_graph["edges"]
-                ],
-            }
-
-            if analysis_elements["nodes"]:
-                st.markdown("### Knowledge graph")
-                st.caption(
-                    "Machine-generated analytical graph. Relationships "
-                    "remain candidates until human review."
+            if class_value == "D":
+                model_runs = load_model_runs(
+                    selected_analysis_id
                 )
-                streamlit_cytoscape(
-                    elements=analysis_elements,
-                    layout="fcose",
-                    node_styles=analysis_node_styles,
-                    edge_styles=analysis_edge_styles,
-                    height=700,
-                    key=(
-                        "analysis_graph_"
-                        + selected_analysis_id
-                    ),
-                )
+
+                if not model_runs:
+                    st.warning(
+                        "The Class D workflow completed but no model-run "
+                        "results are available."
+                    )
+                elif len(model_runs) == 1:
+                    render_model_run(
+                        selected_analysis_id,
+                        model_runs[0],
+                        model_runs[0]["model_key"],
+                    )
+                else:
+                    st.markdown(
+                        "## Side-by-side model comparison"
+                    )
+                    st.caption(
+                        "Both models analysed the same evidence passages and "
+                        "the same investigation question independently."
+                    )
+                    columns = st.columns(
+                        len(model_runs)
+                    )
+                    for column, model_run in zip(
+                        columns,
+                        model_runs,
+                    ):
+                        with column:
+                            render_model_run(
+                                selected_analysis_id,
+                                model_run,
+                                model_run["model_key"],
+                            )
             else:
-                st.warning(
-                    "The analysis completed but no graph nodes were "
-                    "published."
+                if result_meta.get("overview"):
+                    st.markdown("### Analysis summary")
+                    st.write(result_meta["overview"])
+
+                key_findings = result_meta.get(
+                    "key_findings"
+                ) or []
+                if key_findings:
+                    st.markdown("### Key findings")
+                    for item in key_findings:
+                        st.write(f"• {item}")
+
+                uncertainties = result_meta.get(
+                    "uncertainties"
+                ) or []
+                if uncertainties:
+                    st.markdown("### Uncertainties")
+                    for item in uncertainties:
+                        st.write(f"• {item}")
+
+                source_conflicts = result_meta.get(
+                    "source_conflicts"
+                ) or []
+                if source_conflicts:
+                    st.markdown("### Source conflicts")
+                    for item in source_conflicts:
+                        st.write(f"• {item}")
+
+                st.caption(
+                    "Model service: "
+                    f"{result_meta.get('model_service') or '—'} · "
+                    "Privacy mode: "
+                    f"{result_meta.get('privacy_output_mode') or 'DE_IDENTIFIED_BY_DEFAULT'} · "
+                    "Analysis version: "
+                    f"{result_meta.get('analysis_version') or '—'}"
                 )
+                st.write(
+                    "Privacy validation: "
+                    f"{result_meta.get('privacy_validation_status') or '—'}"
+                    " · automatic redactions: "
+                    f"{result_meta.get('privacy_redaction_count') or 0}"
+                )
+
+                analysis_graph = load_analysis_graph(
+                    selected_analysis_id
+                )
+
+                analysis_elements = {
+                    "nodes": [
+                        {
+                            "data": {
+                                "id": node["node_id"],
+                                "label": node["node_kind"],
+                                "name": node["label"],
+                                "node_kind": node["node_kind"],
+                                "description": (
+                                    node.get("description")
+                                    or ""
+                                ),
+                                "passage_ids": node.get(
+                                    "passage_ids"
+                                ) or [],
+                            }
+                        }
+                        for node in analysis_graph["nodes"]
+                    ],
+                    "edges": [
+                        {
+                            "data": {
+                                "id": edge["edge_id"],
+                                "label": edge["relationship"],
+                                "source": edge["source_id"],
+                                "target": edge["target_id"],
+                                "relationship": edge["relationship"],
+                                "evidence_class": (
+                                    edge.get("evidence_class")
+                                    or "—"
+                                ),
+                                "passage_ids": edge.get(
+                                    "passage_ids"
+                                ) or [],
+                            }
+                        }
+                        for edge in analysis_graph["edges"]
+                    ],
+                }
+
+                if analysis_elements["nodes"]:
+                    st.markdown("### Knowledge graph")
+                    st.caption(
+                        "Machine-generated analytical graph. Relationships "
+                        "remain candidates until human review."
+                    )
+                    streamlit_cytoscape(
+                        elements=analysis_elements,
+                        layout="fcose",
+                        node_styles=analysis_node_styles,
+                        edge_styles=analysis_edge_styles,
+                        height=700,
+                        key=(
+                            "analysis_graph_"
+                            + selected_analysis_id
+                        ),
+                    )
+                else:
+                    st.warning(
+                        "The analysis completed but no graph nodes were "
+                        "published."
+                    )
 
         elif status == "FAILED":
             st.error(
