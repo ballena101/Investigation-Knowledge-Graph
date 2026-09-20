@@ -1,6 +1,19 @@
-# Investigation Knowledge Graph
+# Safety Investigation Knowledge & AI Support
 
-Evidence-grounded knowledge graph and review environment for heterogeneous investigation material.
+Proof of Concept for artificial-intelligence-assisted safety investigation analysis, evidence-grounded knowledge structuring and investigator review.
+
+## Product identity
+
+**Working product name:** Safety Investigation Knowledge & AI Support
+
+The product is not defined by a knowledge graph alone. The knowledge graph is
+one analytical representation used inside a broader safety-investigation
+support environment.
+
+The PoC evaluates how AI and structured-knowledge tools can support
+investigators while preserving evidence provenance, confidentiality,
+human-review authority and clear separation between source evidence and
+machine-generated analysis.
 
 ## Purpose
 
@@ -257,3 +270,28 @@ Model routing is determined by information class:
 See `docs/16_unified_input_and_model_routing.md`.
 
 Lovable is not part of the IKG architecture.
+
+
+## LLM disclosure and Article 9 suitability
+
+The App must disclose every model route used by the PoC.
+
+| Information class | Model | Serving route | Confidentiality position | Article 9 / Class D position |
+|---|---|---|---|---|
+| A | OpenAI GPT-5.6 Sol | Databricks `system.ai.gpt-5-6-sol` | Public / non-sensitive | Not approved for protected Class D evidence |
+| B | OpenAI GPT-5.6 Sol | Databricks `system.ai.gpt-5-6-sol` | Published / non-sensitive | Not approved for protected Class D evidence |
+| C | OpenAI GPT-OSS 120B | Databricks-hosted `system.ai.gpt-oss-120b` | Internal / restricted | Not automatically approved for Article 9 evidence |
+| D | OpenAI GPT-OSS 20B | Dedicated Databricks endpoint | Protected / confidential | Conditionally suitable only after endpoint approval |
+| D | Meta Llama 3.3 70B Instruct | Dedicated Databricks endpoint | Protected / confidential | Conditionally suitable only after endpoint approval |
+
+The Article 9 column is an internal processing-governance classification, not a
+legal certification.
+
+For Class D, the system must fail closed until the selected endpoint's
+networking, access control, logging, retention, data flow and organisational /
+legal / security approval have been validated.
+
+See:
+
+- `docs/15_data_protection_confidentiality.md`
+- `docs/19_current_poc_functional_specification.md`
