@@ -7,7 +7,7 @@
 # MAGIC Workflow:
 # MAGIC 1. extract evidence once;
 # MAGIC 2. run GPT-OSS 20B against the same evidence/question when selected;
-# MAGIC 3. run Llama 3.3 70B against the same evidence/question when selected;
+# MAGIC 3. run Ollama Llama 3.3 70B against the same evidence/question when selected;
 # MAGIC 4. finalize only after the requested model runs complete.
 
 # COMMAND ----------
@@ -58,7 +58,7 @@ job_settings = {
     "name": JOB_NAME,
     "description": (
         "Class D PoC: one evidence extraction followed by independent "
-        "GPT-OSS 20B and/or Llama 3.3 70B model runs."
+        "GPT-OSS 20B and/or Ollama Llama 3.3 70B model runs."
     ),
     "parameters": [
         {
@@ -74,7 +74,7 @@ job_settings = {
             "default": "__SKIP__",
         },
         {
-            "name": "llama70_endpoint",
+            "name": "ollama_llama70_url",
             "default": "__SKIP__",
         },
     ],
@@ -119,9 +119,9 @@ job_settings = {
                 "source": "WORKSPACE",
                 "base_parameters": {
                     "analysis_id": "{{job.parameters.analysis_id}}",
-                    "model_service": "{{job.parameters.llama70_endpoint}}",
+                    "model_service": "{{job.parameters.ollama_llama70_url}}",
                     "model_run_key": "LLAMA70",
-                    "model_label": "Llama 3.3 70B",
+                    "model_label": "Ollama Llama 3.3 70B",
                 },
             },
             "timeout_seconds": 0,
