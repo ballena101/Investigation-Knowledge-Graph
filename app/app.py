@@ -440,11 +440,13 @@ def trigger_class_d_analysis_job(
                 "model_selection": model_selection,
                 "gpt20_endpoint": (
                     CLASS_D_GPT20_ENDPOINT
-                    or "__SKIP__"
+                    if run_gpt20
+                    else "__SKIP__"
                 ),
                 "llama70_endpoint": (
                     CLASS_D_LLAMA70_ENDPOINT
-                    or "__SKIP__"
+                    if run_llama70
+                    else "__SKIP__"
                 ),
             },
         },
