@@ -261,3 +261,107 @@ Current state:
 - human-feedback learning loop: designed, not yet activated for model training.
 
 The project must keep this distinction visible in the App/documentation.
+
+
+## 8. PoC validation protocol
+
+For the dual-model PoC, validation should be run as a controlled benchmark,
+not by judging whichever answer looks more convincing.
+
+For every benchmark item:
+
+1. freeze the source evidence and investigation question;
+2. freeze the extraction/passage version;
+3. run GPT-OSS 20B and Llama 3.3 70B independently with the same evidence and
+   prompt/pipeline version;
+4. preserve each raw model result and generated graph separately;
+5. compare each model against the human-reviewed benchmark graph;
+6. human-review unsupported, missing and amended relationships;
+7. run privacy-leakage checks;
+8. repeat selected items to measure stability;
+9. record model, endpoint, prompt, graph and benchmark versions.
+
+Minimum reported measures per model:
+
+| Dimension | Measure |
+|---|---|
+| Evidence grounding | supported relationships / generated relationships |
+| Unsupported output | unsupported relationships / generated relationships |
+| Relationship precision | validated relationships / reviewed generated relationships |
+| Relationship recall | expected validated relationships recovered / expected relationships |
+| Causal discipline | unsupported causal/contributory promotions |
+| Concept coverage | expected canonical concepts recovered |
+| Duplicate resolution | erroneous merges/splits |
+| Provenance | relationships with correct supporting passage references |
+| Privacy | direct/re-identifying leakage events |
+| Human effort | rejected + amended items and review time |
+| Stability | agreement across repeated runs |
+
+The comparison view may display differences, but model-validation conclusions
+must be based on the benchmark and human review rather than output volume.
+
+## 9. Acceptance principle for causal relationships
+
+The most important failure mode is unsupported causal promotion.
+
+For `RESULTED_IN` and `CONTRIBUTED_TO`, the reviewer should verify:
+
+1. the source passage supports more than chronology/proximity;
+2. the relationship direction is correct;
+3. the relationship label matches the strength of the evidence;
+4. the cited evidence actually supports that relationship;
+5. the model has not imported causal knowledge from another case.
+
+The PoC target is zero unsupported causal promotions. A non-zero result is
+recorded as a model/pipeline failure for that benchmark item, not silently
+corrected before scoring.
+
+## 10. Using graph validation to improve model behaviour
+
+Human validation is useful model input, but the project must keep three stores
+conceptually separate:
+
+```text
+CURRENT-CASE EVIDENCE
+        ↓
+model inference
+        ↓
+CANDIDATE GRAPH
+        ↓
+human review
+        ↓
+VALIDATED KNOWLEDGE / FEEDBACK
+```
+
+Validated knowledge may later be retrieved into a new inference as
+`REVIEWED_PRIOR_KNOWLEDGE`.
+
+It must never be represented as `CURRENT_CASE_EVIDENCE` unless the underlying
+source evidence is actually part of the current case.
+
+Recommended first feedback mechanism:
+
+- retrieve relationship definitions;
+- retrieve reviewed positive examples;
+- retrieve reviewed rejected examples, especially causal-overreach examples;
+- include their provenance and benchmark/review version;
+- instruct the model that examples teach semantics and do not establish facts
+  in the current case.
+
+This is preferable to immediate fine-tuning because it is inspectable,
+reversible and versionable.
+
+## 11. Validation-set contamination control
+
+Once a reviewed graph is used as retrieval/few-shot input for a model run, that
+same graph is no longer an independent blind benchmark for that run.
+
+Maintain explicit flags such as:
+
+- `BENCHMARK_LOCKED`
+- `DEVELOPMENT`
+- `FEW_SHOT_ELIGIBLE`
+- `RETRIEVAL_ELIGIBLE`
+- `TRAINING_ELIGIBLE`
+
+A benchmark version should record which examples were visible to the model.
