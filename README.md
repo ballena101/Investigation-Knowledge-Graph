@@ -295,3 +295,18 @@ See:
 
 - `docs/15_data_protection_confidentiality.md`
 - `docs/19_current_poc_functional_specification.md`
+
+
+## Retention and repository cleanliness
+
+The PoC uses a minimised retention model:
+
+- raw direct-text temporary payload → purge after successful extraction;
+- raw Class D source ingress → maximum 24 hours;
+- derived/digested analytical artefacts → 72 hours by default;
+- validation/benchmark cases → retained only by explicit decision.
+
+An hourly cleanup Job purges expired Delta/Neo4j analytical artefacts.
+
+GitHub is code/documentation only. Investigation evidence, model outputs,
+temporary exports and generated case artefacts are not repository content.
