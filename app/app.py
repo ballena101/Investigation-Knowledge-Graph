@@ -3272,34 +3272,79 @@ with tab_mapping_review:
 with tab_about:
     st.markdown(
         f"""
-### Case information
+### Current Proof of Concept
 
-**Case:** Commodore Clipper  
+The current IKG PoC is the **Class D dual-model investigation-analysis
+workflow**.
+
+The investigator can:
+
+- select governed documents or provide encrypted direct text;
+- state an investigation question/objective;
+- choose GPT-OSS 20B, Llama 3.3 70B, or both for Class D;
+- inspect independent evidence-grounded outputs;
+- compare both models side by side;
+- inspect privacy-validation results and generated knowledge graphs.
+
+Llama 3.3 70B is limited to
+**{LLAMA_DAILY_QUESTION_LIMIT} questions per user per day** in the PoC.
+
+### Validation status
+
+The model-validation framework covers:
+
+- evidence grounding;
+- relationship correctness;
+- causal overreach;
+- graph completeness;
+- privacy leakage;
+- stability;
+- human review acceptance/amendment.
+
+The **Commodore Clipper 2010** graph is retained as a controlled reference and
+benchmark candidate. It validates the graph/evidence methodology; it does not
+by itself validate GPT-OSS 20B or Llama 3.3 70B.
+
+### Human-feedback learning loop
+
+Human-validated graph relationships can feed future model assistance as:
+
+1. evaluation ground truth;
+2. retrieval context;
+3. few-shot examples;
+4. versioned active-learning feedback;
+5. potentially future fine-tuning data, subject to governance.
+
+The same case must not be used simultaneously as both a training/example case
+and an independent validation case for the same model/version.
+
+### Compliance and privacy
+
+Class D processing is intended to respect the confidentiality requirements of
+Article 9 of Directive 2009/18/EC through controlled model routing,
+least-privilege storage, encrypted direct-text ingress, evidence provenance,
+de-identified output by default and a privacy-validation gate.
+
+This PoC is design-aligned / conditionally aligned and does not constitute a
+legal certification of compliance.
+
+### Reference demonstrator
+
+**Reference case:** Commodore Clipper  
 **Occurrence:** Fire on the main vehicle deck  
 **Date:** 16 June 2010  
-**Knowledge graph version:** {GRAPH_VERSION}
+**Reference graph version:** {GRAPH_VERSION}
 
-### Method
+The reference graph remains available in the other App tabs for methodology,
+relationship-review and EMCIP-mapping demonstrations.
 
-The graph distinguishes between source evidence, case concepts and analytical
-mappings. Chronology is not treated as causality.
+### Documentation
 
-Concepts for which a justified EMCIP mapping was not identified remain
-deliberately unresolved.
+Key project documents:
 
-The `HAS_VESSEL` relationship is structural and does not require
-investigation-report evidence.
-
-### Review governance
-
-Assistant review and human review are separate provenance layers.
-
-For this PoC, human review is stored as append-only
-`RelationshipReview` and `EMCIPMappingReview` nodes in Neo4j. The
-reviewed graph edges and original EMCIP mappings are not silently modified.
-
-If the project later requires a governed institutional audit store, these
-review records can be exported to Delta / Unity Catalog from a controlled
-Databricks notebook or workflow.
-"""
+- `docs/01_current_poc_scope.md`
+- `docs/15_data_protection_confidentiality.md`
+- `docs/17_class_d_dual_model_poc.md`
+- `docs/18_model_validation_and_feedback.md`
+        """
     )
