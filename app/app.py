@@ -358,13 +358,36 @@ def consume_llama_daily_usage():
     )
 
 
-def reset_llama_daily_usage():
+def list_llama_daily_usage():
+    if not is_current_user_admin():
+        return []
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(
+                """
+                MATCH (u:ModelDailyUsage {
+                    model_key: 'LLAMA70',
+                    usage_date: $usage_date
+                })
+                RETURN
+                    u.user_key AS user_key,
+                    u.question_count AS question_count
+                ORDER BY u.user_key
+                """,
+                usage_date=quota_date(),
+            )
+        ]
+
+
+def reset_llama_daily_usage(target_user_key):
     if not is_current_user_admin():
         raise PermissionError(
             "Only an IKG administrator can reset the Llama daily quota."
         )
 
-    user_key = get_current_user_key()
+    user_key = target_user_key.strip().lower()
     usage_key = f"{user_key}|LLAMA70|{quota_date()}"
 
     with get_driver().session() as session:
@@ -379,11 +402,12 @@ def reset_llama_daily_usage():
             SET
                 u.question_count = 0,
                 u.reset_at = datetime(),
-                u.reset_by = $user_key
+                u.reset_by = $reset_by
             """,
             usage_key=usage_key,
             user_key=user_key,
             usage_date=quota_date(),
+            reset_by=get_current_user_key(),
         ).consume()
 
 
@@ -2072,13 +2096,33 @@ with tab_new_analysis:
                 )
 
             if is_current_user_admin():
+                usage_rows = list_llama_daily_usage()
+                admin_users = [
+                    row["user_key"]
+                    for row in usage_rows
+                ]
+
+                if get_current_user_key() not in admin_users:
+                    admin_users.append(
+                        get_current_user_key()
+                    )
+
+                reset_target = st.selectbox(
+                    "Admin quota reset user",
+                    options=sorted(set(admin_users)),
+                    key="llama_reset_user",
+                )
+
                 if st.button(
-                    "Admin: reset my Llama quota",
+                    "Admin: reset selected user's Llama quota",
                     key="reset_llama_quota",
                 ):
-                    reset_llama_daily_usage()
+                    reset_llama_daily_usage(
+                        reset_target
+                    )
                     st.success(
-                        "Today's Llama quota has been reset."
+                        "Today's Llama quota has been reset for "
+                        + reset_target
                     )
                     st.rerun()
 
