@@ -56,12 +56,19 @@ model_service = dbutils.widgets.get("model_service").strip()
 model_run_key = dbutils.widgets.get("model_run_key").strip() or "PRIMARY"
 model_label = dbutils.widgets.get("model_label").strip() or model_run_key
 comparison_mode = model_run_key != "PRIMARY"
+model_run_started = time.perf_counter()
+model_usage_totals = {
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0,
+}
 
 # COMMAND ----------
 
 import hashlib
 import json
 import re
+import time
 import uuid
 import urllib.request
 from datetime import datetime, timezone
@@ -518,7 +525,38 @@ def query_model_json(
                 max_tokens=max_tokens,
             )
 
-            text = response.choices[0].message.content
+            usage = getattr(
+            response,
+            "usage",
+            None,
+        )
+        if usage is not None:
+            model_usage_totals["prompt_tokens"] += int(
+                getattr(
+                    usage,
+                    "prompt_tokens",
+                    0,
+                )
+                or 0
+            )
+            model_usage_totals["completion_tokens"] += int(
+                getattr(
+                    usage,
+                    "completion_tokens",
+                    0,
+                )
+                or 0
+            )
+            model_usage_totals["total_tokens"] += int(
+                getattr(
+                    usage,
+                    "total_tokens",
+                    0,
+                )
+                or 0
+            )
+
+        text = response.choices[0].message.content
 
         try:
             return json.loads(
@@ -1595,6 +1633,11 @@ try:
                 model_service=model_service,
             ).consume()
 
+        model_run_duration_seconds = (
+            time.perf_counter()
+            - model_run_started
+        )
+
         session.run(
             """
             MATCH (m:ModelRun {model_run_id: $model_run_id})
@@ -1610,6 +1653,10 @@ try:
                 m.privacy_output_mode = $privacy_output_mode,
                 m.privacy_validation_status = $privacy_validation_status,
                 m.privacy_redaction_count = $privacy_redaction_count,
+                m.duration_seconds = $duration_seconds,
+                m.prompt_tokens = $prompt_tokens,
+                m.completion_tokens = $completion_tokens,
+                m.total_tokens = $total_tokens,
                 m.completed_at = datetime(),
                 m.updated_at = datetime()
             """,
@@ -1624,6 +1671,10 @@ try:
             privacy_output_mode=PRIVACY_OUTPUT_MODE,
             privacy_validation_status=privacy_validation_status,
             privacy_redaction_count=privacy_redaction_count,
+            duration_seconds=model_run_duration_seconds,
+            prompt_tokens=model_usage_totals["prompt_tokens"],
+            completion_tokens=model_usage_totals["completion_tokens"],
+            total_tokens=model_usage_totals["total_tokens"],
         ).consume()
 
         if not comparison_mode:
