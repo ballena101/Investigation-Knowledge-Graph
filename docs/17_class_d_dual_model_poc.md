@@ -93,9 +93,13 @@ A model cannot overwrite the other model's graph.
 
 ## Llama usage control
 
-The PoC limits Llama 3.3 70B to:
+The PoC default limits Llama 3.3 70B to:
 
 **5 questions per user per day**
+
+The value is configurable with `LLAMA_DAILY_QUESTION_LIMIT`; it can be raised
+to 10 later without changing application code. The current PoC default remains
+5.
 
 Timezone:
 
@@ -108,7 +112,9 @@ Usage is persisted in Neo4j as `ModelDailyUsage`.
 When the limit is reached, the App blocks further Llama questions until the
 next day.
 
-Only a configured App administrator can reset the counter.
+Only a configured App administrator can reset the counter. An administrator
+may reset today's counter for a specified user; the reset records the admin
+identity and timestamp.
 
 Administrator identities are supplied through:
 
@@ -177,3 +183,13 @@ Still requiring environment setup/validation:
 - create/update Class D Lakeflow Job;
 - run end-to-end Class D validation;
 - confirm private networking/logging/retention configuration.
+
+
+## Ollama terminology
+
+Ollama is a runtime, not the comparison model.
+
+The larger model in this PoC is **Meta Llama 3.3 70B Instruct**. It can be run
+through Ollama in other/local environments, but IKG's Class D design uses an
+approved dedicated Databricks serving endpoint. This avoids adding an Ollama
+server as another protected-data processing boundary.
