@@ -218,3 +218,50 @@ See:
 
 - `docs/17_class_d_dual_model_poc.md`
 - `docs/18_model_validation_and_feedback.md`
+
+
+## Class D source-retention automation
+
+Class D raw source storage has a hard maximum lifetime of **24 hours from
+ingestion**.
+
+The orchestration layer must therefore include an independent cleanup control,
+not rely on successful completion of the analysis pipeline.
+
+Required lifecycle:
+
+```text
+INGESTED
+  ↓
+expires_at = ingested_at + 24h
+  ↓
+analysis may run
+  ↓
+scheduled retention checker
+  ↓
+SOURCE_PURGED
+```
+
+The cleanup control must run frequently enough to guarantee the maximum
+retention period and must operate even when:
+
+- extraction fails;
+- a model endpoint fails;
+- the App is not open;
+- human review is incomplete.
+
+For every source-ingress container/path the system should persist:
+
+- `ingested_at`;
+- `expires_at`;
+- `purge_status`;
+- `purged_at`;
+- deletion error/status where relevant.
+
+The preferred architecture is per-analysis ephemeral source storage so that one
+analysis can be purged without deleting newer source material belonging to
+another analysis.
+
+Deleting raw source storage does not imply deletion of Delta passages, model
+outputs, graph derivatives, logs or backups. Those have separate retention
+controls.
