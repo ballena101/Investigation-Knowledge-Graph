@@ -1245,3 +1245,74 @@ Only D adds:
 - stricter ingress/storage rules;
 - dedicated endpoints;
 - mandatory protected-data/privacy checks.
+
+
+## 22. Class D 24-hour source-storage deletion rule
+
+### Hard requirement
+
+The Class D source-document ingress storage is **ephemeral**.
+
+For Class D analyses, the dedicated source-document storage location and all
+raw documents contained in it must be completely deleted **no later than 24
+hours after ingestion**.
+
+This is a mandatory retention control for the PoC, not an optional cleanup
+task.
+
+### Intended implementation
+
+The preferred implementation is per-analysis or per-ingestion ephemeral storage
+with explicit timestamps:
+
+- `ingested_at`;
+- `expires_at = ingested_at + 24 hours`;
+- `purged_at`;
+- `purge_status`.
+
+A scheduled cleanup process should run frequently enough to guarantee that no
+Class D source object remains beyond its 24-hour maximum lifetime.
+
+Where the implementation uses a dedicated Unity Catalog volume for the
+analysis/ingestion, the volume itself and its contents are removed. If a shared
+technical root must be retained, the complete analysis-specific source
+container/path must be deleted so that the same 24-hour maximum is preserved.
+
+### No silent extension
+
+Processing failure, model failure, human review, application downtime or an
+unfinished analysis must not silently extend source retention beyond 24 hours.
+
+If analysis cannot complete before expiry, the source still expires and the
+analysis must record that the source was purged.
+
+### Important scope limitation
+
+Deleting the source volume does **not** automatically delete all derived copies.
+
+The following may constitute separate data copies and therefore require their
+own retention/deletion policy:
+
+- extracted Delta passages;
+- temporary decrypted/encrypted text;
+- candidate concepts/relationships;
+- model prompts and responses where retained;
+- model-serving safety/abuse retention;
+- Neo4j analytical derivatives;
+- human-review records;
+- application/job logs;
+- backups/snapshots.
+
+The system must not describe the 24-hour source purge as "complete erasure" of
+the investigation data unless those derivative stores have also been covered by
+an approved deletion policy.
+
+### Directive/privacy purpose
+
+The 24-hour maximum supports the project's privacy-by-design and data
+minimisation objectives for Article 9-protected material by reducing the time
+during which raw protected source documents remain available to the analytical
+environment.
+
+It does not replace the underlying legal/organisational requirements governing
+processing, access, disclosure, retention or deletion.
