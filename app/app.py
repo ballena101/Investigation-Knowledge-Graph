@@ -75,10 +75,11 @@ INFORMATION_CLASSES = {
         "label": "D — Protected / Article 9 confidential evidence",
         "description": "Witness statements, identities, sensitive personal data, investigator notes/drafts, VTS/VDR material or equivalent protected evidence.",
         "model": None,
-        "model_name": "Dedicated IKG GPT-OSS 20B endpoint",
+        "model_name": "Dedicated IKG GPT-OSS 20B and/or Llama 3.3 70B endpoints",
         "data_flow": (
-            "Dedicated/custom Databricks Model Serving endpoint. No fallback to "
-            "GPT-5.6 Sol or a partner-hosted model is permitted."
+            "Dedicated/custom Databricks Model Serving endpoints. The investigator "
+            "may run GPT-OSS 20B, Llama 3.3 70B, or both on the same evidence. "
+            "No fallback to A/B/C model routes is permitted."
         ),
     },
 }
@@ -257,8 +258,13 @@ def resolve_model_policy(information_class):
     if information_class == "D":
         return {
             **policy,
-            "model": CLASS_D_MODEL_ENDPOINT,
-            "ready": bool(CLASS_D_MODEL_ENDPOINT),
+            "model": None,
+            "gpt20_endpoint": CLASS_D_GPT20_ENDPOINT,
+            "llama70_endpoint": CLASS_D_LLAMA70_ENDPOINT,
+            "ready": bool(
+                CLASS_D_GPT20_ENDPOINT
+                or CLASS_D_LLAMA70_ENDPOINT
+            ),
         }
 
     return {
@@ -269,6 +275,129 @@ def resolve_model_policy(information_class):
 
 def information_class_label(class_code):
     return INFORMATION_CLASSES[class_code]["label"]
+
+
+def get_current_user_key():
+    reviewer = get_reviewer_identity()
+    return (
+        reviewer["email"]
+        if reviewer["email"] != "unknown"
+        else reviewer["username"]
+    ).strip().lower()
+
+
+def is_current_user_admin():
+    return get_current_user_key() in IKG_ADMIN_USERS
+
+
+def quota_date():
+    return datetime.now(
+        ZoneInfo(QUOTA_TIMEZONE)
+    ).date().isoformat()
+
+
+def get_llama_daily_usage():
+    user_key = get_current_user_key()
+    usage_key = f"{user_key}|LLAMA70|{quota_date()}"
+
+    query = """
+    MERGE (u:ModelDailyUsage {usage_key: $usage_key})
+    ON CREATE SET
+        u.user_key = $user_key,
+        u.model_key = 'LLAMA70',
+        u.usage_date = $usage_date,
+        u.question_count = 0,
+        u.created_at = datetime()
+    RETURN u.question_count AS question_count
+    """
+
+    with get_driver().session() as session:
+        record = session.run(
+            query,
+            usage_key=usage_key,
+            user_key=user_key,
+            usage_date=quota_date(),
+        ).single()
+
+    return int(record["question_count"] or 0)
+
+
+def consume_llama_daily_usage():
+    user_key = get_current_user_key()
+    usage_key = f"{user_key}|LLAMA70|{quota_date()}"
+
+    query = """
+    MERGE (u:ModelDailyUsage {usage_key: $usage_key})
+    ON CREATE SET
+        u.user_key = $user_key,
+        u.model_key = 'LLAMA70',
+        u.usage_date = $usage_date,
+        u.question_count = 0,
+        u.created_at = datetime()
+    WITH u
+    WHERE u.question_count < $limit
+    SET
+        u.question_count = u.question_count + 1,
+        u.updated_at = datetime()
+    RETURN u.question_count AS question_count
+    """
+
+    with get_driver().session() as session:
+        record = session.run(
+            query,
+            usage_key=usage_key,
+            user_key=user_key,
+            usage_date=quota_date(),
+            limit=LLAMA_DAILY_QUESTION_LIMIT,
+        ).single()
+
+    return (
+        int(record["question_count"])
+        if record
+        else None
+    )
+
+
+def reset_llama_daily_usage():
+    if not is_current_user_admin():
+        raise PermissionError(
+            "Only an IKG administrator can reset the Llama daily quota."
+        )
+
+    user_key = get_current_user_key()
+    usage_key = f"{user_key}|LLAMA70|{quota_date()}"
+
+    with get_driver().session() as session:
+        session.run(
+            """
+            MERGE (u:ModelDailyUsage {usage_key: $usage_key})
+            ON CREATE SET
+                u.user_key = $user_key,
+                u.model_key = 'LLAMA70',
+                u.usage_date = $usage_date,
+                u.created_at = datetime()
+            SET
+                u.question_count = 0,
+                u.reset_at = datetime(),
+                u.reset_by = $user_key
+            """,
+            usage_key=usage_key,
+            user_key=user_key,
+            usage_date=quota_date(),
+        ).consume()
+
+
+def encrypt_direct_text(value):
+    if not DIRECT_TEXT_ENCRYPTION_KEY:
+        raise RuntimeError(
+            "DIRECT_TEXT_ENCRYPTION_KEY is not configured."
+        )
+
+    return Fernet(
+        DIRECT_TEXT_ENCRYPTION_KEY.encode("utf-8")
+    ).encrypt(
+        value.encode("utf-8")
+    ).decode("utf-8")
 
 
 def trigger_analysis_job(analysis_id, model_service):
