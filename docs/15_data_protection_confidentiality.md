@@ -1125,3 +1125,121 @@ When both models are used, outputs remain separate:
 - independent human review.
 
 The models do not receive each other's outputs before comparison.
+
+
+## 20. Directive 2009/18/EC Article 9 — final control mapping
+
+This section is the definitive legal-design cross-reference for the current
+PoC.
+
+Directive (EU) 2024/3017 replaced Article 9 of Directive 2009/18/EC. The
+current Article 9 protects the following from use/disclosure for purposes other
+than the safety investigation unless the competent authority makes the required
+overriding-public-interest determination:
+
+1. statements taken from persons by the safety investigation authority;
+2. records revealing the identity of persons who gave evidence;
+3. particularly sensitive/personal information, including health information;
+4. investigator-generated notes, drafts, opinions and opinions expressed in
+   analysis;
+5. information/evidence from other Member States or third countries where the
+   supplying authority requests confidentiality;
+6. draft interim, concise or final reports;
+7. communications between persons involved in ship operation;
+8. VTS written/electronic recordings and transcripts, including internal
+   reports/results.
+
+Article 9(2) separately restricts VDR/S-VDR recordings. Article 9(3) requires
+that only strictly necessary data be disclosed. The Article operates without
+prejudice to GDPR.
+
+### Technical consequence for IKG
+
+The IKG treats these categories as Class D unless a formally approved
+classification says otherwise.
+
+The default Class D data path is:
+
+```text
+authorised governed source storage
+        ↓
+minimum necessary evidence passage
+        ↓
+approved dedicated model endpoint
+        ↓
+de-identified analytical derivative
+        ↓
+privacy validation
+        ↓
+Neo4j graph references / authorised derivatives
+        ↓
+authorised App view + human review
+```
+
+### Neo4j rule for Class D
+
+Neo4j is not the authoritative raw evidence store.
+
+Default allowed Class D content in Neo4j:
+
+- IDs;
+- hashes;
+- processing status;
+- model-run metadata;
+- evidence-reference IDs;
+- de-identified graph concepts;
+- graph relationships;
+- review/audit metadata;
+- privacy-validation metadata.
+
+Default prohibited raw replication:
+
+- complete protected documents;
+- complete witness statements;
+- raw witness identities;
+- unnecessary health/sensitive personal data;
+- investigator draft material;
+- raw operational communications;
+- raw/full VTS transcripts;
+- raw/full VDR/S-VDR material.
+
+Where an analytical description could itself reveal a protected person, use a
+functional role and retain the evidence link separately.
+
+### Aura-specific governance
+
+Neo4j Aura documents encryption in transit and at rest and encrypted snapshots.
+Backups/snapshots remain copies of the stored data. Consequently, putting raw
+Class D evidence into Aura would also extend that evidence into Aura's snapshot
+lifecycle. This is an additional reason for the IKG rule that raw Class D
+documents and full protected evidence are not normal Neo4j graph payloads.
+
+Any exception requires explicit organisational approval of:
+
+- Aura tenant/tier;
+- hosting region;
+- identities and access;
+- backup/snapshot lifecycle;
+- retention/deletion;
+- contractual processor/subprocessor status;
+- incident handling.
+
+## 21. A/B/C versus D
+
+The confidentiality controls do not remove the A/B/C workflows.
+
+- **A:** public/technical → default GPT-5.6 Sol.
+- **B:** published/non-sensitive investigation material → default GPT-5.6 Sol.
+- **C:** internal/restricted but not Article 9 protected → default
+  Databricks-hosted GPT-OSS 120B.
+- **D:** Article 9/protected → dedicated GPT-OSS 20B and/or Llama 3.3 70B,
+  with the additional controls documented above.
+
+Only D adds:
+
+- dual-model choice;
+- Llama quota;
+- side-by-side comparison;
+- stricter ingress/storage rules;
+- dedicated endpoints;
+- mandatory protected-data/privacy checks.
