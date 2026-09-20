@@ -597,3 +597,79 @@ separate retention rules and are not automatically erased by deleting the
 source volume.
 
 The Class D user disclosure must state this distinction explicitly.
+
+
+## 18. Derived analytical retention — 72 hours
+
+The PoC keeps derived/digested analytical artefacts for **72 hours by default**.
+
+This covers:
+
+- extracted passages;
+- model candidates;
+- candidate relationships;
+- model summaries;
+- uncertainties and source-conflict lists;
+- generated graph nodes/relationships;
+- other transient analytical derivatives.
+
+The purpose of the 72-hour window is to allow:
+
+- investigator inspection;
+- side-by-side model comparison;
+- short-term troubleshooting;
+- human review initiation;
+
+without accumulating unnecessary protected analytical material.
+
+At analysis creation the App sets:
+
+`retention_policy = TRANSIENT_72H`
+
+and calculates:
+
+`derived_expires_at = created_at + 72 hours`
+
+The App displays the expiry.
+
+### Validation exception
+
+An analysis may be explicitly marked:
+
+`retain_for_validation = true`
+
+only when it is deliberately selected for the benchmark / model-validation
+dataset.
+
+Such cases are excluded from the automatic 72-hour purge.
+
+Retention for validation must therefore be intentional rather than the default.
+
+### Separation from raw source retention
+
+The retention hierarchy is:
+
+```text
+raw direct-text buffer
+→ purge immediately after successful extraction
+
+raw Class D source ingress
+→ maximum 24 hours
+
+derived/digested analytical data
+→ 72 hours
+
+explicit benchmark / validated record
+→ retained only by deliberate validation decision
+```
+
+### Cleanup implementation
+
+- `23_purge_expired_analysis_artifacts.py`
+- `24_create_retention_cleanup_job.py`
+
+The cleanup Job runs hourly and removes expired derived content shortly after
+the 72-hour boundary.
+
+The cleanup preserves compact audit metadata but not substantive evidence or
+model-generated analytical content.
