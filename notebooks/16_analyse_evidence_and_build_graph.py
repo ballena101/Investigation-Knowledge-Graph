@@ -63,6 +63,7 @@ import hashlib
 import json
 import re
 import uuid
+import urllib.request
 from datetime import datetime, timezone
 
 from databricks.sdk import WorkspaceClient
@@ -450,23 +451,74 @@ def query_model_json(
                   "no Markdown fences or commentary."
             )
 
-        response = w.serving_endpoints.query(
-            name=model_service,
-            messages=[
-                ChatMessage(
-                    role=ChatMessageRole.SYSTEM,
-                    content=system_prompt,
-                ),
-                ChatMessage(
-                    role=ChatMessageRole.USER,
-                    content=active_user_prompt,
-                ),
-            ],
-            temperature=0.0,
-            max_tokens=max_tokens,
-        )
+        if model_run_key == "LLAMA70":
+            if not model_service.startswith(("http://", "https://")):
+                raise ValueError(
+                    "The Ollama Llama 3.3 70B route requires the controlled "
+                    "Ollama service base URL."
+                )
 
-        text = response.choices[0].message.content
+            ollama_url = model_service.rstrip("/") + "/api/chat"
+            request_body = json.dumps(
+                {
+                    "model": "llama3.3:70b",
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": system_prompt,
+                        },
+                        {
+                            "role": "user",
+                            "content": active_user_prompt,
+                        },
+                    ],
+                    "stream": False,
+                    "format": "json",
+                    "options": {
+                        "temperature": 0.0,
+                    },
+                }
+            ).encode("utf-8")
+
+            request = urllib.request.Request(
+                ollama_url,
+                data=request_body,
+                headers={
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+
+            with urllib.request.urlopen(
+                request,
+                timeout=600,
+            ) as ollama_response:
+                payload = json.loads(
+                    ollama_response.read().decode("utf-8")
+                )
+
+            text = (
+                payload.get("message", {})
+                .get("content", "")
+            )
+        else:
+            response = w.serving_endpoints.query(
+                name=model_service,
+                messages=[
+                    ChatMessage(
+                        role=ChatMessageRole.SYSTEM,
+                        content=system_prompt,
+                    ),
+                    ChatMessage(
+                        role=ChatMessageRole.USER,
+                        content=active_user_prompt,
+                    ),
+                ],
+                temperature=0.0,
+                max_tokens=max_tokens,
+            )
+
+            text = response.choices[0].message.content
 
         try:
             return json.loads(
