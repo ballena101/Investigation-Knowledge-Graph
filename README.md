@@ -6,7 +6,7 @@ Evidence-grounded knowledge graph and review environment for heterogeneous inves
 
 This repository contains a standalone Proof of Concept (PoC) for representing investigation knowledge as an evidence-grounded graph.
 
-The immediate PoC is intentionally limited to the **Commodore Clipper 2010** investigation. The longer-term objective is broader: analyse one document, multiple documents, or an entire investigation evidence set, including heterogeneous sources such as:
+The current PoC is the **generic Class D dual-model investigation-analysis workflow**. The Commodore Clipper 2010 case is retained as a controlled reference/benchmark, not as the scope of the product. The longer-term objective is broader: analyse one document, multiple documents, or an entire investigation evidence set, including heterogeneous sources such as:
 
 - accident investigation reports;
 - interview transcripts;
@@ -24,16 +24,22 @@ The system is designed so that graph relationships remain traceable to source ev
 
 The current PoC demonstrates:
 
-- a reviewed Commodore Clipper case graph;
-- 17 nodes;
-- 12 relationships;
-- 11 report-derived relationships with supporting evidence;
-- EMCIP candidate / reviewed mappings;
-- Neo4j AuraDB as graph projection and query layer;
-- a Databricks Streamlit App for interactive graph exploration;
-- preservation of unresolved concepts rather than forced classification.
+- documents or encrypted direct text as source input;
+- an investigator-defined question/objective;
+- information classification A/B/C/D;
+- Class D selection of GPT-OSS 20B, Llama 3.3 70B, or both;
+- one evidence extraction followed by independent model runs;
+- side-by-side model outputs when both are selected;
+- evidence-grounded graph generation;
+- privacy validation before graph publication;
+- de-identified analytical output by default;
+- a 5-question/day Llama 3.3 70B usage limit per user;
+- admin-controlled quota reset;
+- Neo4j graph projection and Databricks App exploration;
+- human-review provenance.
 
-The current app is a deterministic viewer of already-processed analytical outputs. It does **not** call an LLM at runtime.
+The **Commodore Clipper 2010** graph remains a controlled reference case for
+methodology and future model benchmarking.
 
 ## Long-term target
 
@@ -103,6 +109,8 @@ docs/
     14_tooling_inventory.md
     15_data_protection_confidentiality.md
     16_unified_input_and_model_routing.md
+    17_class_d_dual_model_poc.md
+    18_model_validation_and_feedback.md
 
 notebooks/
     01_neo4j_connection_test.py
@@ -139,9 +147,15 @@ Core stack:
 
 ## Status
 
-Current status: **Commodore Clipper PoC — interactive graph viewer working**.
+Current status: **Class D dual-model PoC implemented in repository; endpoint/job deployment and formal model benchmarking remain to be completed.**
 
-Next recommended PoC step: add a human review workflow for relationships and EMCIP mappings without expanding the source scope yet.
+Immediate next steps:
+
+1. deploy/approve the dedicated GPT-OSS 20B and Llama 3.3 70B endpoints;
+2. configure the Class D dual-model Lakeflow Job and App resources;
+3. run end-to-end comparison tests;
+4. generalise human review to model-run graphs;
+5. execute the validation framework in `docs/18_model_validation_and_feedback.md`.
 
 
 ## Data protection and confidentiality
@@ -203,7 +217,7 @@ Model routing is determined by information class:
 
 - A/B → `system.ai.gpt-5-6-sol`
 - C → `system.ai.gpt-oss-120b`
-- D → dedicated IKG GPT-OSS 20B endpoint; fail closed if unavailable
+- D → dedicated IKG GPT-OSS 20B and/or Llama 3.3 70B endpoints; fail closed if a requested endpoint is unavailable
 
 See `docs/16_unified_input_and_model_routing.md`.
 
