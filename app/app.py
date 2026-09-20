@@ -3,8 +3,6 @@ import os
 import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from datetime import datetime
-from zoneinfo import ZoneInfo
 import streamlit as st
 from cryptography.fernet import Fernet
 from databricks.sdk import WorkspaceClient
@@ -171,9 +169,10 @@ The App selects the model path from the declared information class:
   `system.ai.gpt-5-6-sol`.
 - **C:** OpenAI GPT-OSS 120B hosted by Databricks through
   `system.ai.gpt-oss-120b`.
-- **D:** dedicated IKG GPT-OSS 20B and/or Llama 3.3 70B Databricks Model
-  Serving endpoints. The investigator chooses GPT-OSS 20B, Llama 3.3 70B,
-  or both. There is **no automatic fallback** to A/B/C model routes.
+- **D:** dedicated GPT-OSS 20B Databricks Model Serving and/or controlled
+  Ollama hosting Meta Llama 3.3 70B. The investigator chooses GPT-OSS 20B,
+  Ollama Llama 3.3 70B, or both. There is **no automatic fallback** to A/B/C
+  model routes.
 
 The exact model/endpoint is disclosed before submission, stored with the
 analysis and displayed with the result.
@@ -2060,7 +2059,7 @@ with tab_new_analysis:
             ),
             horizontal=True,
             help=(
-                "Run GPT-OSS 20B, Llama 3.3 70B, or both against the same "
+                "Run GPT-OSS 20B, Ollama Llama 3.3 70B, or both against the same "
                 "evidence and question. Both produces side-by-side results."
             ),
         )
@@ -2113,7 +2112,7 @@ with tab_new_analysis:
                 help=(
                     f"Limit: {LLAMA_DAILY_QUESTION_LIMIT} per user per day "
                     f"({QUOTA_TIMEZONE}). Running both models consumes one "
-                    "Llama question."
+                    "Ollama question."
                 ),
             )
 
