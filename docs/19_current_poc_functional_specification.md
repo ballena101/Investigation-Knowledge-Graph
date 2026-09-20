@@ -552,7 +552,8 @@ configured or approved.
 In particular:
 
 - D never falls back to A/B/C models;
-- raw D documents remain in governed source storage;
+- raw D documents remain only in governed **ephemeral** source storage and are
+  deleted with their source-ingress storage within a maximum of 24 hours;
 - Neo4j is a graph/metadata/review layer, not the authoritative D evidence
   repository;
 - D outputs are de-identified by default;
@@ -560,3 +561,39 @@ In particular:
 - exact model endpoint, pipeline version and evidence references are retained;
 - user-visible output never silently replaces original evidence;
 - human review does not cause the model to self-train automatically.
+
+
+## 17. Class D source retention — 24-hour maximum
+
+The Class D source-ingress layer is ephemeral.
+
+Functional requirement:
+
+**All raw Class D source documents and their dedicated source-ingress storage
+must be deleted no later than 24 hours after ingestion.**
+
+Required metadata:
+
+- `ingested_at`;
+- `expires_at`;
+- `purge_status`;
+- `purged_at`.
+
+Required behaviour:
+
+1. calculate expiry at ingestion;
+2. expose retention/expiry status to the processing layer;
+3. purge automatically before or at the 24-hour deadline;
+4. do not extend retention because analysis/review is unfinished;
+5. record purge success/failure;
+6. alert/fail operationally if deletion cannot be confirmed.
+
+The preferred implementation is analysis-specific ephemeral storage so that
+deletion can be deterministic without affecting newer analyses.
+
+This requirement applies to the **raw source-ingress layer**. Delta passages,
+model outputs, Neo4j derivatives, review records, logs and backups require
+separate retention rules and are not automatically erased by deleting the
+source volume.
+
+The Class D user disclosure must state this distinction explicitly.
