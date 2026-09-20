@@ -33,6 +33,18 @@ dbutils.widgets.dropdown(
     "Databricks model service",
 )
 
+dbutils.widgets.text(
+    "model_run_key",
+    "PRIMARY",
+    "Model run key",
+)
+
+dbutils.widgets.text(
+    "model_label",
+    "Primary model",
+    "Model label",
+)
+
 # COMMAND ----------
 
 # MAGIC %pip install neo4j==6.3.1 databricks-sdk==0.139.0
@@ -45,6 +57,9 @@ dbutils.library.restartPython()
 
 analysis_id = dbutils.widgets.get("analysis_id").strip()
 model_service = dbutils.widgets.get("model_service").strip()
+model_run_key = dbutils.widgets.get("model_run_key").strip() or "PRIMARY"
+model_label = dbutils.widgets.get("model_label").strip() or model_run_key
+comparison_mode = model_run_key != "PRIMARY"
 
 # COMMAND ----------
 
@@ -110,6 +125,12 @@ if not re.fullmatch(r"analysis_[0-9a-f]{32}", analysis_id):
 
 print("Analysis:", analysis_id)
 print("Model service:", model_service)
+print("Model run:", model_run_key)
+print("Comparison mode:", comparison_mode)
+
+if model_service == "__SKIP__":
+    print("Model run skipped by policy.")
+    dbutils.notebook.exit("SKIPPED")
 
 # COMMAND ----------
 
@@ -293,6 +314,35 @@ document_names = {
 
 print("Title:", analysis["analysis_title"])
 print("Output language:", analysis["output_language"])
+
+model_run_id = (
+    analysis_id
+    + "__"
+    + model_run_key.lower()
+)
+
+with driver.session() as session:
+    session.run(
+        """
+        MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+        MERGE (m:ModelRun {model_run_id: $model_run_id})
+        ON CREATE SET
+            m.created_at = datetime()
+        SET
+            m.analysis_id = $analysis_id,
+            m.model_key = $model_run_key,
+            m.model_label = $model_label,
+            m.model_service = $model_service,
+            m.status = 'ANALYSING',
+            m.updated_at = datetime()
+        MERGE (a)-[:HAS_MODEL_RUN]->(m)
+        """,
+        analysis_id=analysis_id,
+        model_run_id=model_run_id,
+        model_run_key=model_run_key,
+        model_label=model_label,
+        model_service=model_service,
+    ).consume()
 
 # COMMAND ----------
 
@@ -993,7 +1043,7 @@ for node in resolution.get(
         continue
 
     raw_id = (
-        f"{analysis_id}|{kind}|"
+        f"{analysis_id}|{model_run_key}|{kind}|"
         f"{label.casefold()}"
     )
 
@@ -1335,12 +1385,13 @@ print(
     privacy_redaction_count,
 )
 
-spark.sql(
-    f"""
-    DELETE FROM {SUMMARY_TABLE}
-    WHERE analysis_id = '{analysis_id}'
-    """
-)
+if not comparison_mode:
+    spark.sql(
+        f"""
+        DELETE FROM {SUMMARY_TABLE}
+        WHERE analysis_id = '{analysis_id}'
+        """
+    )
 
 summary_row = Row(
     analysis_id=analysis_id,
@@ -1370,14 +1421,15 @@ summary_row = Row(
     ),
 )
 
-spark.createDataFrame(
-    [summary_row],
-    schema=spark.table(
+if not comparison_mode:
+    spark.createDataFrame(
+        [summary_row],
+        schema=spark.table(
+            SUMMARY_TABLE
+        ).schema,
+    ).write.mode("append").saveAsTable(
         SUMMARY_TABLE
-    ).schema,
-).write.mode("append").saveAsTable(
-    SUMMARY_TABLE
-)
+    )
 
 # COMMAND ----------
 
@@ -1393,11 +1445,13 @@ try:
         session.run(
             """
             MATCH (n:KGNode {
-                analysis_id: $analysis_id
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id
             })
             DETACH DELETE n
             """,
             analysis_id=analysis_id,
+            model_run_id=model_run_id,
         ).consume()
 
         for node in resolved_nodes:
@@ -1408,6 +1462,7 @@ try:
                 })
                 CREATE (n:KGNode {
                     analysis_id: $analysis_id,
+                    model_run_id: $model_run_id,
                     node_id: $node_id,
                     node_kind: $node_kind,
                     label: $label,
@@ -1422,6 +1477,7 @@ try:
                 CREATE (a)-[:HAS_GRAPH_NODE]->(n)
                 """,
                 analysis_id=analysis_id,
+                model_run_id=model_run_id,
                 node_id=node["node_id"],
                 node_kind=node["kind"],
                 label=node["label"],
@@ -1443,10 +1499,12 @@ try:
             cypher = f"""
             MATCH (source:KGNode {{
                 analysis_id: $analysis_id,
+                model_run_id: $model_run_id,
                 node_id: $source_node_id
             }})
             MATCH (target:KGNode {{
                 analysis_id: $analysis_id,
+                model_run_id: $model_run_id,
                 node_id: $target_node_id
             }})
             CREATE (source)-[r:{rel_type} {{
@@ -1465,6 +1523,7 @@ try:
             session.run(
                 cypher,
                 analysis_id=analysis_id,
+                model_run_id=model_run_id,
                 source_node_id=relationship[
                     "source_node_id"
                 ],
@@ -1488,6 +1547,38 @@ try:
             ).consume()
 
         session.run(
+            """
+            MATCH (m:ModelRun {model_run_id: $model_run_id})
+            SET
+                m.status = 'COMPLETED',
+                m.overview = $overview,
+                m.key_findings = $key_findings,
+                m.uncertainties = $uncertainties,
+                m.source_conflicts = $source_conflicts,
+                m.graph_node_count = $graph_node_count,
+                m.graph_relationship_count = $graph_relationship_count,
+                m.analysis_version = $analysis_version,
+                m.privacy_output_mode = $privacy_output_mode,
+                m.privacy_validation_status = $privacy_validation_status,
+                m.privacy_redaction_count = $privacy_redaction_count,
+                m.completed_at = datetime(),
+                m.updated_at = datetime()
+            """,
+            model_run_id=model_run_id,
+            overview=overview,
+            key_findings=key_findings,
+            uncertainties=uncertainties,
+            source_conflicts=source_conflicts,
+            graph_node_count=len(resolved_nodes),
+            graph_relationship_count=len(resolved_relationships),
+            analysis_version=ANALYSIS_VERSION,
+            privacy_output_mode=PRIVACY_OUTPUT_MODE,
+            privacy_validation_status=privacy_validation_status,
+            privacy_redaction_count=privacy_redaction_count,
+        ).consume()
+
+        if not comparison_mode:
+            session.run(
             """
             MATCH (a:AnalysisGroup {
                 analysis_id: $analysis_id
