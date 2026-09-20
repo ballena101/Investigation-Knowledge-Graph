@@ -128,6 +128,7 @@ docs/
     17_class_d_dual_model_poc.md
     18_model_validation_and_feedback.md
     19_current_poc_functional_specification.md
+    20_class_d_neo4j_assurance.md
 
 notebooks/
     01_neo4j_connection_test.py
