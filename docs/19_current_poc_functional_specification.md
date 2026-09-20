@@ -14,7 +14,48 @@ Commodore Clipper is retained only as:
 - a first candidate benchmark case;
 - an example of human-reviewed evidence-grounded graph structure.
 
-## 2. Investigator workflow
+## 2. Supported information classes
+
+The application continues to support **all four information classes**. The
+Class D dual-model logic is an additional protected-data route; it does not
+replace A/B/C.
+
+| Class | Typical content | Default model route | Extra Class-D controls? |
+|---|---|---|---|
+| A | Public / technical material | `system.ai.gpt-5-6-sol` | No |
+| B | Published / non-sensitive investigation material | `system.ai.gpt-5-6-sol` | No |
+| C | Internal / restricted analytical material that is not Article 9 protected evidence | `system.ai.gpt-oss-120b` | No |
+| D | Article 9 / protected confidential investigation material | Dedicated GPT-OSS 20B and/or Llama 3.3 70B endpoints | Yes |
+
+For A/B/C, the user chooses documents or direct text, enters the question /
+objective, and the App uses the class-default model automatically.
+
+For D only, the user additionally chooses:
+
+- GPT-OSS 20B;
+- Llama 3.3 70B Instruct;
+- both models.
+
+The Llama quota and side-by-side comparison logic apply **only to Class D**.
+
+## 2A. A/B/C remain first-class supported routes
+
+The GUI must always display A, B, C and D. It must not present Class D as the
+only supported analysis type.
+
+Normal routing is:
+
+```text
+A → GPT-5.6 Sol
+B → GPT-5.6 Sol
+C → GPT-OSS 120B
+D → GPT-OSS 20B / Llama 3.3 70B / Both
+```
+
+The model is selected by information-class policy rather than by arbitrary
+user choice, except for the Class D comparison choice.
+
+## 2B. Investigator workflow
 
 For Class D, the investigator:
 
@@ -156,6 +197,76 @@ The encryption key is supplied through the approved secret:
 `DIRECT_TEXT_ENCRYPTION_KEY`
 
 Raw text must not be passed as a Lakeflow Job parameter.
+
+## 7A. Class D source-document handling and Neo4j boundary
+
+For Class D, the raw evidence store and the graph store have different roles.
+
+### Raw Class D documents
+
+Raw Class D documents must remain in the approved governed Databricks /
+Unity Catalog source location. They must **not** be copied into Neo4j merely
+to make graph processing convenient.
+
+Neo4j may receive only the minimum necessary metadata and analytical
+derivatives, such as:
+
+- analysis ID;
+- source-document ID;
+- content hash;
+- controlled source reference / governed path reference where authorised;
+- passage IDs rather than complete protected passage text where possible;
+- model-run metadata;
+- de-identified node labels/descriptions;
+- evidence-reference IDs;
+- graph relationships;
+- human-review records;
+- privacy-validation metadata.
+
+Neo4j must not be used by default to persist:
+
+- whole Class D source documents;
+- full witness statements;
+- identities of persons giving evidence;
+- health or other particularly sensitive personal information;
+- investigators' notes, drafts or opinions;
+- draft investigation reports;
+- full ship-operation communications;
+- full VTS recordings/transcripts;
+- VDR/S-VDR recordings or transcripts;
+- secrets/credentials.
+
+This implements the project's minimisation rule and supports Article 9(3),
+which requires disclosure of only data that are strictly necessary.
+
+### VDR / S-VDR
+
+Article 9(2) receives separate treatment. VDR and S-VDR recordings must not be
+made available or used outside the safety-investigation / ship-safety purposes
+except under the conditions laid down in the Directive, including anonymisation
+or secure procedures.
+
+For the IKG, VDR/S-VDR raw material is therefore never a normal Neo4j payload.
+
+### Direct text classified D
+
+Direct text classified D is a special ingress problem because the App does not
+currently have direct governed-volume write access.
+
+The PoC currently encrypts direct text before temporary persistence and purges
+the encrypted payload after governed passages are created. This is **not**
+treated as blanket production approval for Article 9 material in Neo4j.
+
+Before operational Class D direct-text use, one of the following must be
+approved:
+
+1. secure direct-to-governed-Databricks ingress; or
+2. an explicit organisational/security approval for the encrypted transient
+   Neo4j ingress, including region, access, backup/snapshot, retention and
+   deletion behaviour.
+
+Until that approval exists, Class D direct text is a controlled PoC capability,
+not an authorised production evidence-ingress mechanism.
 
 ## 8. Evidence and graph pipeline
 
@@ -387,3 +498,44 @@ For the current PoC, read in this order:
 
 The Commodore Clipper document is deliberately subordinate to the generic PoC
 specification.
+
+
+## 15. Article 9 confidentiality checklist
+
+The IKG design maps the amended Article 9 confidentiality rules to technical
+controls as follows.
+
+| Article 9 protected category / rule | IKG handling rule |
+|---|---|
+| Statements taken from persons | Keep in governed source storage; do not duplicate raw statements into graph storage |
+| Identity of persons giving evidence | De-identify analytical outputs by default; role labels preferred |
+| Particularly sensitive/personal information, including health | Minimise model exposure; do not propagate into graph/results unless strictly necessary and authorised |
+| Investigator notes, drafts and opinions | Governed source only; distinguish source material from model synthesis |
+| Evidence supplied by other States/third countries where confidentiality is requested | Preserve source restriction metadata; no broader reuse solely because technically accessible |
+| Draft interim/concise/final reports | Treat as Class D unless formally released/authorised otherwise |
+| Communications between persons involved in ship operation | Governed source; passage-level minimum exposure; avoid raw replication to Neo4j |
+| VTS recordings/transcripts | Governed source; no default raw graph storage |
+| VDR/S-VDR recordings | Special Article 9(2) rule; no normal Neo4j raw payload; anonymised/secure handling only where permitted |
+| Article 9(3): only strictly necessary data disclosed | Data minimisation across LLM prompts, graph properties and UI |
+| GDPR remains applicable | Separate personal-data governance, least privilege, retention and special-category safeguards |
+
+The software does not itself make the legal determination that an overriding
+public interest justifies disclosure. That remains a competent-authority
+decision outside the model.
+
+## 16. Final PoC privacy boundary
+
+The PoC must fail closed where the required protected-data path is not
+configured or approved.
+
+In particular:
+
+- D never falls back to A/B/C models;
+- raw D documents remain in governed source storage;
+- Neo4j is a graph/metadata/review layer, not the authoritative D evidence
+  repository;
+- D outputs are de-identified by default;
+- privacy validation runs before publication/display;
+- exact model endpoint, pipeline version and evidence references are retained;
+- user-visible output never silently replaces original evidence;
+- human review does not cause the model to self-train automatically.
