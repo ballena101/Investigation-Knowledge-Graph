@@ -3357,12 +3357,12 @@ The investigator can:
 
 - select governed documents or provide encrypted direct text;
 - state an investigation question/objective;
-- choose GPT-OSS 20B, Llama 3.3 70B, or both for Class D;
+- choose GPT-OSS 20B, Ollama-hosted Llama 3.3 70B, or both for Class D;
 - inspect independent evidence-grounded outputs;
 - compare both models side by side;
 - inspect privacy-validation results and generated knowledge graphs.
 
-Llama 3.3 70B is limited to
+Ollama Llama 3.3 70B is limited to
 **{LLAMA_DAILY_QUESTION_LIMIT} questions per user per day** in the PoC.
 
 ### Validation status
@@ -3379,7 +3379,7 @@ The model-validation framework covers:
 
 The **Commodore Clipper 2010** graph is retained as a controlled reference and
 benchmark candidate. It validates the graph/evidence methodology; it does not
-by itself validate GPT-OSS 20B or Llama 3.3 70B.
+by itself validate GPT-OSS 20B or Ollama Llama 3.3 70B.
 
 ### Human-feedback learning loop
 
@@ -3418,6 +3418,7 @@ relationship-review and EMCIP-mapping demonstrations.
 
 Key project documents:
 
+- `docs/README.md` — current documentation index
 - `docs/01_current_poc_scope.md`
 - `docs/15_data_protection_confidentiality.md`
 - `docs/17_class_d_dual_model_poc.md`
