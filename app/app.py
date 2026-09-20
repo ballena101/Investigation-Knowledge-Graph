@@ -163,6 +163,9 @@ the GDPR.
 
 **AI processing policy and model routing**
 
+A/B/C remain normal supported routes. Class D adds extra protected-data
+controls and the optional dual-model comparison; it does not replace A/B/C.
+
 The App selects the model path from the declared information class:
 
 - **A / B:** OpenAI GPT-5.6 Sol through Databricks
@@ -2187,6 +2190,15 @@ with tab_new_analysis:
                     "No indexed documents are currently available."
                 )
         else:
+            if information_class == "D":
+                st.warning(
+                    "Class D direct text is a controlled PoC capability. "
+                    "It is encrypted before temporary persistence and purged "
+                    "after governed passages are created, but operational use "
+                    "with Article 9 evidence still requires approval of the "
+                    "transient-storage path or a secure direct-to-governed "
+                    "Databricks ingress."
+                )
             direct_text = st.text_area(
                 "Text to analyse and map",
                 height=260,
