@@ -33,13 +33,13 @@ The current PoC demonstrates:
 - documents or encrypted direct text as source input;
 - an investigator-defined question/objective;
 - information classification A/B/C/D;
-- Class D selection of GPT-OSS 20B, Llama 3.3 70B, or both;
+- Class D selection of GPT-OSS 20B, Ollama-hosted Llama 3.3 70B, or both;
 - one evidence extraction followed by independent model runs;
 - side-by-side model outputs when both are selected;
 - evidence-grounded graph generation;
 - privacy validation before graph publication;
 - de-identified analytical output by default;
-- a 5-question/day Llama 3.3 70B usage limit per user;
+- a 5-question/day Ollama Llama 3.3 70B usage limit per user;
 - admin-controlled quota reset;
 - Neo4j graph projection and Databricks App exploration;
 - human-review provenance.
@@ -88,6 +88,16 @@ A later generic-ingestion stage may reuse MAIRA's existing capabilities for:
 This avoids rebuilding mature document-processing components. The Investigation Knowledge Graph layer remains conceptually separate and adds evidence-grounded entities, relationships, graph structure, analytical mappings and review.
 
 The current Commodore Clipper PoC reuses existing Delta tables that were created during the workshop under the `bdw_analysis_prod.maira` schema. This is an implementation convenience, not project ownership. A dedicated schema is recommended for future development.
+
+## Documentation
+
+Start with `docs/README.md`. It separates the current generic/Class D PoC
+documentation from the older Commodore Clipper reference-case material.
+
+The two most important current documents are:
+
+- `docs/17_class_d_dual_model_poc.md`
+- `docs/18_model_validation_and_feedback.md`
 
 ## Repository structure
 
@@ -158,7 +168,7 @@ Current status: **Class D dual-model PoC implemented in repository; endpoint/job
 
 Immediate next steps:
 
-1. deploy/approve the dedicated GPT-OSS 20B and Llama 3.3 70B endpoints;
+1. deploy/approve the dedicated GPT-OSS 20B endpoint and controlled Ollama Llama 3.3 70B service;
 2. configure the Class D dual-model Lakeflow Job and App resources;
 3. run end-to-end comparison tests;
 4. generalise human review to model-run graphs;
@@ -224,7 +234,7 @@ Model routing is determined by information class:
 
 - A/B → `system.ai.gpt-5-6-sol`
 - C → `system.ai.gpt-oss-120b`
-- D → dedicated IKG GPT-OSS 20B and/or Llama 3.3 70B endpoints; fail closed if a requested endpoint is unavailable
+- D → dedicated IKG GPT-OSS 20B endpoint and/or controlled Ollama Llama 3.3 70B service; fail closed if a requested endpoint is unavailable
 
 See `docs/16_unified_input_and_model_routing.md`.
 
