@@ -27,6 +27,7 @@ IKG_ADMIN_USERS = {
 }
 
 MAX_DOCUMENTS_PER_ANALYSIS = 5
+DERIVED_RETENTION_HOURS = 72
 LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "5"))
 QUOTA_TIMEZONE = "Europe/Lisbon"
 
@@ -713,6 +714,11 @@ def create_analysis_from_documents(
         requested_model_service: $model_service,
         requested_model_selection: $model_selection,
         status: 'PENDING_PROCESSING',
+        retention_policy: 'TRANSIENT_72H',
+        derived_retention_hours: $derived_retention_hours,
+        derived_expires_at: datetime() + duration({hours: $derived_retention_hours}),
+        retain_for_validation: false,
+        retention_purge_status: 'ACTIVE',
         created_by: $created_by,
         created_at: datetime(),
         pipeline_version: $pipeline_version
@@ -738,6 +744,7 @@ def create_analysis_from_documents(
         "model_service": model_service,
         "model_selection": model_selection,
         "created_by": creator,
+        "derived_retention_hours": DERIVED_RETENTION_HOURS,
         "pipeline_version": PIPELINE_VERSION,
         "document_ids": selected_document_ids,
     }
@@ -795,6 +802,11 @@ def create_analysis_from_text(
         requested_model_service: $model_service,
         requested_model_selection: $model_selection,
         status: 'PENDING_PROCESSING',
+        retention_policy: 'TRANSIENT_72H',
+        derived_retention_hours: $derived_retention_hours,
+        derived_expires_at: datetime() + duration({hours: $derived_retention_hours}),
+        retain_for_validation: false,
+        retention_purge_status: 'ACTIVE',
         created_by: $created_by,
         created_at: datetime(),
         pipeline_version: $pipeline_version,
@@ -824,6 +836,7 @@ def create_analysis_from_text(
         "model_service": model_service,
         "model_selection": model_selection,
         "created_by": creator,
+        "derived_retention_hours": DERIVED_RETENTION_HOURS,
         "pipeline_version": PIPELINE_VERSION,
         "source_id": source_id,
         "encrypted_text": encrypted_text,
@@ -876,6 +889,11 @@ def load_analysis_groups():
         a.analysis_objective AS analysis_objective,
         properties(a)["input_mode"] AS input_mode,
         properties(a)["information_class"] AS information_class,
+        properties(a)["retention_policy"] AS retention_policy,
+        properties(a)["derived_retention_hours"] AS derived_retention_hours,
+        toString(properties(a)["derived_expires_at"]) AS derived_expires_at,
+        properties(a)["retain_for_validation"] AS retain_for_validation,
+        properties(a)["retention_purge_status"] AS retention_purge_status,
         a.status AS status,
         a.processing_stage AS processing_stage,
         a.documents_total AS documents_total,
@@ -2696,6 +2714,29 @@ with tab_analyses:
                 selected_analysis.get("output_language")
                 or "—"
             )
+
+        st.markdown("**Derived-data retention**")
+        retention_hours = (
+            selected_analysis.get("derived_retention_hours")
+            or DERIVED_RETENTION_HOURS
+        )
+        if selected_analysis.get("retain_for_validation"):
+            st.write(
+                "Retained for validation — automatic 72-hour purge is suspended."
+            )
+        else:
+            st.write(
+                f"Transient analytical artefacts: {retention_hours} hours"
+            )
+            if selected_analysis.get("derived_expires_at"):
+                st.caption(
+                    "Scheduled expiry: "
+                    + selected_analysis["derived_expires_at"]
+                )
+        st.caption(
+            "Raw Class D source ingress follows the separate ≤24-hour rule; "
+            "direct-text raw buffers are purged after successful extraction."
+        )
 
         st.markdown("**AI model / policy**")
         analysis_class = (
