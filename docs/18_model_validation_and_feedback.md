@@ -3,7 +3,7 @@
 ## 1. What has been validated so far
 
 The Commodore Clipper work provides a **validated graph/evidence reference
-case**, not yet a formal validation of GPT-OSS 20B or Llama 3.3 70B.
+case**, not yet a formal validation of GPT-OSS 20B or Ollama Llama 3.3 70B.
 
 The reference work established:
 
@@ -18,7 +18,7 @@ new generic models perform correctly.
 
 ## 2. What the Class D PoC will validate
 
-GPT-OSS 20B and Llama 3.3 70B will be evaluated independently on identical
+GPT-OSS 20B and Ollama Llama 3.3 70B will be evaluated independently on identical
 evidence/question sets.
 
 Validation dimensions:
@@ -254,7 +254,7 @@ Current state:
 - graph/evidence methodology: validated on controlled Commodore Clipper case;
 - generic extraction pipeline: implemented, not yet formally benchmarked;
 - GPT-OSS 20B Class D performance: not yet benchmarked;
-- Llama 3.3 70B Class D performance: not yet benchmarked;
+- Ollama Llama 3.3 70B Class D performance: not yet benchmarked;
 - privacy validator: implemented at basic deterministic level, not yet
   sensitivity/recall benchmarked;
 - dual-model comparison: implemented in code, pending deployed-endpoint test;
@@ -272,7 +272,7 @@ For every benchmark item:
 
 1. freeze the source evidence and investigation question;
 2. freeze the extraction/passage version;
-3. run GPT-OSS 20B and Llama 3.3 70B independently with the same evidence and
+3. run GPT-OSS 20B and Ollama Llama 3.3 70B independently with the same evidence and
    prompt/pipeline version;
 4. preserve each raw model result and generated graph separately;
 5. compare each model against the human-reviewed benchmark graph;
@@ -365,3 +365,68 @@ Maintain explicit flags such as:
 - `TRAINING_ELIGIBLE`
 
 A benchmark version should record which examples were visible to the model.
+
+
+## 8. Validation data must not silently become model input
+
+Human validation in the knowledge graph is authoritative feedback, but it is
+not automatically inserted into future model prompts.
+
+Three stores must remain logically separate:
+
+1. **source evidence** — what the current investigation material says;
+2. **validated analytical knowledge** — human-reviewed graph/review records;
+3. **model-improvement assets** — explicitly curated benchmark, retrieval,
+   few-shot or training examples.
+
+A human-validated graph may be promoted from (2) to (3) only through an
+explicit, versioned curation action.
+
+This prevents a reviewed interpretation from being silently treated as source
+evidence in another investigation.
+
+## 9. Recommended PoC validation protocol
+
+For each benchmark question, run GPT-OSS 20B and Ollama Llama 3.3 70B against
+the **same frozen passages and same prompt/pipeline version**.
+
+Record independently for each model:
+
+- nodes proposed;
+- relationships proposed;
+- passage/evidence links;
+- unsupported relationships;
+- human VALIDATED / REJECTED / AMENDED decisions;
+- missed gold-standard nodes/relationships;
+- privacy leakage/redactions;
+- runtime and failure/JSON-retry rate.
+
+Primary PoC measures:
+
+- relationship precision;
+- relationship recall against the locked reviewed graph;
+- unsupported causal relationship rate;
+- evidence-grounding accuracy;
+- node precision/recall after canonical matching;
+- human amendment rate;
+- privacy leakage rate;
+- structured-output success rate.
+
+The two model outputs must remain independent until scoring is complete.
+
+## 10. Initial benchmark strategy
+
+The Commodore Clipper controlled graph can seed the benchmark because it
+already contains reviewed relationships and mappings. However, it is only one
+case and cannot support a general performance claim.
+
+For formal comparison:
+
+- freeze a benchmark version;
+- keep some cases completely unseen by prompt examples/retrieval;
+- do not use a locked test case as few-shot context for the same evaluation;
+- expand to several casualty/event patterns and source types;
+- record reviewer and benchmark version.
+
+The current project therefore validates **methodology and implementation**
+before it validates model quality.
