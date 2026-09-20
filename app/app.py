@@ -27,7 +27,8 @@ IKG_ADMIN_USERS = {
 }
 
 MAX_DOCUMENTS_PER_ANALYSIS = 5
-DERIVED_RETENTION_HOURS = 72
+CLASS_D_CONTENT_RETENTION_HOURS = 24
+OTHER_CONTENT_RETENTION_HOURS = 72
 LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "5"))
 QUOTA_TIMEZONE = "Europe/Lisbon"
 
@@ -88,7 +89,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-20-product-identity-model-disclosure-v1"
+APP_BUILD = "2026-09-20-daily-retention-usage-v1"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -293,13 +294,13 @@ customer's Databricks agreement.
 endpoint and organisational/legal/security approval are in place. The App does
 not downgrade Class D to a less-private model path.
 
-**Class D source retention:** the governed source-document ingress storage is
-ephemeral. Class D uploaded source documents must be deleted, together with
-their dedicated source-ingress storage, no later than 24 hours after ingestion.
-This 24-hour rule applies to the raw source-ingress layer. Extracted passages,
-model outputs, graphs, review records, logs and backups are separate data copies
-and require their own explicit retention/deletion rules; the App must not imply
-that deleting the source volume erases those derivatives automatically.
+**Content retention:** the source/evidence layer is ephemeral for every
+information class. Class D source/evidence content becomes eligible for deletion
+after one complete day (24 hours). A/B/C source/evidence content becomes
+eligible after more than three complete days (72 hours) and is removed by the
+next once-daily cleanup run. Compact de-identified graphs, human-review records
+and usage metadata may remain. Raw evidence does not receive an automatic
+"retain for validation" exception.
 
 See repository documentation:
 `docs/14_tooling_inventory.md` and
@@ -367,6 +368,14 @@ def resolve_model_policy(information_class):
 
 def information_class_label(class_code):
     return INFORMATION_CLASSES[class_code]["label"]
+
+
+def content_retention_hours(information_class):
+    return (
+        CLASS_D_CONTENT_RETENTION_HOURS
+        if information_class == "D"
+        else OTHER_CONTENT_RETENTION_HOURS
+    )
 
 
 def get_current_user_key():
@@ -701,6 +710,16 @@ def create_analysis_from_documents(
     )
 
     analysis_id = f"analysis_{uuid.uuid4().hex}"
+    retention_hours = content_retention_hours(
+        information_class
+    )
+    objective_hash = (
+        hashlib.sha256(
+            objective.encode("utf-8")
+        ).hexdigest()
+        if objective
+        else None
+    )
 
     query = """
     CREATE (a:AnalysisGroup {
@@ -714,11 +733,12 @@ def create_analysis_from_documents(
         requested_model_service: $model_service,
         requested_model_selection: $model_selection,
         status: 'PENDING_PROCESSING',
-        retention_policy: 'TRANSIENT_72H',
-        derived_retention_hours: $derived_retention_hours,
-        derived_expires_at: datetime() + duration({hours: $derived_retention_hours}),
-        retain_for_validation: false,
-        retention_purge_status: 'ACTIVE',
+        retention_policy: 'DAILY_CLASS_BASED',
+        content_retention_hours: $content_retention_hours,
+        content_expires_at: datetime() + duration({hours: $content_retention_hours}),
+        content_purge_status: 'ACTIVE',
+        question_present: $question_present,
+        question_hash: $question_hash,
         created_by: $created_by,
         created_at: datetime(),
         pipeline_version: $pipeline_version
@@ -727,8 +747,24 @@ def create_analysis_from_documents(
     UNWIND $document_ids AS document_id
     MATCH (d:SourceDocument {document_id: document_id})
     MERGE (a)-[:HAS_SOURCE]->(d)
-    WITH a, count(d) AS linked_documents
-    SET a.document_count = linked_documents
+    WITH a, d,
+         d.first_indexed_at + duration({hours: $content_retention_hours}) AS requested_expiry
+    SET
+        d.source_expires_at = CASE
+            WHEN d.source_expires_at IS NULL THEN requested_expiry
+            WHEN requested_expiry < d.source_expires_at THEN requested_expiry
+            ELSE d.source_expires_at
+        END,
+        d.source_retention_hours = CASE
+            WHEN d.source_retention_hours IS NULL THEN $content_retention_hours
+            WHEN $content_retention_hours < d.source_retention_hours THEN $content_retention_hours
+            ELSE d.source_retention_hours
+        END,
+        d.source_purge_status = 'ACTIVE'
+    WITH a, count(d) AS linked_documents, sum(coalesce(d.byte_size, 0)) AS source_bytes_total
+    SET
+        a.document_count = linked_documents,
+        a.source_bytes_total = source_bytes_total
     RETURN
         a.analysis_id AS analysis_id,
         linked_documents
@@ -744,7 +780,9 @@ def create_analysis_from_documents(
         "model_service": model_service,
         "model_selection": model_selection,
         "created_by": creator,
-        "derived_retention_hours": DERIVED_RETENTION_HOURS,
+        "content_retention_hours": retention_hours,
+        "question_present": bool(objective),
+        "question_hash": objective_hash,
         "pipeline_version": PIPELINE_VERSION,
         "document_ids": selected_document_ids,
     }
@@ -783,6 +821,16 @@ def create_analysis_from_text(
 
     analysis_id = f"analysis_{uuid.uuid4().hex}"
     source_id = f"text_{uuid.uuid4().hex}"
+    retention_hours = content_retention_hours(
+        information_class
+    )
+    objective_hash = (
+        hashlib.sha256(
+            objective.encode("utf-8")
+        ).hexdigest()
+        if objective
+        else None
+    )
     text_sha256 = hashlib.sha256(
         direct_text.encode("utf-8")
     ).hexdigest()
@@ -802,11 +850,12 @@ def create_analysis_from_text(
         requested_model_service: $model_service,
         requested_model_selection: $model_selection,
         status: 'PENDING_PROCESSING',
-        retention_policy: 'TRANSIENT_72H',
-        derived_retention_hours: $derived_retention_hours,
-        derived_expires_at: datetime() + duration({hours: $derived_retention_hours}),
-        retain_for_validation: false,
-        retention_purge_status: 'ACTIVE',
+        retention_policy: 'DAILY_CLASS_BASED',
+        content_retention_hours: $content_retention_hours,
+        content_expires_at: datetime() + duration({hours: $content_retention_hours}),
+        content_purge_status: 'ACTIVE',
+        question_present: $question_present,
+        question_hash: $question_hash,
         created_by: $created_by,
         created_at: datetime(),
         pipeline_version: $pipeline_version,
@@ -820,6 +869,7 @@ def create_analysis_from_text(
         encryption_scheme: 'FERNET',
         text_sha256: $text_sha256,
         retention_status: 'ENCRYPTED_TRANSIENT_UNTIL_EVIDENCE_READY',
+        content_expires_at: datetime() + duration({hours: $content_retention_hours}),
         created_at: datetime()
     })
     CREATE (a)-[:HAS_SOURCE_TEXT]->(s)
@@ -836,7 +886,9 @@ def create_analysis_from_text(
         "model_service": model_service,
         "model_selection": model_selection,
         "created_by": creator,
-        "derived_retention_hours": DERIVED_RETENTION_HOURS,
+        "content_retention_hours": retention_hours,
+        "question_present": bool(objective),
+        "question_hash": objective_hash,
         "pipeline_version": PIPELINE_VERSION,
         "source_id": source_id,
         "encrypted_text": encrypted_text,
@@ -890,10 +942,10 @@ def load_analysis_groups():
         properties(a)["input_mode"] AS input_mode,
         properties(a)["information_class"] AS information_class,
         properties(a)["retention_policy"] AS retention_policy,
-        properties(a)["derived_retention_hours"] AS derived_retention_hours,
-        toString(properties(a)["derived_expires_at"]) AS derived_expires_at,
-        properties(a)["retain_for_validation"] AS retain_for_validation,
-        properties(a)["retention_purge_status"] AS retention_purge_status,
+        properties(a)["content_retention_hours"] AS content_retention_hours,
+        toString(properties(a)["content_expires_at"]) AS content_expires_at,
+        properties(a)["content_purge_status"] AS content_purge_status,
+        coalesce(properties(a)["source_bytes_total"], 0) AS source_bytes_total,
         a.status AS status,
         a.processing_stage AS processing_stage,
         a.documents_total AS documents_total,
@@ -2715,27 +2767,39 @@ with tab_analyses:
                 or "—"
             )
 
-        st.markdown("**Derived-data retention**")
+        st.markdown("**Content retention**")
         retention_hours = (
-            selected_analysis.get("derived_retention_hours")
-            or DERIVED_RETENTION_HOURS
+            selected_analysis.get("content_retention_hours")
+            or content_retention_hours(
+                selected_analysis.get("information_class")
+                or "B"
+            )
         )
-        if selected_analysis.get("retain_for_validation"):
+        if (
+            selected_analysis.get("information_class")
+            == "D"
+        ):
             st.write(
-                "Retained for validation — automatic 72-hour purge is suspended."
+                "Protected/Class D source and evidence content: "
+                "deleted after one complete day (24 hours)."
             )
         else:
             st.write(
-                f"Transient analytical artefacts: {retention_hours} hours"
+                "Source and evidence content: deleted after more than "
+                "three complete days (72 hours; picked up by the next "
+                "daily cleanup run)."
             )
-            if selected_analysis.get("derived_expires_at"):
-                st.caption(
-                    "Scheduled expiry: "
-                    + selected_analysis["derived_expires_at"]
-                )
+
+        if selected_analysis.get("content_expires_at"):
+            st.caption(
+                "Eligible for cleanup from: "
+                + selected_analysis["content_expires_at"]
+            )
+
         st.caption(
-            "Raw Class D source ingress follows the separate ≤24-hour rule; "
-            "direct-text raw buffers are purged after successful extraction."
+            "The cleanup Job runs once per day. Compact de-identified graph, "
+            "review and usage metadata may remain; raw source/evidence content "
+            "does not receive a validation-retention exception."
         )
 
         st.markdown("**AI model / policy**")
