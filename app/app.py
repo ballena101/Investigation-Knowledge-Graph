@@ -87,7 +87,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-20-class-d-dual-model-poc-v2"
+APP_BUILD = "2026-09-20-product-identity-model-disclosure-v1"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -109,16 +109,85 @@ SUPPORTED_LANGUAGES = [
 ]
 
 st.set_page_config(
-    page_title="Investigation Knowledge Graph",
+    page_title="Safety Investigation Knowledge & AI Support",
     page_icon="🔗",
     layout="wide",
 )
 
-st.title("Investigation Knowledge Graph")
+st.title("Safety Investigation Knowledge & AI Support")
 st.caption(
-    "Create document-group analyses and review evidence-grounded investigation graphs."
+    "Proof of Concept for AI-assisted safety investigation analysis, "
+    "evidence-grounded knowledge structuring and investigator review."
 )
 st.caption(f"App build: {APP_BUILD}")
+
+st.info(
+    """
+**Purpose of this PoC**
+
+This application evaluates how artificial-intelligence and structured-knowledge
+tools can support safety investigators in analysing documentary evidence,
+identifying evidence-grounded concepts and relationships, comparing model
+outputs, preserving provenance and supporting human review.
+
+It does **not** replace the investigator, make legal findings, determine blame,
+or automatically convert AI output into an investigation conclusion.
+"""
+)
+
+st.markdown("### AI models, confidentiality and Article 9 suitability")
+
+model_disclosure_rows = [
+    {
+        "Information class": "A — Public / technical",
+        "Model": "OpenAI GPT-5.6 Sol",
+        "Serving route": "Databricks system.ai.gpt-5-6-sol",
+        "Confidentiality level": "Public / non-sensitive",
+        "Article 9 / Class D": "Not approved for protected Class D evidence",
+    },
+    {
+        "Information class": "B — Published investigation material",
+        "Model": "OpenAI GPT-5.6 Sol",
+        "Serving route": "Databricks system.ai.gpt-5-6-sol",
+        "Confidentiality level": "Published / non-sensitive",
+        "Article 9 / Class D": "Not approved for protected Class D evidence",
+    },
+    {
+        "Information class": "C — Internal / restricted",
+        "Model": "OpenAI GPT-OSS 120B",
+        "Serving route": "Databricks-hosted system.ai.gpt-oss-120b",
+        "Confidentiality level": "Internal / restricted",
+        "Article 9 / Class D": "Not automatically approved for Article 9 evidence",
+    },
+    {
+        "Information class": "D — Protected / Article 9",
+        "Model": "OpenAI GPT-OSS 20B",
+        "Serving route": "Dedicated IKG Databricks endpoint",
+        "Confidentiality level": "Protected / confidential",
+        "Article 9 / Class D": "Conditionally suitable only after endpoint approval",
+    },
+    {
+        "Information class": "D — Protected / Article 9",
+        "Model": "Meta Llama 3.3 70B Instruct",
+        "Serving route": "Dedicated IKG Databricks endpoint",
+        "Confidentiality level": "Protected / confidential",
+        "Article 9 / Class D": "Conditionally suitable only after endpoint approval",
+    },
+]
+
+st.dataframe(
+    model_disclosure_rows,
+    use_container_width=True,
+    hide_index=True,
+)
+
+st.caption(
+    "Article 9 status shown here is a project processing classification, not a "
+    "legal certification. Class D model use remains blocked unless the dedicated "
+    "endpoint, access, networking, logging, retention and organisational/legal/"
+    "security approval are in place."
+)
+
 
 with st.expander(
     "Compliance, confidentiality and AI-use notice",
@@ -127,6 +196,12 @@ with st.expander(
     st.markdown(
         """
 **Directive alignment status:** **PoC design-aligned / conditionally aligned — not a legal certification of compliance.**
+
+**Product mission:** confidentiality and data minimisation are functional
+requirements of the product, not only legal notices. The system is designed to
+limit exposure of protected investigation information, route data according to
+its declared class, de-identify analytical outputs by default, and preserve the
+original evidence separately from AI-generated derivatives.
 
 The design is intended to support the confidentiality requirements of
 **Article 9 of Directive 2009/18/EC, as amended by Directive (EU) 2024/3017**.
