@@ -277,16 +277,25 @@ should be sent to a model service until the specific service/model has been
 approved for that data classification, including contractual, processor /
 subprocessor, data-location, retention/logging and model-use considerations.
 
-Current configured model options include:
+Current model routes are:
 
-- `system.ai.gpt-5-6-sol` — current default
-- `system.ai.claude-sonnet-4-5` — optional alternative
+- `system.ai.gpt-5-6-sol` — Classes A/B
+- `system.ai.gpt-oss-120b` — Class C
+- dedicated GPT-OSS 20B endpoint — Class D option
+- dedicated Meta Llama 3.3 70B endpoint — Class D option
 
 ### Exact default model and applicable policy
 
-The default IKG analytical model is:
+For Classes A/B the default analytical model is:
 
 `system.ai.gpt-5-6-sol`
+
+Class C uses:
+
+`system.ai.gpt-oss-120b`
+
+Class D is comparison-capable and uses dedicated endpoints for GPT-OSS 20B
+and/or Meta Llama 3.3 70B.
 
 **Data-flow caveat:** this is not classified by the IKG as a zero-retention or
 zero-provider-exposure path. Databricks Foundation Model API retention rules
@@ -556,3 +565,27 @@ It is not part of:
 
 This avoids adding an unnecessary SaaS/data-processing boundary to the IKG
 architecture.
+
+
+## 16. Class D model resources
+
+Required App/runtime resources:
+
+- `class_d_analysis_job` — Lakeflow Job resource;
+- `class_d_gpt20_endpoint` — dedicated GPT-OSS 20B serving endpoint;
+- `class_d_llama70_endpoint` — dedicated Llama 3.3 70B serving endpoint;
+- `direct_text_encryption_key` — encryption secret;
+- `ikg_admin_users` — administrator identity list.
+
+Runtime environment variables:
+
+- `CLASS_D_ANALYSIS_JOB_ID`
+- `CLASS_D_GPT20_ENDPOINT`
+- `CLASS_D_LLAMA70_ENDPOINT`
+- `DIRECT_TEXT_ENCRYPTION_KEY`
+- `IKG_ADMIN_USERS`
+
+Llama 3.3 70B is limited to five questions per user per day in the PoC.
+The limit is persisted in Neo4j and only configured administrators can reset it.
+
+See `docs/17_class_d_dual_model_poc.md`.
