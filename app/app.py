@@ -3,6 +3,8 @@ import os
 import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import streamlit as st
 from cryptography.fernet import Fernet
 from databricks.sdk import WorkspaceClient
@@ -33,11 +35,11 @@ QUOTA_TIMEZONE = "Europe/Lisbon"
 PUBLIC_MODEL_SERVICE = "system.ai.gpt-5-6-sol"
 INTERNAL_MODEL_SERVICE = "system.ai.gpt-oss-120b"
 CLASS_D_GPT20_ENDPOINT = os.getenv("CLASS_D_GPT20_ENDPOINT")
-CLASS_D_LLAMA70_ENDPOINT = os.getenv("CLASS_D_LLAMA70_ENDPOINT")
+CLASS_D_OLLAMA_LLAMA70_URL = os.getenv("CLASS_D_OLLAMA_LLAMA70_URL")
 
 CLASS_D_MODEL_OPTIONS = {
     "GPT-OSS 20B": "GPT20",
-    "Llama 3.3 70B": "LLAMA70",
+    "Ollama · Llama 3.3 70B": "LLAMA70",
     "Both models": "BOTH",
 }
 
@@ -77,10 +79,11 @@ INFORMATION_CLASSES = {
         "label": "D — Protected / Article 9 confidential evidence",
         "description": "Witness statements, identities, sensitive personal data, investigator notes/drafts, VTS/VDR material or equivalent protected evidence.",
         "model": None,
-        "model_name": "Dedicated IKG GPT-OSS 20B and/or Llama 3.3 70B endpoints",
+        "model_name": "Dedicated IKG GPT-OSS 20B endpoint and/or Ollama-hosted Llama 3.3 70B",
         "data_flow": (
-            "Dedicated/custom Databricks Model Serving endpoints. The investigator "
-            "may run GPT-OSS 20B, Llama 3.3 70B, or both on the same evidence. "
+            "Class D uses a dedicated GPT-OSS 20B Databricks Model Serving endpoint "
+            "and/or a controlled Ollama service running Llama 3.3 70B. The investigator "
+            "may run either route or both on the same evidence. "
             "No fallback to A/B/C model routes is permitted."
         ),
     },
@@ -263,10 +266,10 @@ def resolve_model_policy(information_class):
             **policy,
             "model": None,
             "gpt20_endpoint": CLASS_D_GPT20_ENDPOINT,
-            "llama70_endpoint": CLASS_D_LLAMA70_ENDPOINT,
+            "ollama_llama70_url": CLASS_D_OLLAMA_LLAMA70_URL,
             "ready": bool(
                 CLASS_D_GPT20_ENDPOINT
-                or CLASS_D_LLAMA70_ENDPOINT
+                or CLASS_D_OLLAMA_LLAMA70_URL
             ),
         }
 
@@ -387,7 +390,7 @@ def list_llama_daily_usage():
 def reset_llama_daily_usage(target_user_key):
     if not is_current_user_admin():
         raise PermissionError(
-            "Only an IKG administrator can reset the Llama daily quota."
+            "Only an IKG administrator can reset the Ollama daily quota."
         )
 
     user_key = target_user_key.strip().lower()
@@ -450,9 +453,9 @@ def trigger_class_d_analysis_job(
             "The dedicated GPT-OSS 20B endpoint is not configured."
         )
 
-    if run_llama70 and not CLASS_D_LLAMA70_ENDPOINT:
+    if run_llama70 and not CLASS_D_OLLAMA_LLAMA70_URL:
         raise RuntimeError(
-            "The dedicated Llama 3.3 70B endpoint is not configured."
+            "The dedicated Ollama Llama 3.3 70B service is not configured."
         )
 
     response = get_workspace_client().api_client.do(
@@ -470,8 +473,8 @@ def trigger_class_d_analysis_job(
                     if run_gpt20
                     else "__SKIP__"
                 ),
-                "llama70_endpoint": (
-                    CLASS_D_LLAMA70_ENDPOINT
+                "ollama_llama70_url": (
+                    CLASS_D_OLLAMA_LLAMA70_URL
                     if run_llama70
                     else "__SKIP__"
                 ),
@@ -2067,14 +2070,14 @@ with tab_new_analysis:
                 )
 
         if needs_llama70:
-            if CLASS_D_LLAMA70_ENDPOINT:
+            if CLASS_D_OLLAMA_LLAMA70_URL:
                 st.caption(
-                    "Llama 3.3 70B endpoint: "
-                    + CLASS_D_LLAMA70_ENDPOINT
+                    "Ollama Llama 3.3 70B service: "
+                    + CLASS_D_OLLAMA_LLAMA70_URL
                 )
             else:
                 st.error(
-                    "Dedicated Llama 3.3 70B endpoint is not configured."
+                    "Controlled Ollama Llama 3.3 70B service is not configured."
                 )
 
             llama_used = get_llama_daily_usage()
@@ -2084,7 +2087,7 @@ with tab_new_analysis:
                 0,
             )
             st.metric(
-                "Llama questions remaining today",
+                "Ollama questions remaining today",
                 llama_remaining,
                 help=(
                     f"Limit: {LLAMA_DAILY_QUESTION_LIMIT} per user per day "
@@ -2095,7 +2098,7 @@ with tab_new_analysis:
 
             if llama_remaining == 0:
                 st.warning(
-                    "The daily Llama 3.3 70B question limit has been reached."
+                    "The daily Ollama Llama 3.3 70B question limit has been reached."
                 )
 
             if is_current_user_admin():
@@ -2117,14 +2120,14 @@ with tab_new_analysis:
                 )
 
                 if st.button(
-                    "Admin: reset selected user's Llama quota",
+                    "Admin: reset selected user's Ollama quota",
                     key="reset_llama_quota",
                 ):
                     reset_llama_daily_usage(
                         reset_target
                     )
                     st.success(
-                        "Today's Llama quota has been reset for "
+                        "Today's Ollama quota has been reset for "
                         + reset_target
                     )
                     st.rerun()
@@ -2241,9 +2244,9 @@ with tab_new_analysis:
                 errors.append(
                     "The dedicated GPT-OSS 20B endpoint is not configured."
                 )
-            if needs_llama70 and not CLASS_D_LLAMA70_ENDPOINT:
+            if needs_llama70 and not CLASS_D_OLLAMA_LLAMA70_URL:
                 errors.append(
-                    "The dedicated Llama 3.3 70B endpoint is not configured."
+                    "The dedicated Ollama Llama 3.3 70B service is not configured."
                 )
             if (
                 needs_llama70
@@ -2251,7 +2254,7 @@ with tab_new_analysis:
                 >= LLAMA_DAILY_QUESTION_LIMIT
             ):
                 errors.append(
-                    "The daily Llama 3.3 70B question limit has been reached."
+                    "The daily Ollama Llama 3.3 70B question limit has been reached."
                 )
         elif not policy["ready"]:
             errors.append(
@@ -2331,7 +2334,7 @@ with tab_new_analysis:
                         )
                         if new_count is None:
                             raise RuntimeError(
-                                "The Llama daily quota was reached before "
+                                "The Ollama daily quota was reached before "
                                 "the analysis could start."
                             )
 
