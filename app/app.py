@@ -1,6 +1,8 @@
 import hashlib
 import os
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import streamlit as st
 from cryptography.fernet import Fernet
 from databricks.sdk import WorkspaceClient
@@ -25,7 +27,7 @@ IKG_ADMIN_USERS = {
 }
 
 MAX_DOCUMENTS_PER_ANALYSIS = 5
-LLAMA_DAILY_QUESTION_LIMIT = 5
+LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "5"))
 QUOTA_TIMEZONE = "Europe/Lisbon"
 
 PUBLIC_MODEL_SERVICE = "system.ai.gpt-5-6-sol"
@@ -84,7 +86,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-20-class-d-dual-model-poc-v1"
+APP_BUILD = "2026-09-20-class-d-dual-model-poc-v2"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -166,8 +168,9 @@ The App selects the model path from the declared information class:
   `system.ai.gpt-5-6-sol`.
 - **C:** OpenAI GPT-OSS 120B hosted by Databricks through
   `system.ai.gpt-oss-120b`.
-- **D:** dedicated IKG GPT-OSS 20B Databricks Model Serving endpoint.
-  There is **no automatic fallback** to A/B/C model routes.
+- **D:** dedicated IKG GPT-OSS 20B and/or Llama 3.3 70B Databricks Model
+  Serving endpoints. The investigator chooses GPT-OSS 20B, Llama 3.3 70B,
+  or both. There is **no automatic fallback** to A/B/C model routes.
 
 The exact model/endpoint is disclosed before submission, stored with the
 analysis and displayed with the result.
@@ -205,9 +208,9 @@ For **OpenAI GPT-5.6 Sol**, Databricks lists the applicable OpenAI **Usage
 Policy** and **high-risk use-case mitigation requirements** in addition to the
 customer's Databricks agreement.
 
-**Operational rule:** Class D processing is blocked until the dedicated
-GPT-OSS 20B endpoint and its organisational/legal/security approval are in
-place. The App does not downgrade Class D to a less-private model path.
+**Operational rule:** a requested Class D model is blocked until its dedicated
+endpoint and organisational/legal/security approval are in place. The App does
+not downgrade Class D to a less-private model path.
 
 See repository documentation:
 `docs/14_tooling_inventory.md` and
@@ -2295,7 +2298,12 @@ with tab_new_analysis:
                         language_mode=language_mode,
                         output_language=output_language,
                         information_class=information_class,
-                        model_service=policy["model"],
+                        model_service=(
+                            "CLASS_D_POLICY_ROUTED"
+                            if information_class == "D"
+                            else policy["model"]
+                        ),
+                        model_selection=class_d_model_selection,
                     )
                     source_description = "direct text"
 
