@@ -5,8 +5,10 @@
 The Investigation Knowledge Graph (IKG) PoC is a generic investigation-analysis
 application. It is not a Commodore Clipper application.
 
-The current PoC focus is the **Class D dual-model workflow** for protected or
-confidential investigation material.
+The application PoC supports **all information classes A–D**. The current
+experimental comparison/validation focus is the **additional Class D
+dual-model workflow** for protected or confidential investigation material.
+Class D does not replace or supersede the normal A/B/C routes.
 
 Commodore Clipper is retained only as:
 
