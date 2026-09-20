@@ -1316,3 +1316,61 @@ environment.
 
 It does not replace the underlying legal/organisational requirements governing
 processing, access, disclosure, retention or deletion.
+
+
+## 20. PoC retention schedule
+
+The PoC applies different retention periods to different data classes.
+
+| Data type | Default retention | Rule |
+|---|---:|---|
+| Raw Class D source-ingress material | maximum 24 hours | Purge independently of derived-data retention |
+| Raw direct-text temporary payload | until successful extraction | Purge immediately after governed passages are created |
+| Extracted passages / candidate concepts / candidate relationships | 72 hours | Purge automatically unless explicitly retained for validation |
+| Model-generated summaries / conflicts / uncertainties / graph derivatives | 72 hours | Purge automatically unless explicitly retained for validation |
+| Model-run graph nodes and relationships | 72 hours | Purge automatically unless explicitly retained for validation |
+| Minimal audit metadata / hashes / model/version / timestamps | retained as required for traceability | Must not include substantive protected evidence |
+| Human-reviewed benchmark cases | explicit retention only | Exempt from automatic purge only when deliberately marked for validation |
+
+Default derived-data policy:
+
+`TRANSIENT_72H`
+
+Required metadata on an AnalysisGroup:
+
+- `derived_retention_hours = 72`;
+- `derived_expires_at`;
+- `retention_policy`;
+- `retain_for_validation`;
+- `retention_purge_status`;
+- `derived_purged_at`.
+
+The 72-hour period applies to **digested / derived analytical material**, not to
+raw Class D ingress, which follows the stricter 24-hour maximum.
+
+### Automatic cleanup
+
+Notebook:
+
+`23_purge_expired_analysis_artifacts.py`
+
+Scheduled setup:
+
+`24_create_retention_cleanup_job.py`
+
+The cleanup removes expired derived content from Delta and generated Neo4j
+graph content while preserving only minimal metadata needed for traceability.
+
+Analyses explicitly retained for model validation are excluded from automatic
+purge.
+
+### GitHub / repository cleanliness
+
+GitHub remains code-and-documentation only.
+
+Generated reports, evidence files, model outputs, exported graphs, temporary
+analysis files and case-specific artefacts must not be committed simply to keep
+them available.
+
+This keeps the repository small and avoids turning source control into an
+evidence or artefact store.
