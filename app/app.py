@@ -1088,6 +1088,10 @@ def load_model_runs(analysis_id):
         coalesce(properties(m)["privacy_redaction_count"], 0) AS privacy_redaction_count,
         coalesce(properties(m)["graph_node_count"], 0) AS graph_node_count,
         coalesce(properties(m)["graph_relationship_count"], 0) AS graph_relationship_count,
+        properties(m)["duration_seconds"] AS duration_seconds,
+        coalesce(properties(m)["prompt_tokens"], 0) AS prompt_tokens,
+        coalesce(properties(m)["completion_tokens"], 0) AS completion_tokens,
+        coalesce(properties(m)["total_tokens"], 0) AS total_tokens,
         toString(properties(m)["completed_at"]) AS completed_at
     ORDER BY
         CASE m.model_key
@@ -1213,6 +1217,23 @@ def render_model_run(
     m2.metric(
         "Relationships",
         model_run.get("graph_relationship_count") or 0,
+    )
+
+    e1, e2 = st.columns(2)
+    duration = model_run.get(
+        "duration_seconds"
+    )
+    e1.metric(
+        "Elapsed",
+        (
+            f"{float(duration):.1f} s"
+            if duration is not None
+            else "—"
+        ),
+    )
+    e2.metric(
+        "Tokens",
+        model_run.get("total_tokens") or "—",
     )
 
     st.caption(
