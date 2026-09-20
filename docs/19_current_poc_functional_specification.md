@@ -1,4 +1,23 @@
-# IKG PoC — Authoritative functional specification
+# Safety Investigation Knowledge & AI Support — Authoritative PoC specification
+
+## 0. Product identity and purpose
+
+**Working product name:** Safety Investigation Knowledge & AI Support
+
+The PoC evaluates supporting artificial-intelligence and structured-knowledge
+tools for safety investigation. Its purpose is to help investigators analyse
+evidence, structure knowledge, compare model outputs, preserve provenance and
+review machine-generated candidates.
+
+The knowledge graph is an internal representation, not the product identity.
+
+The PoC does not replace the investigator, establish blame or liability, or
+convert model output directly into a formal investigation finding.
+
+The product mission includes confidentiality-by-design: route information
+according to its classification, minimise model exposure, de-identify
+analytical derivatives by default, preserve original evidence separately and
+fail closed when a protected-data model route is not approved.
 
 ## 1. Product scope
 
