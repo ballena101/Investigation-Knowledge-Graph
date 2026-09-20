@@ -191,12 +191,16 @@ print("Neo4j constraints: ready")
 
 # COMMAND ----------
 
-INDEX_VERSION = "SOURCE_LIBRARY_V0.1"
+INDEX_VERSION = "SOURCE_LIBRARY_V0.2"
+DEFAULT_SOURCE_RETENTION_HOURS = 72
 
 query = """
 MERGE (d:SourceDocument {document_id: $document_id})
 ON CREATE SET
-    d.first_indexed_at = datetime()
+    d.first_indexed_at = datetime(),
+    d.source_retention_hours = $default_source_retention_hours,
+    d.source_expires_at = datetime() + duration({hours: $default_source_retention_hours}),
+    d.source_purge_status = 'ACTIVE'
 SET
     d.filename = $filename,
     d.volume_path = $volume_path,
@@ -219,6 +223,7 @@ with driver.session() as session:
     for document in documents:
         params = dict(document)
         params["index_version"] = INDEX_VERSION
+        params["default_source_retention_hours"] = DEFAULT_SOURCE_RETENTION_HOURS
 
         record = session.run(
             query,
@@ -262,6 +267,12 @@ display(spark.createDataFrame(rows))
 
 driver.close()
 
+print("")
+print(
+    "Default source retention:",
+    DEFAULT_SOURCE_RETENTION_HOURS,
+    "hours; Class D analyses may shorten this to 24 hours."
+)
 print("")
 print("DOCUMENT LIBRARY READY")
 print("Documents available to App:", len(indexed_ids))
