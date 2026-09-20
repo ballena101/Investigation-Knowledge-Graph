@@ -120,6 +120,18 @@ When both models are run:
 No model is declared "better" solely because it produces more nodes or
 relationships.
 
+### 2.8 Efficiency
+
+Each model run records, where available:
+
+- elapsed processing time;
+- prompt tokens;
+- completion tokens;
+- total tokens.
+
+These metrics allow quality/privacy results to be interpreted together with
+operational efficiency rather than in isolation.
+
 ## 3. Gold-standard validation dataset
 
 The project should build a controlled benchmark from human-reviewed analyses.
