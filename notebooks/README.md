@@ -1,8 +1,11 @@
 # Databricks Notebooks
 
-These files use Databricks source format (`# Databricks notebook source`) so they remain readable in Git and can be imported into Databricks as notebooks.
+These files use Databricks source format so they remain readable in Git and can
+be imported into Databricks.
 
-Execution order for the current Commodore Clipper PoC:
+## Reference-methodology notebooks
+
+The Commodore Clipper notebooks remain as the controlled reference case:
 
 1. `01_neo4j_connection_test.py`
 2. `02_publish_commodore_clipper_graph.py`
@@ -13,73 +16,69 @@ Execution order for the current Commodore Clipper PoC:
 7. `07_configure_relationship_review.py`
 8. `08_configure_emcip_mapping_review.py`
 
-Notebook 07 verifies the Neo4j review write path and creates the uniqueness constraint for relationship reviews.
+These notebooks validate the graph/evidence/review methodology. They are not the
+current product scope.
 
-Notebook 08 creates the uniqueness constraint for EMCIP mapping reviews.
+## Generic source and analysis pipeline
 
-The current App reads the published Neo4j graph and writes append-only relationship and EMCIP mapping review records to Neo4j. It does not require an additional SQL warehouse resource for the controlled PoC.
+- `12_add_multilingual_metadata.py`
+- `13_register_analysis_from_volume_folder.py`
+- `14_index_volume_documents_to_neo4j.py`
+- `15_extract_analysis_evidence.py`
+- `16_analyse_evidence_and_build_graph.py`
+- `17_create_automated_analysis_job.py`
 
-Future generic ingestion and LLM-assisted extraction notebooks are intentionally not implemented here yet because the agreed current scope remains Commodore Clipper only.
+Notebook 15 supports governed documents and encrypted direct-text sources.
 
+Notebook 16 is model-run aware: each model can publish an independent graph
+namespace under one AnalysisGroup.
 
-## Generic document-library workflow
+## Class D dual-model PoC
 
-- `13_register_analysis_from_volume_folder.py` — fallback notebook-only route: one volume folder becomes one analysis.
-- `14_index_volume_documents_to_neo4j.py` — preferred App-assisted route: scan a user-accessible UC volume and publish document metadata to Neo4j. The App can then select existing documents without direct volume access.
+- `18_validate_class_d_gpt_oss_20b_endpoint.py` — earlier endpoint validation helper; retained for history.
+- `19_create_class_d_dual_model_job.py` — creates the dedicated Lakeflow Job that extracts evidence once and runs GPT-OSS 20B and/or Llama 3.3 70B.
+- `20_finalize_class_d_comparison.py` — completes the analysis only when all requested model runs are complete.
+- `21_create_class_d_model_endpoints.py` — creates/validates dedicated custom serving endpoints from approved Unity Catalog model registrations.
+- `22_model_run_validation_metrics.py` — computes human-review validation metrics once generic model-run reviews exist.
 
-The preferred PoC pattern is:
+Normal investigators do **not** execute these notebooks. They use the App.
+
+## Class D App workflow
 
 ```text
-User-managed UC volume
-  → notebook 14 metadata index
-  → Neo4j SourceDocument catalogue
-  → App document selection
-  → Neo4j AnalysisGroup
-  → processing notebook under user identity
+Documents OR encrypted direct text
+        ↓
+question/objective
+        ↓
+Class D
+        ↓
+GPT-OSS 20B | Llama 3.3 70B | Both
+        ↓
+evidence extraction once
+        ↓
+independent model runs
+        ↓
+privacy validation
+        ↓
+separate knowledge graphs
+        ↓
+side-by-side App comparison
+        ↓
+human review / validation
 ```
 
+## Llama quota
 
-## End-to-end generic analysis pipeline
+The PoC limits Llama 3.3 70B to five questions per user per day. The App
+persists the count in Neo4j and only configured administrators may reset it.
 
-1. `14_index_volume_documents_to_neo4j.py`
-   - scans the user-managed Unity Catalog document library;
-   - publishes SourceDocument metadata to Neo4j.
+## Validation
 
-2. App → **New analysis**
-   - select 1–5 indexed documents;
-   - create one AnalysisGroup;
-   - status becomes PENDING_PROCESSING.
+The Commodore Clipper case is a reference/benchmark candidate.
 
-3. `15_extract_analysis_evidence.py`
-   - reads the selected source files under the notebook user's identity;
-   - supports PDF, DOCX and TXT;
-   - extracts deterministic passages with document/page provenance;
-   - detects language;
-   - persists passages to Delta;
-   - status becomes EVIDENCE_READY.
+Formal model validation is defined in:
 
-4. `16_analyse_evidence_and_build_graph.py`
-   - performs evidence-grounded candidate extraction in batches;
-   - resolves duplicate concepts across the selected document group;
-   - consolidates only already-supported relationships;
-   - publishes one generic Neo4j graph;
-   - stores overview, key findings, uncertainties and source conflicts;
-   - status becomes COMPLETED.
+`docs/18_model_validation_and_feedback.md`
 
-5. App → **Analyses**
-   - shows extraction/analysis progress;
-   - shows the completed summary and generic graph.
-
-Causality is never inferred from chronology alone. Generated graph relationships remain assistant candidates until human review.
-
-
-## Automated App workflow
-
-- `17_create_automated_analysis_job.py` — one-time setup that creates or
-  updates the reusable Lakeflow Job containing notebook 15 followed by notebook
-  16.
-
-After this setup and attaching the Job to the App with resource key
-`analysis_job` / permission `Can manage run`, investigators do not need to
-open notebooks 15 or 16 manually. Creating an analysis in the App triggers the
-workflow automatically.
+Do not claim GPT-OSS 20B or Llama 3.3 70B is validated until the benchmark and
+human-review metrics have actually been executed.
