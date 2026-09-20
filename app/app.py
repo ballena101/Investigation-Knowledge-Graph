@@ -292,6 +292,14 @@ customer's Databricks agreement.
 endpoint and organisational/legal/security approval are in place. The App does
 not downgrade Class D to a less-private model path.
 
+**Class D source retention:** the governed source-document ingress storage is
+ephemeral. Class D uploaded source documents must be deleted, together with
+their dedicated source-ingress storage, no later than 24 hours after ingestion.
+This 24-hour rule applies to the raw source-ingress layer. Extracted passages,
+model outputs, graphs, review records, logs and backups are separate data copies
+and require their own explicit retention/deletion rules; the App must not imply
+that deleting the source volume erases those derivatives automatically.
+
 See repository documentation:
 `docs/14_tooling_inventory.md` and
 `docs/15_data_protection_confidentiality.md`.
