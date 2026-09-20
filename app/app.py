@@ -400,6 +400,84 @@ def encrypt_direct_text(value):
     ).decode("utf-8")
 
 
+def trigger_class_d_analysis_job(
+    analysis_id,
+    model_selection,
+):
+    if not CLASS_D_ANALYSIS_JOB_ID:
+        raise RuntimeError(
+            "No Class D analysis Job is attached to the App."
+        )
+
+    run_gpt20 = model_selection in {
+        "GPT20",
+        "BOTH",
+    }
+    run_llama70 = model_selection in {
+        "LLAMA70",
+        "BOTH",
+    }
+
+    if run_gpt20 and not CLASS_D_GPT20_ENDPOINT:
+        raise RuntimeError(
+            "The dedicated GPT-OSS 20B endpoint is not configured."
+        )
+
+    if run_llama70 and not CLASS_D_LLAMA70_ENDPOINT:
+        raise RuntimeError(
+            "The dedicated Llama 3.3 70B endpoint is not configured."
+        )
+
+    response = get_workspace_client().api_client.do(
+        "POST",
+        "/api/2.2/jobs/run-now",
+        body={
+            "job_id": int(
+                CLASS_D_ANALYSIS_JOB_ID
+            ),
+            "job_parameters": {
+                "analysis_id": analysis_id,
+                "model_selection": model_selection,
+                "gpt20_endpoint": (
+                    CLASS_D_GPT20_ENDPOINT
+                    or "__SKIP__"
+                ),
+                "llama70_endpoint": (
+                    CLASS_D_LLAMA70_ENDPOINT
+                    or "__SKIP__"
+                ),
+            },
+        },
+    )
+
+    run_id = response.get("run_id")
+    if not run_id:
+        raise RuntimeError(
+            "Databricks did not return a Class D Job run_id."
+        )
+
+    with get_driver().session() as session:
+        session.run(
+            """
+            MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+            SET
+                a.status = 'QUEUED',
+                a.processing_stage = 'JOB_QUEUED',
+                a.job_id = $job_id,
+                a.job_run_id = $run_id,
+                a.processing_updated_at = datetime(),
+                a.processing_error = NULL
+            """,
+            analysis_id=analysis_id,
+            job_id=str(
+                CLASS_D_ANALYSIS_JOB_ID
+            ),
+            run_id=str(run_id),
+        ).consume()
+
+    return str(run_id)
+
+
 def trigger_analysis_job(analysis_id, model_service):
     if not ANALYSIS_JOB_ID:
         raise RuntimeError(
@@ -494,6 +572,7 @@ def create_analysis_from_documents(
     output_language,
     information_class,
     model_service,
+    model_selection=None,
 ):
     reviewer = get_reviewer_identity()
 
@@ -515,6 +594,7 @@ def create_analysis_from_documents(
         language_mode: $language_mode,
         output_language: $output_language,
         requested_model_service: $model_service,
+        requested_model_selection: $model_selection,
         status: 'PENDING_PROCESSING',
         created_by: $created_by,
         created_at: datetime(),
@@ -539,6 +619,7 @@ def create_analysis_from_documents(
         "language_mode": language_mode,
         "output_language": output_language,
         "model_service": model_service,
+        "model_selection": model_selection,
         "created_by": creator,
         "pipeline_version": PIPELINE_VERSION,
         "document_ids": selected_document_ids,
@@ -580,6 +661,9 @@ def create_analysis_from_text(
     text_sha256 = hashlib.sha256(
         direct_text.encode("utf-8")
     ).hexdigest()
+    encrypted_text = encrypt_direct_text(
+        direct_text
+    )
 
     query = """
     CREATE (a:AnalysisGroup {
@@ -601,9 +685,10 @@ def create_analysis_from_text(
         source_id: $source_id,
         analysis_id: $analysis_id,
         source_type: 'DIRECT_TEXT',
-        text_content: $direct_text,
+        encrypted_text: $encrypted_text,
+        encryption_scheme: 'FERNET',
         text_sha256: $text_sha256,
-        retention_status: 'TRANSIENT_UNTIL_EVIDENCE_READY',
+        retention_status: 'ENCRYPTED_TRANSIENT_UNTIL_EVIDENCE_READY',
         created_at: datetime()
     })
     CREATE (a)-[:HAS_SOURCE_TEXT]->(s)
@@ -621,7 +706,7 @@ def create_analysis_from_text(
         "created_by": creator,
         "pipeline_version": PIPELINE_VERSION,
         "source_id": source_id,
-        "direct_text": direct_text,
+        "encrypted_text": encrypted_text,
         "text_sha256": text_sha256,
     }
 
