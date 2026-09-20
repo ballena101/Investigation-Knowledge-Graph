@@ -624,3 +624,25 @@ For Class D, suitability requires confirmation of:
 - de-identification/privacy validation.
 
 The system must fail closed when these conditions are not satisfied.
+
+
+## 17. Ephemeral Class D source storage
+
+The Unity Catalog storage used for raw Class D source documents is an
+**ephemeral ingress layer**, not a permanent evidence archive.
+
+Retention requirement:
+
+- maximum raw-source lifetime: **24 hours from ingestion**;
+- the analysis-specific source container/path, and where applicable the
+  dedicated volume itself, must be deleted automatically;
+- retention cleanup must be independent of analysis success;
+- purge timestamps/status must be auditable.
+
+This 24-hour rule applies to raw ingress storage only. Delta evidence passages,
+Neo4j derivatives, model-service retention, logs and backups have separate
+retention obligations.
+
+For implementation, analysis-specific ephemeral storage is preferred over a
+single shared volume because it guarantees that deleting one expired analysis
+does not prematurely delete newer uploads.
