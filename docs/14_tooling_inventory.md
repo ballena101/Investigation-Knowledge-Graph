@@ -589,3 +589,38 @@ Llama 3.3 70B is limited to five questions per user per day in the PoC.
 The limit is persisted in Neo4j and only configured administrators can reset it.
 
 See `docs/17_class_d_dual_model_poc.md`.
+
+
+## 16. Product name and model-governance disclosure
+
+**Working product name:** Safety Investigation Knowledge & AI Support
+
+The knowledge graph is one internal analytical representation. It is not the
+product identity.
+
+The App must always disclose every LLM route currently available:
+
+| Class | Model | Serving route | Confidentiality level | Article 9 processing suitability |
+|---|---|---|---|---|
+| A | OpenAI GPT-5.6 Sol | Databricks `system.ai.gpt-5-6-sol` | Public / non-sensitive | Not permitted for protected Class D evidence |
+| B | OpenAI GPT-5.6 Sol | Databricks `system.ai.gpt-5-6-sol` | Published / non-sensitive | Not permitted for protected Class D evidence |
+| C | OpenAI GPT-OSS 120B | Databricks-hosted `system.ai.gpt-oss-120b` | Internal / restricted | Not automatically approved for Article 9 evidence |
+| D | OpenAI GPT-OSS 20B | Dedicated Databricks endpoint | Protected / confidential | Conditionally suitable after endpoint/governance approval |
+| D | Meta Llama 3.3 70B Instruct | Dedicated Databricks endpoint | Protected / confidential | Conditionally suitable after endpoint/governance approval |
+
+The Article 9 status is an internal processing-control classification, not a
+legal certification of compliance.
+
+For Class D, suitability requires confirmation of:
+
+- authorised safety-investigation purpose;
+- dedicated endpoint;
+- access control;
+- networking/data path;
+- logging;
+- retention;
+- data location;
+- organisational/legal/security approval;
+- de-identification/privacy validation.
+
+The system must fail closed when these conditions are not satisfied.
