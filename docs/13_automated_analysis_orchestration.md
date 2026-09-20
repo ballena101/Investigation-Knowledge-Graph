@@ -192,22 +192,29 @@ Lakeflow Job execution and rollback path have all been validated successfully.
 
 ## Input modes and model policy
 
-The automated Job accepts analyses created from either indexed documents or
-Direct text.
-
-The App records `input_mode`, `information_class` and the
-policy-selected `requested_model_service` before the Job starts.
+The App supports Documents and encrypted Direct text.
 
 Current routing:
 
 - A/B → `system.ai.gpt-5-6-sol`
 - C → `system.ai.gpt-oss-120b`
-- D → `CLASS_D_MODEL_ENDPOINT` (dedicated GPT-OSS 20B)
+- D → dedicated GPT-OSS 20B and/or Llama 3.3 70B endpoints
 
-The Job receives the exact model service/endpoint as `model_service`.
+Class D uses a separate Lakeflow Job resource:
 
-Direct-text A/B/C sources are converted into Delta passages by notebook 15 and
-then their raw Neo4j `text_content` field is removed. Class D direct text is
-blocked pending secure governed ingress.
+`class_d_analysis_job`
 
-See `docs/16_unified_input_and_model_routing.md`.
+Class D Job sequence:
+
+1. extract evidence once;
+2. run GPT-OSS 20B when selected;
+3. run Llama 3.3 70B when selected;
+4. finalize the comparison after all requested model runs complete.
+
+Direct text is encrypted before temporary storage and the encrypted payload is
+purged after Delta passages are created.
+
+See:
+
+- `docs/17_class_d_dual_model_poc.md`
+- `docs/18_model_validation_and_feedback.md`
