@@ -650,6 +650,7 @@ def create_analysis_from_text(
     output_language,
     information_class,
     model_service,
+    model_selection=None,
 ):
     reviewer = get_reviewer_identity()
     creator = (
@@ -677,6 +678,7 @@ def create_analysis_from_text(
         language_mode: $language_mode,
         output_language: $output_language,
         requested_model_service: $model_service,
+        requested_model_selection: $model_selection,
         status: 'PENDING_PROCESSING',
         created_by: $created_by,
         created_at: datetime(),
@@ -705,6 +707,7 @@ def create_analysis_from_text(
         "language_mode": language_mode,
         "output_language": output_language,
         "model_service": model_service,
+        "model_selection": model_selection,
         "created_by": creator,
         "pipeline_version": PIPELINE_VERSION,
         "source_id": source_id,
@@ -769,6 +772,7 @@ def load_analysis_groups():
         properties(a)["job_run_id"] AS job_run_id,
         properties(a)["job_id"] AS job_id,
         properties(a)["requested_model_service"] AS requested_model_service,
+        properties(a)["requested_model_selection"] AS requested_model_selection,
         properties(a)["model_service"] AS effective_model_service,
         properties(a)["detected_language"] AS detected_language,
         a.language_mode AS language_mode,
