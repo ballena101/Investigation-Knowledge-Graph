@@ -1,73 +1,117 @@
 # Roadmap
 
-## Phase 0 — Current PoC
+## Phase 0 — Reference methodology demonstrator
 
-Status: active / substantially complete.
+Status: complete / retained as benchmark.
 
-Scope: Commodore Clipper only.
+Reference case:
 
-Completed:
+- Commodore Clipper 2010.
+
+Delivered:
 
 - reviewed graph;
 - evidence-linked relationships;
 - EMCIP mapping layer;
 - Neo4j projection;
-- Databricks interactive graph app;
 - relationship-review UI;
-- end-to-end relationship validation persisted in Neo4j;
-- append-only human-review provenance;
-- reviewer identity captured from Databricks App headers;
-- EMCIP mapping-review UI implemented in the App code.
+- append-only human-review provenance.
 
-Current implementation step:
+Purpose now:
 
-- create the `EMCIPMappingReview` uniqueness constraint;
-- redeploy the App;
-- test one EMCIP mapping validation end to end.
+- methodology reference;
+- validation benchmark candidate;
+- evidence/causality exemplar.
 
-Next after successful mapping-review validation:
+## Phase 1 — Current Class D dual-model PoC
 
-- optionally add a controlled export of review records to Delta / Unity Catalog;
-- freeze the controlled Commodore Clipper demonstrator before moving to generic ingestion.
+Status: active.
 
-## Phase 1 — Generic document-group analysis
+Goal:
 
-Status: starting.
+Allow an investigator to supply protected/confidential source material and a
+question, run one or two privacy-oriented models against identical evidence,
+and compare evidence-grounded knowledge graphs.
 
-Goal: allow a user to upload a group of PDFs/documents and create one evidence-grounded analysis for the group. The group, identified by `analysis_id`, becomes the unit of analysis rather than an individual report.
+Implemented in repository:
 
-Reuse MAIRA document-processing components where practical for source acquisition, extraction, passaging and provenance, while keeping this project separate.
+- document and direct-text inputs;
+- encrypted direct-text ingress;
+- A/B/C/D information classes;
+- GPT-OSS 20B Class D route;
+- Llama 3.3 70B Class D route;
+- model choice: 20B / 70B / both;
+- evidence extraction once;
+- independent model-run namespaces;
+- side-by-side output rendering;
+- privacy-validation stage;
+- de-identified output by default;
+- 5-question/day Llama limit;
+- administrator-only quota reset;
+- automated Lakeflow comparison workflow;
+- Class D comparison finalizer.
 
-Estimated work for a usable multi-document controlled PoC: approximately **32–55 hours** based on the current prototype and existing MAIRA PDF infrastructure.
+Environment/deployment work still required:
 
-Main work items:
+- deploy/register approved open-weight models;
+- create/approve dedicated serving endpoints;
+- attach `class_d_analysis_job` to the App;
+- configure encryption/admin secrets;
+- validate networking, logging and retention;
+- run the first end-to-end Class D comparison.
 
-- analysis-group metadata model;
-- governed raw-document storage;
-- multi-file upload UI;
-- remove case-specific constants;
-- generic analysis/source IDs;
-- connect to reusable extraction/passaging;
-- generic node extraction;
-- generic relationship extraction;
-- evidence-linking;
-- mapping workflow;
-- generic Neo4j publication;
-- app orchestration;
-- test on heterogeneous sources.
+## Phase 2 — Model validation and review
 
-## Phase 2 — Heterogeneous investigation evidence
+Goal:
 
-Add:
+Move from "the pipeline runs" to "model behaviour is measured."
+
+Add/complete:
+
+- generic relationship review for model-run graphs;
+- benchmark dataset versioning;
+- evidence-grounding metrics;
+- relationship precision/recall;
+- causal-overreach false-positive metric;
+- privacy-leakage metric;
+- graph completeness;
+- model stability/repeatability;
+- side-by-side human preference/acceptance data;
+- locked test-set governance.
+
+See:
+
+`docs/18_model_validation_and_feedback.md`
+
+## Phase 3 — Controlled learning loop
+
+Use human-validated graphs as:
+
+1. evaluation ground truth;
+2. retrieval knowledge;
+3. few-shot examples;
+4. versioned feedback examples.
+
+Fine-tuning is optional and later.
+
+Critical rule:
+
+A benchmark case used for training/examples cannot simultaneously serve as an
+independent test case for the same model/version.
+
+## Phase 4 — Heterogeneous investigation evidence
+
+Extend source support to:
 
 - interview transcripts;
 - witness statements;
 - VDR / communications transcripts;
 - procedures;
 - correspondence;
-- technical documentation.
+- technical documentation;
+- images/diagrams where an approved multimodal route exists.
 
-## Phase 3 — Corpus and cross-case knowledge
+## Phase 5 — Corpus and cross-case knowledge
 
 Add:
 
@@ -76,18 +120,20 @@ Add:
 - recurring-factor analysis;
 - similarity search;
 - corroboration / contradiction;
-- recommendations / actions chain.
+- recommendations/actions chain.
 
-## Phase 4 — Production hardening
+## Phase 6 — Production hardening
 
-Potential requirements:
+Requirements include:
 
-- OCR;
+- stronger PII/NER validation;
 - access control;
 - audit logging;
 - retries;
-- model/version governance;
-- evaluation benchmarks;
-- performance testing;
-- data retention policy;
-- review workload metrics.
+- endpoint/version governance;
+- performance and cost testing;
+- data retention/deletion policy;
+- private networking validation;
+- review workload metrics;
+- production monitoring;
+- GitHub-native deployment and retirement of the transitional workspace source.
