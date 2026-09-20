@@ -222,6 +222,23 @@ The product follows these default principles:
 This is a product-design objective as well as a compliance safeguard.
 
 
+## Information-class routing
+
+All four classes remain supported:
+
+- A — public/technical → GPT-5.6 Sol
+- B — published/non-sensitive investigation material → GPT-5.6 Sol
+- C — internal/restricted, non-Article-9 → GPT-OSS 120B
+- D — protected/Article 9 → dedicated GPT-OSS 20B, Llama 3.3 70B, or both
+
+**Class D is an additional protected-data route. It does not replace A/B/C.**
+Only D adds dual-model comparison, the Llama daily quota and the stricter
+protected-evidence handling rules.
+
+See `docs/19_current_poc_functional_specification.md` for the authoritative
+functional description and `docs/15_data_protection_confidentiality.md` for
+the confidentiality control mapping.
+
 ## Unified analysis entry modes
 
 The App supports two source-ingress methods:
