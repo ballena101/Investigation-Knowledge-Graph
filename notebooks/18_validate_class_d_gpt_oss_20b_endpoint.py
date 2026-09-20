@@ -8,7 +8,7 @@
 # MAGIC
 # MAGIC It verifies that a dedicated Databricks Model Serving endpoint exists
 # MAGIC and records the endpoint name to be supplied to the App as
-# MAGIC `CLASS_D_MODEL_ENDPOINT`.
+# MAGIC `CLASS_D_GPT20_ENDPOINT`.
 # MAGIC
 # MAGIC The endpoint must be independently reviewed/approved for:
 # MAGIC - GPT-OSS 20B serving configuration;
@@ -78,7 +78,7 @@ print("5. App service principal has only query permission")
 print("6. Security/data-protection/legal approval recorded")
 print("")
 print("After approval, configure the Databricks App environment:")
-print(f"CLASS_D_MODEL_ENDPOINT={endpoint_name}")
+print(f"CLASS_D_GPT20_ENDPOINT={endpoint_name}")
 print("")
 print(
     "The App remains fail-closed for Class D until this environment "
