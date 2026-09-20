@@ -150,3 +150,28 @@ Read these first:
 
 Commodore Clipper-specific files are reference/benchmark documentation, not the
 current product specification.
+
+
+## Product positioning
+
+The product is a **support tool for safety investigation**, not an autonomous
+investigator and not a knowledge-graph product in isolation.
+
+Its purpose is to support:
+
+- structured analysis of documentary evidence;
+- evidence-grounded AI assistance;
+- knowledge structuring and graph representation;
+- comparison of AI model outputs;
+- preservation of source provenance;
+- privacy/confidentiality controls;
+- human validation and amendment.
+
+The knowledge graph remains an internal analytical representation.
+
+The product must not:
+
+- replace the investigator's professional judgement;
+- determine blame or liability;
+- convert AI output directly into a formal investigation finding;
+- imply legal compliance merely because technical controls exist.
