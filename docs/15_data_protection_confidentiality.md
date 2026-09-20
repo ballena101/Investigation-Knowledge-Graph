@@ -1078,3 +1078,50 @@ automatic redactions.
 
 This complements LLM de-identification instructions. It is not yet a complete
 PII/NER guarantee; production hardening must evaluate and extend it.
+
+
+## 20. Current Class D dual-model confidentiality policy
+
+This section supersedes earlier single-model Class D descriptions.
+
+The current Class D PoC supports:
+
+- dedicated GPT-OSS 20B;
+- dedicated Meta Llama 3.3 70B;
+- either model independently;
+- both models on the same evidence/question.
+
+Both routes are intended to use dedicated/custom Databricks Model Serving
+endpoints approved for Class D processing.
+
+No fallback to GPT-5.6 Sol, GPT-OSS 120B or another provider route is allowed.
+
+### Direct text
+
+Class D direct text is encrypted in the App using a secret-managed Fernet key
+before temporary storage.
+
+The backend Job decrypts the payload, creates governed Delta passages and then
+removes the encrypted payload from Neo4j.
+
+Raw Class D text is not transported as a Job parameter.
+
+### Llama resource control
+
+Llama 3.3 70B is limited to five questions per user per day in the PoC.
+
+This is a cost/resource-control mechanism, not a confidentiality control.
+
+Only configured App administrators can reset a user's daily counter.
+
+### Independent model outputs
+
+When both models are used, outputs remain separate:
+
+- independent summary;
+- independent findings;
+- independent graph;
+- independent privacy-validation result;
+- independent human review.
+
+The models do not receive each other's outputs before comparison.
