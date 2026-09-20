@@ -31,5 +31,8 @@ env:
   - name: IKG_ADMIN_USERS
     valueFrom: ikg_admin_users
 
+  - name: LLAMA_DAILY_QUESTION_LIMIT
+    value: "5"
+
   - name: STREAMLIT_GATHER_USAGE_STATS
     value: "false"
