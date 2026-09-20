@@ -23,14 +23,10 @@ dbutils.widgets.text(
     "Analysis ID",
 )
 
-dbutils.widgets.dropdown(
+dbutils.widgets.text(
     "model_service",
     "system.ai.gpt-5-6-sol",
-    [
-        "system.ai.gpt-5-6-sol",
-        "system.ai.claude-sonnet-4-5",
-    ],
-    "Databricks model service",
+    "Databricks model service / endpoint",
 )
 
 dbutils.widgets.text(
@@ -632,18 +628,19 @@ try:
         error_message=None,
     )
 
-    spark.sql(
-        f"""
-        DELETE FROM {CANDIDATE_TABLE}
-        WHERE analysis_id = '{analysis_id}'
-        """
-    )
-    spark.sql(
-        f"""
-        DELETE FROM {CANDIDATE_REL_TABLE}
-        WHERE analysis_id = '{analysis_id}'
-        """
-    )
+    if not comparison_mode:
+        spark.sql(
+            f"""
+            DELETE FROM {CANDIDATE_TABLE}
+            WHERE analysis_id = '{analysis_id}'
+            """
+        )
+        spark.sql(
+            f"""
+            DELETE FROM {CANDIDATE_REL_TABLE}
+            WHERE analysis_id = '{analysis_id}'
+            """
+        )
 
     for batch_index, batch in enumerate(
         batches,
@@ -857,7 +854,7 @@ try:
             batches_processed=batch_index,
         )
 
-    if candidate_rows:
+    if candidate_rows and not comparison_mode:
         candidate_df = spark.createDataFrame(
             candidate_rows,
             schema=spark.table(
@@ -870,7 +867,7 @@ try:
             CANDIDATE_TABLE
         )
 
-    if candidate_relationship_rows:
+    if candidate_relationship_rows and not comparison_mode:
         relationship_df = spark.createDataFrame(
             candidate_relationship_rows,
             schema=spark.table(
