@@ -2,6 +2,7 @@ import hashlib
 import os
 import uuid
 import streamlit as st
+from cryptography.fernet import Fernet
 from databricks.sdk import WorkspaceClient
 from neo4j import GraphDatabase
 from streamlit_cytoscape import (
@@ -15,10 +16,28 @@ GRAPH_VERSION = "CASE_GRAPH_V0.2"
 
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
 ANALYSIS_JOB_ID = os.getenv("ANALYSIS_JOB_ID")
+CLASS_D_ANALYSIS_JOB_ID = os.getenv("CLASS_D_ANALYSIS_JOB_ID")
+DIRECT_TEXT_ENCRYPTION_KEY = os.getenv("DIRECT_TEXT_ENCRYPTION_KEY")
+IKG_ADMIN_USERS = {
+    item.strip().lower()
+    for item in (os.getenv("IKG_ADMIN_USERS") or "").split(",")
+    if item.strip()
+}
+
 MAX_DOCUMENTS_PER_ANALYSIS = 5
+LLAMA_DAILY_QUESTION_LIMIT = 5
+QUOTA_TIMEZONE = "Europe/Lisbon"
+
 PUBLIC_MODEL_SERVICE = "system.ai.gpt-5-6-sol"
 INTERNAL_MODEL_SERVICE = "system.ai.gpt-oss-120b"
-CLASS_D_MODEL_ENDPOINT = os.getenv("CLASS_D_MODEL_ENDPOINT")
+CLASS_D_GPT20_ENDPOINT = os.getenv("CLASS_D_GPT20_ENDPOINT")
+CLASS_D_LLAMA70_ENDPOINT = os.getenv("CLASS_D_LLAMA70_ENDPOINT")
+
+CLASS_D_MODEL_OPTIONS = {
+    "GPT-OSS 20B": "GPT20",
+    "Llama 3.3 70B": "LLAMA70",
+    "Both models": "BOTH",
+}
 
 INFORMATION_CLASSES = {
     "A": {
@@ -64,7 +83,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-19-unified-input-policy-v1"
+APP_BUILD = "2026-09-20-class-d-dual-model-poc-v1"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
