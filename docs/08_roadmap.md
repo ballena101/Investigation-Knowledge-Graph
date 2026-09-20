@@ -58,6 +58,7 @@ Environment/deployment work still required:
 - attach `class_d_analysis_job` to the App;
 - configure encryption/admin secrets;
 - validate networking, logging and retention;
+- implement and test automatic Class D source purge within the 24-hour maximum;
 - run the first end-to-end Class D comparison.
 
 ## Phase 2 — Model validation and review
@@ -132,7 +133,8 @@ Requirements include:
 - retries;
 - endpoint/version governance;
 - performance and cost testing;
-- data retention/deletion policy;
+- enforced raw Class D source purge within 24 hours;
+- retention/deletion policy for Delta derivatives, model outputs, logs and backups;
 - private networking validation;
 - review workload metrics;
 - production monitoring;
