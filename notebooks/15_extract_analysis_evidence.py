@@ -27,7 +27,7 @@ dbutils.widgets.text(
 
 # COMMAND ----------
 
-# MAGIC %pip install neo4j==6.3.1 pymupdf==1.26.4 python-docx==1.2.0 langdetect==1.0.9
+# MAGIC %pip install neo4j==6.3.1 pymupdf==1.26.4 python-docx==1.2.0 langdetect==1.0.9 cryptography==46.0.2
 
 # COMMAND ----------
 
@@ -42,6 +42,7 @@ from collections import Counter
 from datetime import datetime, timezone
 
 import fitz  # PyMuPDF
+from cryptography.fernet import Fernet
 from docx import Document as DocxDocument
 from langdetect import DetectorFactory, LangDetectException, detect
 from neo4j import GraphDatabase
@@ -92,6 +93,11 @@ driver = GraphDatabase.driver(
 
 driver.verify_connectivity()
 print("Neo4j connection: OK")
+
+DIRECT_TEXT_ENCRYPTION_KEY = dbutils.secrets.get(
+    scope="kg-poc-app",
+    key="direct_text_encryption_key",
+)
 
 # COMMAND ----------
 
@@ -165,7 +171,8 @@ def load_analysis_sources():
             ELSE {
                 source_id: text_source.source_id,
                 source_type: text_source.source_type,
-                text_content: text_source.text_content,
+                encrypted_text: text_source.encrypted_text,
+                encryption_scheme: text_source.encryption_scheme,
                 text_sha256: text_source.text_sha256
             }
         END AS text_source,
@@ -203,11 +210,22 @@ input_mode = analysis.get("input_mode") or "DOCUMENTS"
 text_source = analysis.get("text_source")
 
 if input_mode == "DIRECT_TEXT":
-    if not text_source or not text_source.get("text_content"):
+    if not text_source or not text_source.get("encrypted_text"):
         raise ValueError(
-            "The analysis is configured for direct text but no temporary "
-            "DirectTextSource content is available."
+            "The analysis is configured for direct text but no encrypted "
+            "DirectTextSource payload is available."
         )
+
+    if text_source.get("encryption_scheme") != "FERNET":
+        raise ValueError(
+            "Unsupported DirectTextSource encryption scheme."
+        )
+
+    text_source["text_content"] = Fernet(
+        DIRECT_TEXT_ENCRYPTION_KEY.encode("utf-8")
+    ).decrypt(
+        text_source["encrypted_text"].encode("utf-8")
+    ).decode("utf-8")
 else:
     if not documents:
         raise ValueError(
@@ -763,12 +781,12 @@ try:
                 MATCH (s:DirectTextSource {
                     source_id: $source_id
                 })
-                REMOVE s.text_content
+                REMOVE s.encrypted_text
                 SET
                     s.detected_language = $detected_language,
                     s.passage_count = $passage_count,
                     s.extraction_status = 'EXTRACTED_AND_PURGED',
-                    s.retention_status = 'RAW_TEXT_PURGED',
+                    s.retention_status = 'ENCRYPTED_PAYLOAD_PURGED',
                     s.extraction_version = $extraction_version,
                     s.extracted_at = datetime()
                 """,
