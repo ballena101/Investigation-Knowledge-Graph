@@ -82,3 +82,14 @@ Formal model validation is defined in:
 
 Do not claim GPT-OSS 20B or Llama 3.3 70B is validated until the benchmark and
 human-review metrics have actually been executed.
+
+
+## Retention cleanup
+
+- `23_purge_expired_analysis_artifacts.py` — removes expired derived/digested
+  analytical artefacts after the default 72-hour retention period, excluding
+  analyses explicitly retained for validation.
+- `24_create_retention_cleanup_job.py` — one-time setup for the hourly
+  Lakeflow retention-cleanup Job.
+
+Raw Class D source ingress remains governed by the separate 24-hour maximum.
