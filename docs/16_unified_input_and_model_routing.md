@@ -68,18 +68,16 @@ permanent raw-evidence repository.
 
 ### 1.3 Class D direct text
 
-Direct text is deliberately disabled for Class D in the current design.
+The Class D PoC supports direct text through encrypted temporary ingress:
 
-Protected Article 9 material must enter through the governed document/Unity
-Catalog route until a secure direct-text ingress to governed Databricks storage
-has been implemented and approved.
+```text
+direct text → App encryption → temporary encrypted source
+→ backend decryption → governed Delta passages → encrypted payload purged
+```
 
-The App must not work around this restriction by:
-
-- sending raw text as a Job parameter;
-- storing raw Class D text permanently in Neo4j;
-- silently downgrading the information class;
-- routing the text to an A/B/C model.
+The key is supplied through `DIRECT_TEXT_ENCRYPTION_KEY` and must be managed
+as an approved Databricks secret/App resource. Raw Class D text is not passed
+as a Lakeflow Job parameter.
 
 ## 2. Information classification and model routing
 
@@ -92,7 +90,7 @@ The class is a technical processing control, not merely metadata.
 | A | Public / technical | `system.ai.gpt-5-6-sol` | Public/non-sensitive route |
 | B | Published investigation material | `system.ai.gpt-5-6-sol` | Published-material route |
 | C | Internal / restricted analytical material | `system.ai.gpt-oss-120b` | Databricks-hosted open-weight route |
-| D | Article 9 / protected confidential evidence | Dedicated IKG GPT-OSS 20B endpoint | No fallback permitted |
+| D | Article 9 / protected confidential evidence | GPT-OSS 20B, Llama 3.3 70B, or both | Dedicated endpoints; no A/B/C fallback |
 
 ### A/B
 
@@ -123,28 +121,33 @@ the C route is not described as zero-retention.
 
 ### D
 
-Target model:
+Class D is the dual-model PoC route.
 
-**GPT-OSS 20B**
+Available choices:
 
-Serving architecture:
+- **GPT-OSS 20B**
+- **Meta Llama 3.3 70B Instruct**
+- **Both models**
 
-**dedicated/custom IKG Databricks Model Serving endpoint**
+Target endpoints:
 
-The endpoint name is supplied to the App through:
+- `CLASS_D_GPT20_ENDPOINT`
+- `CLASS_D_LLAMA70_ENDPOINT`
 
-`CLASS_D_MODEL_ENDPOINT`
+When Both is selected, the models receive the same governed evidence passages
+and the same investigation question independently. Outputs use separate
+model-run namespaces and are displayed side by side.
 
-Class D processing is blocked unless that endpoint is configured.
+There is no fallback to GPT-5.6 Sol, GPT-OSS 120B or another model.
 
-There is no fallback to:
+Llama 3.3 70B has a PoC quota of **5 questions per user per day**. A Both-model
+run consumes one Llama question. Only configured `IKG_ADMIN_USERS` may reset
+the daily counter.
 
-- GPT-5.6 Sol;
-- GPT-OSS 120B;
-- another partner model;
-- a personal ChatGPT session.
+**Terminology:** Ollama is a runtime/serving layer, not the model. The larger
+comparison model is Llama 3.3 70B Instruct. If Ollama is later used to host it,
+runtime and model identity are recorded separately.
 
-This is fail-closed behaviour.
 
 ## 3. Disclosure before processing
 
@@ -281,9 +284,12 @@ Implemented:
 - pre-submission processing disclosure;
 - A/B → GPT-5.6 Sol;
 - C → GPT-OSS 120B;
-- Class D fail-closed routing;
-- direct-text passaging for A/B/C;
-- temporary direct-text raw-content purge after Delta persistence;
+- Class D fail-closed dual-model routing;
+- GPT-OSS 20B / Llama 3.3 70B / Both selection;
+- encrypted Class D direct-text ingress;
+- temporary direct-text payload purge after Delta persistence;
+- 5-question/day Llama quota with admin-only reset;
+- side-by-side Class D result presentation;
 - de-identified-by-default model instructions;
 - deterministic privacy-validation stage;
 - process timeline;
@@ -291,8 +297,9 @@ Implemented:
 
 Pending:
 
-- deploy and approve the dedicated Class D GPT-OSS 20B endpoint;
-- configure `CLASS_D_MODEL_ENDPOINT`;
+- deploy and approve the dedicated GPT-OSS 20B endpoint;
+- deploy and approve the dedicated Llama 3.3 70B endpoint;
+- configure `CLASS_D_GPT20_ENDPOINT` and `CLASS_D_LLAMA70_ENDPOINT`;
 - validate the Class D networking/logging/retention configuration;
 - add secure direct-text ingress for Class D if operationally required;
 - strengthen deterministic privacy validation with evaluated PII/NER controls.
