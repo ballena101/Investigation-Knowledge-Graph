@@ -22,6 +22,12 @@ The system is designed so that graph relationships remain traceable to source ev
 
 ## Current PoC
 
+**Start here for the current PoC:** `docs/19_current_poc_functional_specification.md`.
+
+It is the authoritative functional description. Commodore Clipper material is
+reference/benchmark documentation only.
+
+
 The current PoC demonstrates:
 
 - documents or encrypted direct text as source input;
@@ -111,6 +117,7 @@ docs/
     16_unified_input_and_model_routing.md
     17_class_d_dual_model_poc.md
     18_model_validation_and_feedback.md
+    19_current_poc_functional_specification.md
 
 notebooks/
     01_neo4j_connection_test.py
