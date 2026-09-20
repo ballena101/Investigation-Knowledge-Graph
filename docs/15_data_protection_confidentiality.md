@@ -1228,12 +1228,14 @@ Any exception requires explicit organisational approval of:
 
 The confidentiality controls do not remove the A/B/C workflows.
 
-- **A:** public/technical → default GPT-5.6 Sol.
-- **B:** published/non-sensitive investigation material → default GPT-5.6 Sol.
+- **A:** public/technical → default `system.ai.gpt-5-6-sol`
+  (OpenAI GPT-5.6 Sol through Databricks).
+- **B:** published/non-sensitive investigation material → default
+  `system.ai.gpt-5-6-sol`.
 - **C:** internal/restricted but not Article 9 protected → default
-  Databricks-hosted GPT-OSS 120B.
-- **D:** Article 9/protected → dedicated GPT-OSS 20B and/or Llama 3.3 70B,
-  with the additional controls documented above.
+  `system.ai.gpt-oss-120b` (Databricks-hosted GPT-OSS 120B).
+- **D:** Article 9/protected → dedicated GPT-OSS 20B and/or
+  Llama 3.3 70B endpoints, with the additional controls documented above.
 
 Only D adds:
 
