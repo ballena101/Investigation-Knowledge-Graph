@@ -1038,6 +1038,228 @@ def load_analysis_result(analysis_id):
 
 
 @st.cache_data(ttl=30)
+def load_model_runs(analysis_id):
+    query = """
+    MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+          -[:HAS_MODEL_RUN]->
+          (m:ModelRun)
+    RETURN
+        m.model_run_id AS model_run_id,
+        m.model_key AS model_key,
+        m.model_label AS model_label,
+        m.model_service AS model_service,
+        m.status AS status,
+        properties(m)["overview"] AS overview,
+        coalesce(properties(m)["key_findings"], []) AS key_findings,
+        coalesce(properties(m)["uncertainties"], []) AS uncertainties,
+        coalesce(properties(m)["source_conflicts"], []) AS source_conflicts,
+        properties(m)["privacy_output_mode"] AS privacy_output_mode,
+        properties(m)["privacy_validation_status"] AS privacy_validation_status,
+        coalesce(properties(m)["privacy_redaction_count"], 0) AS privacy_redaction_count,
+        coalesce(properties(m)["graph_node_count"], 0) AS graph_node_count,
+        coalesce(properties(m)["graph_relationship_count"], 0) AS graph_relationship_count,
+        toString(properties(m)["completed_at"]) AS completed_at
+    ORDER BY
+        CASE m.model_key
+            WHEN 'GPT20' THEN 1
+            WHEN 'LLAMA70' THEN 2
+            ELSE 9
+        END
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(
+                query,
+                analysis_id=analysis_id,
+            )
+        ]
+
+
+@st.cache_data(ttl=30)
+def load_model_run_graph(
+    analysis_id,
+    model_run_id,
+):
+    node_query = """
+    MATCH (n:KGNode {
+        analysis_id: $analysis_id,
+        model_run_id: $model_run_id
+    })
+    RETURN
+        n.node_id AS node_id,
+        n.label AS label,
+        n.node_kind AS node_kind,
+        properties(n)["description"] AS description,
+        coalesce(properties(n)["evidence_passage_ids"], []) AS passage_ids
+    ORDER BY n.label
+    """
+
+    edge_query = """
+    MATCH (source:KGNode {
+            analysis_id: $analysis_id,
+            model_run_id: $model_run_id
+          })
+          -[r]->
+          (target:KGNode {
+            analysis_id: $analysis_id,
+            model_run_id: $model_run_id
+          })
+    RETURN
+        r.edge_id AS edge_id,
+        type(r) AS relationship,
+        source.node_id AS source_id,
+        target.node_id AS target_id,
+        properties(r)["evidence_class"] AS evidence_class,
+        coalesce(properties(r)["evidence_passage_ids"], []) AS passage_ids
+    ORDER BY source.label, relationship, target.label
+    """
+
+    with get_driver().session() as session:
+        nodes = [
+            record.data()
+            for record in session.run(
+                node_query,
+                analysis_id=analysis_id,
+                model_run_id=model_run_id,
+            )
+        ]
+        edges = [
+            record.data()
+            for record in session.run(
+                edge_query,
+                analysis_id=analysis_id,
+                model_run_id=model_run_id,
+            )
+        ]
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+    }
+
+
+def render_model_run(
+    analysis_id,
+    model_run,
+    column_key,
+):
+    st.markdown(
+        f"### {model_run['model_label']}"
+    )
+    st.caption(
+        f"{model_run.get('model_service') or '—'} · "
+        f"{model_run.get('status') or 'UNKNOWN'}"
+    )
+
+    if model_run.get("overview"):
+        st.markdown("**Summary**")
+        st.write(model_run["overview"])
+
+    findings = model_run.get("key_findings") or []
+    if findings:
+        st.markdown("**Key findings**")
+        for item in findings:
+            st.write(f"• {item}")
+
+    uncertainties = model_run.get("uncertainties") or []
+    if uncertainties:
+        st.markdown("**Uncertainties**")
+        for item in uncertainties:
+            st.write(f"• {item}")
+
+    conflicts = model_run.get("source_conflicts") or []
+    if conflicts:
+        st.markdown("**Source conflicts**")
+        for item in conflicts:
+            st.write(f"• {item}")
+
+    m1, m2 = st.columns(2)
+    m1.metric(
+        "Graph nodes",
+        model_run.get("graph_node_count") or 0,
+    )
+    m2.metric(
+        "Relationships",
+        model_run.get("graph_relationship_count") or 0,
+    )
+
+    st.caption(
+        "Privacy validation: "
+        f"{model_run.get('privacy_validation_status') or '—'} · "
+        "automatic redactions: "
+        f"{model_run.get('privacy_redaction_count') or 0}"
+    )
+
+    graph = load_model_run_graph(
+        analysis_id,
+        model_run["model_run_id"],
+    )
+
+    elements = {
+        "nodes": [
+            {
+                "data": {
+                    "id": node["node_id"],
+                    "label": node["node_kind"],
+                    "name": node["label"],
+                    "node_kind": node["node_kind"],
+                    "description": (
+                        node.get("description")
+                        or ""
+                    ),
+                    "passage_ids": (
+                        node.get("passage_ids")
+                        or []
+                    ),
+                }
+            }
+            for node in graph["nodes"]
+        ],
+        "edges": [
+            {
+                "data": {
+                    "id": edge["edge_id"],
+                    "label": edge["relationship"],
+                    "source": edge["source_id"],
+                    "target": edge["target_id"],
+                    "relationship": edge["relationship"],
+                    "evidence_class": (
+                        edge.get("evidence_class")
+                        or "—"
+                    ),
+                    "passage_ids": (
+                        edge.get("passage_ids")
+                        or []
+                    ),
+                }
+            }
+            for edge in graph["edges"]
+        ],
+    }
+
+    if elements["nodes"]:
+        streamlit_cytoscape(
+            elements=elements,
+            layout="fcose",
+            node_styles=analysis_node_styles,
+            edge_styles=analysis_edge_styles,
+            height=620,
+            key=(
+                "model_graph_"
+                + analysis_id
+                + "_"
+                + column_key
+            ),
+        )
+    else:
+        st.warning(
+            "No graph nodes were published for this model run."
+        )
+
+
+@st.cache_data(ttl=30)
 def load_analysis_graph(analysis_id):
     node_query = """
     MATCH (n:KGNode {analysis_id: $analysis_id})
