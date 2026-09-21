@@ -245,3 +245,19 @@ Recommended schema:
 This table is the preferred unit for model-quality metrics because it allows
 mixed decisions within one response and preserves the original model proposal
 without overwriting it.
+
+
+## 10. Benchmark 002 descriptive candidate metrics
+
+The first candidate-level metric query for `ikf_benchmark_002` produced:
+
+| Model role | Total candidates | Validated % | Amended % | Rejected % |
+|---|---:|---:|---:|---:|
+| MODEL_A | 1 | 0.0 | 100.0 | 0.0 |
+| MODEL_B | 3 | 0.0 | 66.7 | 33.3 |
+
+These percentages describe this single benchmark item only. They must not be
+reported as general model accuracy or comparative performance.
+
+The next validation extension is to record the reason for rejection/amendment so
+that errors can be analysed by failure mode rather than only by review outcome.
