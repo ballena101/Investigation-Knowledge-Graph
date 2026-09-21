@@ -1051,3 +1051,23 @@ No Neo4j graph was modified.
 From this checkpoint onward, benchmark verification and metric calculation should
 operate from the persisted benchmark tables rather than notebook-session
 temporary views.
+
+
+## 36. Persisted MAIRA benchmark independently verified
+
+The first persisted MAIRA benchmark was subsequently verified in a fresh
+standalone notebook using only the Delta benchmark tables.
+
+Verification checkpoint:
+
+`PASS — PERSISTED MAIRA BENCHMARK VERIFIED`
+
+The verification reproduced the benchmark state without:
+
+- notebook-28 session-local temporary views;
+- re-invoking either model;
+- modifying Neo4j.
+
+This confirms that the benchmark persistence boundary is functioning as intended.
+Subsequent benchmark interpretation and metric calculation can therefore operate
+from the persisted records only.
