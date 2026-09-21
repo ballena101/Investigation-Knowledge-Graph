@@ -960,3 +960,66 @@ Persisted identifiers and semantics:
 This row is now the governed source for the next dual-model evaluation step.
 The evidence must be frozen before model execution so both Class D models receive
 the identical source passage and deterministic relationship context.
+
+
+## 34. First MAIRA frozen-snapshot dual-model human review
+
+The first controlled dual-model execution over one frozen MAIRA retrieval snapshot
+completed successfully with the same six passages and identical prompt SHA-256
+for both model routes.
+
+Execution checkpoint:
+
+- both model requests completed;
+- the same frozen passage set was supplied to both models;
+- prompt SHA-256 was identical;
+- each model produced one candidate;
+- there were zero exact candidate-signature agreements;
+- the execution checkpoint passed, but no model-accuracy conclusion was inferred
+  from that PASS.
+
+Both candidates proposed a `FOLLOWED_BY` relationship between an engine/machinery
+failure and a fire. Human review confirmed that this temporal relationship is
+supported by the cited frozen passage as a standalone relationship.
+
+Both outputs nevertheless failed the strict evidence-quotation contract:
+
+- MODEL_A abbreviated the supporting wording with an ellipsis, so the quote was
+  not verbatim;
+- MODEL_B selected wording about fire control and burn injuries rather than the
+  wording that itself establishes failure followed by fire.
+
+The human-review design therefore keeps relationship correctness separate from
+structured-output/evidence-contract compliance.
+
+A further benchmark distinction is required for governed MAIRA queries. A model
+may generate a relationship that is true in a passage while still failing to
+answer the relationship requested by the governed query. For Q003 the governed
+target relationship is `CONTRIBUTED_TO`; a generated `FOLLOWED_BY` edge can be
+valid as an incidental fact while not matching the requested relationship label.
+
+Notebook
+`29_persist_maira_dual_model_benchmark.py`
+therefore persists three separate governed layers:
+
+1. model-run execution/provenance;
+2. candidate-level human review and contract compliance;
+3. the supported MAIRA relationship assessments represented in the frozen
+   snapshot as the benchmark gold/reference layer.
+
+The notebook records
+`requested_relationship_label_match`
+separately from
+`relationship_supported`.
+
+This prevents a true but off-target relation from being counted as successful
+recovery of the governed query.
+
+Because notebook 28 exposes session-local temporary views, notebook 29 must be
+executed inline from notebook 28 with:
+
+```text
+%run ./29_persist_maira_dual_model_benchmark
+```
+
+Notebook 29 does not invoke either model and does not modify Neo4j.
