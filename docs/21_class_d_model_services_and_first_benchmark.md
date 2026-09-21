@@ -455,3 +455,23 @@ Observed result:
   flow.
 
 Both outputs were human-validated for this benchmark item.
+
+
+## 19. Benchmark 009 unsupported plausible-domain inference
+
+Benchmark 009 used a synthetic technical passage describing an unexpected main-
+engine stoppage and restart, while explicitly stating that no defect was
+identified in the information provided.
+
+Expected response:
+
+`NO_SUPPORTED_CONTRIBUTING_FACTOR`
+
+Observed result:
+
+- MODEL_A / GPT-OSS 20B: correct abstention;
+- MODEL_B / Llama 3.3 70B: correct abstention.
+
+Neither model introduced a plausible engineering cause from general domain
+knowledge. This benchmark therefore tests evidence-bounded restraint in the
+presence of technically suggestive but causally insufficient information.
