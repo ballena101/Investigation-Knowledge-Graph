@@ -107,13 +107,17 @@ Run `notebooks/28_compare_maira_snapshot_dual_model.py` after notebook 27 with:
 - the exact `retrieval_snapshot_id` printed by notebook 27;
 - the approved GPT-OSS 20B and Llama 3.3 70B model-service identifiers.
 
-Notebook 27 now exposes the snapshot both as a notebook-local view and as a
-snapshot-specific, cluster-scoped temporary view. The snapshot-specific name
-prevents one controlled run from silently reading a different snapshot.
+Notebook 27 exposes a notebook-local temporary view. Because serverless compute
+does not support global temporary views, notebook 28 uses that local view when
+available; otherwise it deterministically reconstructs the governed retrieval
+from the source tables and fails unless the computed snapshot ID exactly matches
+the requested frozen snapshot.
 
 Notebook 28:
 
-- verifies the snapshot identity, passage uniqueness and text hashes;
+- is compatible with Databricks serverless compute;
+- verifies or deterministically reproduces the snapshot identity;
+- verifies passage uniqueness and text hashes;
 - resolves the frozen governed question from its exact query specification;
 - constructs one canonical prompt and records its SHA-256;
 - sends that same prompt independently to both model services;
