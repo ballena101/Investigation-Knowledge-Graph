@@ -22,6 +22,9 @@ env:
   - name: CLASS_D_GPT20_ENDPOINT
     valueFrom: class_d_gpt20_endpoint
 
+  - name: CLASS_D_LLAMA70_ENDPOINT
+    value: "bdw_analysis_prod.kg_poc.ikf-llama-3-3-70b-poc"
+
   - name: CLASS_D_OLLAMA_LLAMA70_URL
     valueFrom: class_d_ollama_llama70_url
 
