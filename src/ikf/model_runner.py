@@ -40,6 +40,37 @@ NO_SUPPORTED_CONTRIBUTING_FACTOR
 """
 
 
+
+def _extract_chat_final_text(content: Any) -> str | None:
+    """Return only user-visible text from chat-completion content.
+
+    Some Databricks GPT-OSS chat routes return a structured content list that
+    contains both reasoning and final text items. IKF must not treat reasoning
+    content as the model answer.
+    """
+    if content is None:
+        return None
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        final_parts: list[str] = []
+        for part in content:
+            if isinstance(part, dict):
+                part_type = str(part.get("type") or "").lower()
+                if part_type in {"text", "output_text"}:
+                    text = part.get("text")
+                    if text is not None:
+                        final_parts.append(str(text))
+                continue
+            part_type = str(getattr(part, "type", "") or "").lower()
+            if part_type in {"text", "output_text"}:
+                text = getattr(part, "text", None)
+                if text is not None:
+                    final_parts.append(str(text))
+        return "\n".join(final_parts) if final_parts else None
+    return str(content)
+
+
 def run_models(
     client: Any,
     query_results: Iterable[dict[str, Any]],
@@ -95,7 +126,9 @@ def run_models(
                 else None
             )
             model_a_answer = (
-                response_a.choices[0].message.content
+                _extract_chat_final_text(
+                    response_a.choices[0].message.content
+                )
                 if response_a.choices
                 else None
             )
@@ -141,7 +174,9 @@ def run_models(
                     else None
                 ),
                 "model_b_answer": (
-                    response_b.choices[0].message.content
+                    _extract_chat_final_text(
+                        response_b.choices[0].message.content
+                    )
                     if response_b.choices
                     else None
                 ),
