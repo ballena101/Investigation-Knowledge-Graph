@@ -487,7 +487,7 @@ def list_llama_daily_usage():
 def reset_llama_daily_usage(target_user_key):
     if not is_current_user_admin():
         raise PermissionError(
-            "Only an IKG administrator can reset the Ollama daily quota."
+            "Only an IKG administrator can reset the Llama daily quota."
         )
 
     user_key = target_user_key.strip().lower()
