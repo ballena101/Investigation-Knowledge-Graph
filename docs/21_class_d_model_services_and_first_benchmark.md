@@ -492,3 +492,68 @@ Observed result:
 - MODEL_B / Llama 3.3 70B explicitly recognised both descriptions as referring to the same underlying factor and returned one merged factor.
 
 Both outputs were human-validated. No duplicate-candidate failure was observed.
+
+
+## 21. Benchmark 011 evidence-quote accuracy
+
+Benchmark 011 tested whether the model could identify the supported contributing
+factor while citing the correct source sentence and ignoring nearby distractors.
+
+Human reference factor:
+
+`Emergency generator not tested in accordance with the planned maintenance schedule`
+
+Correct supporting evidence:
+
+`During the investigation, it was established that the emergency generator had not been tested in accordance with the planned maintenance schedule.`
+
+Observed result:
+
+- MODEL_A / GPT-OSS 20B identified only the supported maintenance-testing factor
+  and cited the correct sentence. Review: `VALIDATED`.
+- MODEL_B / Llama 3.3 70B correctly identified the maintenance-testing factor and
+  cited the correct sentence, but additionally classified `loss of emergency
+  electrical power` as a contributing factor. The source sentence describes
+  that item as delaying recovery of essential systems; in this benchmark it is
+  treated as a consequence/effect rather than a contributing factor. The second
+  candidate is therefore `REJECTED`.
+
+This benchmark introduces a distinct semantic error class: confusing an
+event/consequence/effect with a contributing factor.
+
+### API invocation semantics
+
+The two Class D model services do not currently use identical client methods.
+
+GPT-OSS 20B is invoked with the OpenAI Responses API pattern:
+
+```python
+client.responses.create(
+    model=MODEL_A,
+    max_output_tokens=...,
+    input=[...]
+)
+```
+
+Llama 3.3 70B is invoked with the OpenAI-compatible Chat Completions pattern:
+
+```python
+client.chat.completions.create(
+    model=MODEL_B,
+    max_tokens=...,
+    messages=[...]
+)
+```
+
+The benchmark controls semantic input equivalence rather than forcing both model
+services through the same client method. Both receive the same source text,
+question, prompt version and equivalent output-token constraint.
+
+
+## 22. Failure taxonomy extension
+
+Add:
+
+- `CONSEQUENCE_AS_FACTOR` — the model identifies an event, outcome or effect as
+  a contributing factor even though the supplied evidence supports it only as a
+  consequence/effect.
