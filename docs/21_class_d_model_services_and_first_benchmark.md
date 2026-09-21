@@ -927,3 +927,36 @@ relationship grammar -> supported passage-level relationship evidence.
 The next step is to persist the supported relationship using the existing governed
 `query_relationship_assessments` conventions, then freeze the evidence for identical
 dual-model analysis.
+
+
+## 33. Q003 governed relationship assessment persisted
+
+The first real Q003 CONTRIBUTED_TO relationship was persisted in
+`bdw_analysis_prod.maira.query_relationship_assessments`.
+
+Persisted identifiers and semantics:
+
+- query_spec_id: `af0d8a456e84ab517a5f6b606f5b94e3f91ecbc1eb48696c65b3b1033b5808d2`
+- query_id: `Q003`
+- report_package_id: `pkg_670bccd5fe7adc52aa1ad8c0`
+- document_id: `doc_ce8bf6b1636aa4331674e83a`
+- passage_number: 2
+- pages: 5-9
+- subject taxonomy code: `TA-197-TCL-TC-62`
+- requested relationship: `CONTRIBUTED_TO`
+- object taxonomy code: `TA-196-TCL-TC-1`
+- relationship assessment: `SUPPORTED_REQUESTED_RELATIONSHIP`
+- evidence classification: `DIRECT`
+- validation method: `GENERIC_EXPLICIT_RELATIONSHIP_V0.1`
+- relation cue: `CONTRIBUTED_TO_LISTED_FACTOR`
+- relation direction: `FORWARD_SEMANTIC`
+- subject evidence term: `standards of maintenance management`
+- object evidence term: `engine failure`
+- context required/satisfied: true/true
+- matched context term: `main engine`
+- evidence SHA-256: `2c1322756f7e2bd4e7251e05e3795cdc4fdc566dc72198525b03b0923dca5159`
+- assessment_id: `6d05eabb8f4f77359b4088bf3e08397314b105663321f7d81a1c06f4bcabace4`
+
+This row is now the governed source for the next dual-model evaluation step.
+The evidence must be frozen before model execution so both Class D models receive
+the identical source passage and deterministic relationship context.
