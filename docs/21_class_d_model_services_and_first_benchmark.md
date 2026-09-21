@@ -409,3 +409,25 @@ Observed result:
 No unsupported additional factor was introduced.
 
 Both model outputs were human-validated for this benchmark item.
+
+
+## 17. Benchmark 007 ambiguous/insufficient-evidence abstention
+
+Benchmark 007 used a synthetic passage containing:
+- increased engine temperature;
+- a cooling-system inspection two days earlier;
+- a later engine shutdown.
+
+The passage did not explicitly establish any contributing factor.
+
+Expected response:
+
+`NO_SUPPORTED_CONTRIBUTING_FACTOR`
+
+Final clean-run result:
+- MODEL_A / GPT-OSS 20B: correct abstention;
+- MODEL_B / Llama 3.3 70B: correct abstention.
+
+An earlier Llama output repeated benchmark-006 content. This was traced to notebook-state / response reuse rather than a clean benchmark-007 run and is excluded from semantic scoring.
+
+This benchmark tests resistance to plausible but unsupported maintenance/temporal inference.
