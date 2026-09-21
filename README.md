@@ -52,7 +52,7 @@ The current PoC demonstrates:
 - evidence-grounded graph generation;
 - privacy validation before graph publication;
 - de-identified analytical output by default;
-- a 5-question/day Ollama Llama 3.3 70B usage limit per user;
+- a 5-question/day Llama 3.3 70B usage limit per user;
 - admin-controlled quota reset;
 - Neo4j graph projection and Databricks App exploration;
 - human-review provenance.
@@ -179,7 +179,7 @@ Core stack:
 
 ## Status
 
-Current status: **Class D dual-model PoC implemented; GPT-OSS 20B and Llama 3.3 70B PoC model services are connected through Databricks Unity Gateway, and the first persisted synthetic dual-model validation cycle has been completed. Formal investigation-report benchmarking remains to be executed.**
+Current status: **Class D dual-model PoC implemented; GPT-OSS 20B and Llama 3.3 70B PoC model services are connected through Databricks Unity Gateway; 13 validation tests have been executed; and integration of the validated dual-model layer with MAIRA-derived evidence passages/provenance is the current implementation step.**
 
 Immediate next steps:
 
@@ -266,7 +266,7 @@ Model routing is determined by information class:
 
 - A/B → `system.ai.gpt-5-6-sol`
 - C → `system.ai.gpt-oss-120b`
-- D → dedicated IKG GPT-OSS 20B endpoint and/or controlled Ollama Llama 3.3 70B service; fail closed if a requested endpoint is unavailable
+- D → dedicated IKG GPT-OSS 20B and/or Llama 3.3 70B model services through Databricks Unity Gateway; fail closed if a requested model service is unavailable
 
 See `docs/16_unified_input_and_model_routing.md`.
 
