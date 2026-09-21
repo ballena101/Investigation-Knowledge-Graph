@@ -3030,13 +3030,9 @@ with tab_analyses:
                 evidence_counts.get("detected_language") or "UNKNOWN",
             )
             st.info(
-                "Next stage: run notebook 16 for this analysis_id to "
-                "analyse the evidence group, resolve concepts and build "
-                "the knowledge graph."
-            )
-            st.code(
-                selected_analysis_id,
-                language=None,
+                "Evidence is ready. The automated workflow continues with "
+                "analytical processing, concept resolution and knowledge-graph "
+                "construction. Use Refresh status to follow progress."
             )
 
         elif status == "ANALYSING":
