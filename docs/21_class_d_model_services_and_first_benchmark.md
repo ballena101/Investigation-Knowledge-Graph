@@ -431,3 +431,27 @@ Final clean-run result:
 An earlier Llama output repeated benchmark-006 content. This was traced to notebook-state / response reuse rather than a clean benchmark-007 run and is excluded from semantic scoring.
 
 This benchmark tests resistance to plausible but unsupported maintenance/temporal inference.
+
+
+## 18. Benchmark 008 indirectly supported contributing factor
+
+Benchmark 008 tested whether the models could identify a contributing factor
+without relying on the literal phrase "contributed to".
+
+The source described a cooling-water strainer heavily obstructed with debris and
+stated that, as a result, cooling-water flow to the engine was substantially
+reduced before the engine temperature increased.
+
+Human reference:
+
+`heavily obstructed cooling-water strainer`
+
+Observed result:
+
+- MODEL_A / GPT-OSS 20B identified the obstructed cooling-water strainer and
+  cited the supporting wording;
+- MODEL_B / Llama 3.3 70B identified the same factor and correctly referred to
+  the supported mechanism linking the obstruction to reduced cooling-water
+  flow.
+
+Both outputs were human-validated for this benchmark item.
