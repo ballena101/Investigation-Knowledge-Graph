@@ -341,3 +341,28 @@ only where they provide a clean control condition.
 
 Results from this first 15-item round are descriptive PoC validation evidence
 and must not be presented as a general model-performance estimate.
+
+
+## 14. Benchmark 004 execution-control observation
+
+Benchmark 004 tests chronology without causal support.
+
+The initial GPT-OSS 20B run used `max_output_tokens=200` and returned no final
+text because the response ended with:
+
+`status = incomplete`
+
+and:
+
+`reason = max_output_tokens`.
+
+This run is not scored as a semantic/model-quality failure. It is an execution
+configuration event because the model exhausted its output budget during
+reasoning before producing a final answer.
+
+The benchmark must therefore be rerun for both models using the same larger
+output-token allowance while keeping the evidence, question and prompt version
+unchanged.
+
+Execution/configuration failures must remain analytically separate from
+semantic validation failures.
