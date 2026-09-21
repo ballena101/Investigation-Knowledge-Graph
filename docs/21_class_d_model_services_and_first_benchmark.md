@@ -760,3 +760,43 @@ The exercise does not establish general model accuracy because:
 The next phase should integrate the same validation protocol with MAIRA-derived
 passages and provenance so that benchmark inputs come from the governed document
 analysis pipeline rather than manual `SOURCE_TEXT` variables.
+
+
+## 27. MAIRA passage bridge established
+
+The first governed bridge from MAIRA-derived passages into the IKG analysis layer
+has been executed successfully.
+
+Source:
+`bdw_analysis_prod.maira.passages`
+
+Target:
+`bdw_analysis_prod.kg_poc.analysis_passage`
+
+The bridge preserves MAIRA provenance rather than re-chunking source documents.
+
+Field mapping used:
+- `document_id -> document_id`;
+- `passage_id -> passage_id`;
+- `start_page -> page_start`;
+- `end_page -> page_end`;
+- `passage_number -> passage_order`;
+- `passage_text -> passage_text`;
+- `passage_text_sha256 -> text_sha256`;
+- `chunking_version -> extraction_version`;
+- `creation_timestamp -> created_at`;
+- `detected_language -> NULL` because MAIRA passages currently do not expose that
+  field directly.
+
+The IKG adds `analysis_id` only to bind the preserved MAIRA evidence units to a
+specific IKG analysis.
+
+A Delta `MERGE` was used to keep the operation idempotent and avoid duplicate
+passage insertion on reruns.
+
+This confirms the intended architectural boundary:
+
+`MAIRA extraction/chunking/provenance -> IKG retrieval/analysis/review/graph`
+
+The next implementation step is evidence retrieval/selection from the bridged
+passage set before dual-model inference.
