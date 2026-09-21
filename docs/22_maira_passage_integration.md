@@ -51,11 +51,18 @@ The notebook:
 - recomputes passage hashes and fails closed on integrity errors;
 - performs no writes.
 
-The expected final output is:
+The validator accepts normal App IDs (`analysis_<32 hex>`) and explicitly
+controlled IDs in the `ikf_maira_test_<three digits>` namespace.
+
+The expected final output with the MAIRA package import available is:
 
 ```text
 PASS — MAIRA_IKF_PASSAGE_V0.1
 ```
+
+If the package import is temporarily unavailable, the same data-integrity
+checks may run against the versioned compatibility field list, but the notebook
+reports `PASS — DATA BRIDGE` and keeps the MAIRA package import as pending.
 
 ## What this checkpoint does not do
 
