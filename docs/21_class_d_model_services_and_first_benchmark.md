@@ -261,3 +261,30 @@ reported as general model accuracy or comparative performance.
 
 The next validation extension is to record the reason for rejection/amendment so
 that errors can be analysed by failure mode rather than only by review outcome.
+
+
+## 11. Candidate failure taxonomy introduced
+
+Benchmark 002 now records a controlled failure type for each amended/rejected
+candidate.
+
+Current labels:
+
+- `CAUSAL_OVERREACH` — a fact/event is supported, but the model promotes it to
+  a contributing/causal role without sufficient support in the supplied
+  evidence.
+- `UNSUPPORTED_INFERENCE` — the model introduces a claim that is not stated or
+  adequately supported by the supplied evidence.
+- `OVER_GENERALISATION` — the model broadens or abstracts the source wording
+  beyond what the evidence supports.
+
+Benchmark 002 assignments:
+
+| Model | Candidate | Review | Failure type |
+|---|---|---|---|
+| MODEL_A | Installation of a 250 kg/h nozzle to increase boiler capacity | AMENDED | CAUSAL_OVERREACH |
+| MODEL_B | Lack of expertise | REJECTED | UNSUPPORTED_INFERENCE |
+| MODEL_B | Lack of support from the manufacturer | AMENDED | CAUSAL_OVERREACH |
+| MODEL_B | Modification of boiler settings | AMENDED | OVER_GENERALISATION |
+
+These labels are descriptive validation categories, not model-quality rankings.
