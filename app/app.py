@@ -2182,8 +2182,9 @@ with tab_home:
         st.markdown("### SHIELD classification")
         st.info("Next capability")
         st.write(
-            "Classify contributing factors against the SHIELD taxonomy only "
-            "after the contributing factor has been human validated."
+            "After a contributing factor is human validated, let the LLM suggest "
+            "a SHIELD classification; the SHIELD suggestion then requires "
+            "separate human validation."
         )
         st.caption(
             "SHIELD reference material remains separate from investigation "
