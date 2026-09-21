@@ -35,11 +35,14 @@ QUOTA_TIMEZONE = "Europe/Lisbon"
 PUBLIC_MODEL_SERVICE = "system.ai.gpt-5-6-sol"
 INTERNAL_MODEL_SERVICE = "system.ai.gpt-oss-120b"
 CLASS_D_GPT20_ENDPOINT = os.getenv("CLASS_D_GPT20_ENDPOINT")
-CLASS_D_OLLAMA_LLAMA70_URL = os.getenv("CLASS_D_OLLAMA_LLAMA70_URL")
+CLASS_D_LLAMA70_ENDPOINT = (
+    os.getenv("CLASS_D_LLAMA70_ENDPOINT")
+    or os.getenv("CLASS_D_OLLAMA_LLAMA70_URL")
+)
 
 CLASS_D_MODEL_OPTIONS = {
     "GPT-OSS 20B": "GPT20",
-    "Ollama · Llama 3.3 70B": "LLAMA70",
+    "Llama 3.3 70B": "LLAMA70",
     "Both models": "BOTH",
 }
 
@@ -79,10 +82,10 @@ INFORMATION_CLASSES = {
         "label": "D — Protected / Article 9 confidential evidence",
         "description": "Witness statements, identities, sensitive personal data, investigator notes/drafts, VTS/VDR material or equivalent protected evidence.",
         "model": None,
-        "model_name": "Dedicated IKG GPT-OSS 20B endpoint and/or Ollama-hosted Llama 3.3 70B",
+        "model_name": "Dedicated IKG GPT-OSS 20B and/or Llama 3.3 70B Databricks model services",
         "data_flow": (
             "Class D uses a dedicated GPT-OSS 20B Databricks Model Serving endpoint "
-            "and/or a controlled Ollama service running Llama 3.3 70B. The investigator "
+            "and/or the dedicated Databricks Llama 3.3 70B model service. The investigator "
             "may run either route or both on the same evidence. "
             "No fallback to A/B/C model routes is permitted."
         ),
@@ -249,8 +252,7 @@ The App selects the model path from the declared information class:
   `system.ai.gpt-5-6-sol`.
 - **C:** OpenAI GPT-OSS 120B hosted by Databricks through
   `system.ai.gpt-oss-120b`.
-- **D:** dedicated GPT-OSS 20B Databricks Model Serving and/or controlled
-  Ollama hosting Meta Llama 3.3 70B. The investigator chooses GPT-OSS 20B,
+- **D:** dedicated GPT-OSS 20B and Meta Llama 3.3 70B Databricks model services. The investigator chooses GPT-OSS 20B,
   Ollama Llama 3.3 70B, or both. There is **no automatic fallback** to A/B/C
   model routes.
 
@@ -353,10 +355,10 @@ def resolve_model_policy(information_class):
             **policy,
             "model": None,
             "gpt20_endpoint": CLASS_D_GPT20_ENDPOINT,
-            "ollama_llama70_url": CLASS_D_OLLAMA_LLAMA70_URL,
+            "llama70_endpoint": CLASS_D_LLAMA70_ENDPOINT,
             "ready": bool(
                 CLASS_D_GPT20_ENDPOINT
-                or CLASS_D_OLLAMA_LLAMA70_URL
+                or CLASS_D_LLAMA70_ENDPOINT
             ),
         }
 
@@ -548,9 +550,9 @@ def trigger_class_d_analysis_job(
             "The dedicated GPT-OSS 20B endpoint is not configured."
         )
 
-    if run_llama70 and not CLASS_D_OLLAMA_LLAMA70_URL:
+    if run_llama70 and not CLASS_D_LLAMA70_ENDPOINT:
         raise RuntimeError(
-            "The dedicated Ollama Llama 3.3 70B service is not configured."
+            "The dedicated Llama 3.3 70B Databricks model service is not configured."
         )
 
     response = get_workspace_client().api_client.do(
@@ -568,8 +570,8 @@ def trigger_class_d_analysis_job(
                     if run_gpt20
                     else "__SKIP__"
                 ),
-                "ollama_llama70_url": (
-                    CLASS_D_OLLAMA_LLAMA70_URL
+                "llama70_endpoint": (
+                    CLASS_D_LLAMA70_ENDPOINT
                     if run_llama70
                     else "__SKIP__"
                 ),
@@ -2333,8 +2335,8 @@ with tab_new_analysis:
         if needs_llama70:
             if CLASS_D_OLLAMA_LLAMA70_URL:
                 st.caption(
-                    "Ollama Llama 3.3 70B service: "
-                    + CLASS_D_OLLAMA_LLAMA70_URL
+                    "Llama 3.3 70B Databricks model service: "
+                    + CLASS_D_LLAMA70_ENDPOINT
                 )
             else:
                 st.error(
@@ -2348,18 +2350,18 @@ with tab_new_analysis:
                 0,
             )
             st.metric(
-                "Ollama questions remaining today",
+                "Llama 3.3 70B questions remaining today",
                 llama_remaining,
                 help=(
                     f"Limit: {LLAMA_DAILY_QUESTION_LIMIT} per user per day "
                     f"({QUOTA_TIMEZONE}). Running both models consumes one "
-                    "Ollama question."
+                    "Llama question."
                 ),
             )
 
             if llama_remaining == 0:
                 st.warning(
-                    "The daily Ollama Llama 3.3 70B question limit has been reached."
+                    "The daily Llama 3.3 70B question limit has been reached."
                 )
 
             if is_current_user_admin():
@@ -2381,7 +2383,7 @@ with tab_new_analysis:
                 )
 
                 if st.button(
-                    "Admin: reset selected user's Ollama quota",
+                    "Admin: reset selected user's Llama quota",
                     key="reset_llama_quota",
                 ):
                     reset_llama_daily_usage(
@@ -2516,7 +2518,7 @@ with tab_new_analysis:
                 )
             if needs_llama70 and not CLASS_D_OLLAMA_LLAMA70_URL:
                 errors.append(
-                    "The dedicated Ollama Llama 3.3 70B service is not configured."
+                    "The dedicated Llama 3.3 70B Databricks model service is not configured."
                 )
             if (
                 needs_llama70
@@ -2524,7 +2526,7 @@ with tab_new_analysis:
                 >= LLAMA_DAILY_QUESTION_LIMIT
             ):
                 errors.append(
-                    "The daily Ollama Llama 3.3 70B question limit has been reached."
+                    "The daily Llama 3.3 70B question limit has been reached."
                 )
         elif not policy["ready"]:
             errors.append(
@@ -2604,7 +2606,7 @@ with tab_new_analysis:
                         )
                         if new_count is None:
                             raise RuntimeError(
-                                "The Ollama daily quota was reached before "
+                                "The Llama daily quota was reached before "
                                 "the analysis could start."
                             )
 
