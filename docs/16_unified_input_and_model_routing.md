@@ -209,3 +209,20 @@ Model validation is defined separately in:
 
 The Commodore Clipper graph is a reference/benchmark candidate, not proof that
 either Class D model is validated.
+
+
+## Runtime routing correction — 2026-09-21
+
+The generic A/B/C analysis notebook now distinguishes Databricks-provided
+`system.ai` model services from dedicated Model Serving endpoints.
+
+- `system.ai.*` services, including `system.ai.gpt-5-6-sol`, are invoked
+  through Databricks `ai_query` / Unity Gateway semantics.
+- Dedicated/custom endpoint identifiers continue to use the Databricks
+  Serving Endpoints API.
+- The distinction is required because a `system.ai` model service is not a
+  `/serving-endpoints/{name}` endpoint and therefore cannot be passed to
+  `WorkspaceClient.serving_endpoints.query(name=...)`.
+
+This correction preserves the intended policy routing while aligning each model
+identifier with its supported Databricks invocation path.
