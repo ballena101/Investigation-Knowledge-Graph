@@ -15,10 +15,33 @@ import re
 
 from pyspark.sql import functions as F
 
-from maira.integration.ikf_passage_contract import (
-    IKF_BRIDGE_FIELDS,
-    PASSAGE_CONTRACT_VERSION,
-)
+try:
+    from maira.integration.ikf_passage_contract import (
+        IKF_BRIDGE_FIELDS,
+        PASSAGE_CONTRACT_VERSION,
+    )
+    CONTRACT_SOURCE = "MAIRA_PACKAGE"
+except ModuleNotFoundError:
+    # Compatibility fallback for the first cross-repository Databricks run.
+    # A final integration pass still requires the MAIRA package import.
+    PASSAGE_CONTRACT_VERSION = "MAIRA_IKF_PASSAGE_V0.1"
+    IKF_BRIDGE_FIELDS = (
+        "passage_contract_version",
+        "analysis_id",
+        "ikf_document_id",
+        "maira_document_id",
+        "report_package_id",
+        "passage_id",
+        "passage_order",
+        "page_start",
+        "page_end",
+        "passage_text",
+        "text_sha256",
+        "source_document_sha256",
+        "chunking_method",
+        "chunking_version",
+    )
+    CONTRACT_SOURCE = "IKF_COMPATIBILITY_FALLBACK"
 
 
 ANALYSIS_DOCUMENT_TABLE = "bdw_analysis_prod.kg_poc.analysis_document"
@@ -26,11 +49,26 @@ MAIRA_DOCUMENT_TABLE = "bdw_analysis_prod.maira.documents"
 MAIRA_PASSAGE_TABLE = "bdw_analysis_prod.maira.passages"
 
 analysis_id = dbutils.widgets.get("analysis_id").strip()
-if not re.fullmatch(r"analysis_[0-9a-f]{32}", analysis_id):
-    raise ValueError("Enter a valid analysis_id created by the IKF App.")
+is_app_analysis = bool(
+    re.fullmatch(r"analysis_[0-9a-f]{32}", analysis_id)
+)
+is_controlled_bridge_test = bool(
+    re.fullmatch(r"ikf_maira_test_[0-9]{3}", analysis_id)
+)
+if not (is_app_analysis or is_controlled_bridge_test):
+    raise ValueError(
+        "Enter an IKF App analysis_id or a controlled "
+        "ikf_maira_test_<three digits> bridge-test ID."
+    )
 
 print("Analysis:", analysis_id)
 print("Contract:", PASSAGE_CONTRACT_VERSION)
+print("Contract source:", CONTRACT_SOURCE)
+if CONTRACT_SOURCE != "MAIRA_PACKAGE":
+    print(
+        "WARNING: validating the data bridge with the IKF compatibility "
+        "contract; MAIRA package import remains pending."
+    )
 
 # COMMAND ----------
 
@@ -205,4 +243,8 @@ display(
 print("Documents validated:", passage_counts.count())
 print("Passages validated:", bridge.count())
 print("Temporary view: maira_ikf_passage_bridge")
-print("PASS —", PASSAGE_CONTRACT_VERSION)
+if CONTRACT_SOURCE == "MAIRA_PACKAGE":
+    print("PASS —", PASSAGE_CONTRACT_VERSION)
+else:
+    print("PASS — DATA BRIDGE —", PASSAGE_CONTRACT_VERSION)
+    print("PENDING — restore the MAIRA package contract import")
