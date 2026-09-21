@@ -179,15 +179,19 @@ Core stack:
 
 ## Status
 
-Current status: **Class D dual-model PoC implemented; GPT-OSS 20B and Llama 3.3 70B PoC model services are connected through Databricks Unity Gateway; 13 validation tests have been executed; and integration of the validated dual-model layer with MAIRA-derived evidence passages/provenance is the current implementation step.**
+Current status: **The MAIRA→IKF passage bridge, governed retrieval checkpoint, dual-model benchmark persistence, independent metric verification and canonical semantic gold matching have been validated. The current implementation focus is to converge the operational App on MAIRA's canonical evidence/taxonomy/query layer while completing generic review, EMCIP mapping and Class-D safeguards.**
 
 Immediate next steps:
 
-1. extend the benchmark-results schema for reproducible real-case validation;
-2. run the first locked investigation-passage benchmark through GPT-OSS 20B and Llama 3.3 70B independently;
-3. configure the Class D dual-model Lakeflow Job and App resources;
-4. generalise human review to model-run graphs;
-5. execute the validation framework in `docs/18_model_validation_and_feedback.md`.
+1. complete one clean generic A/B App run on the workspace-validated model route;
+2. migrate IKF document processing to canonical MAIRA passages and provenance;
+3. generalise relationship review and EMCIP mapping review to generated analyses;
+4. consume MAIRA's governed EMCIP registry and reviewed terminology/query logic;
+5. add governed Directive/IMO reference-context retrieval;
+6. add Class-D pre-flight fail-closed detection and complete Class-D operational validation;
+7. apply SHIELD only after human validation of contributing factors.
+
+See `docs/23_maira_bosuil_integration_plan.md` for the ordered integration plan.
 
 
 ## Data protection and confidentiality
@@ -279,8 +283,8 @@ The App must disclose every model route used by the PoC.
 
 | Information class | Model | Serving route | Confidentiality position | Article 9 / Class D position |
 |---|---|---|---|---|
-| A | OpenAI GPT-5.6 Sol | Databricks `system.ai.meta-llama-3-3-70b-instruct` | Public / non-sensitive | Not approved for protected Class D evidence |
-| B | OpenAI GPT-5.6 Sol | Databricks `system.ai.meta-llama-3-3-70b-instruct` | Published / non-sensitive | Not approved for protected Class D evidence |
+| A | Meta Llama 3.3 70B Instruct | Databricks `system.ai.meta-llama-3-3-70b-instruct` | Public / non-sensitive | Not approved for protected Class D evidence |
+| B | Meta Llama 3.3 70B Instruct | Databricks `system.ai.meta-llama-3-3-70b-instruct` | Published / non-sensitive | Not approved for protected Class D evidence |
 | C | OpenAI GPT-OSS 120B | Databricks-hosted `system.ai.gpt-oss-120b` | Internal / restricted | Not automatically approved for Article 9 evidence |
 | D | OpenAI GPT-OSS 20B | Dedicated Databricks endpoint | Protected / confidential | Conditionally suitable only after endpoint approval |
 | D | Meta Llama 3.3 70B Instruct | Dedicated Databricks endpoint | Protected / confidential | Conditionally suitable only after endpoint approval |
