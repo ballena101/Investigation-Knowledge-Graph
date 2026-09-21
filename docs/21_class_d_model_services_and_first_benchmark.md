@@ -800,3 +800,28 @@ This confirms the intended architectural boundary:
 
 The next implementation step is evidence retrieval/selection from the bridged
 passage set before dual-model inference.
+
+
+## 28. MAIRA governed query semantics confirmed
+
+The MAIRA integration review confirmed that retrieval is driven by governed query
+specifications rather than ad-hoc keyword matching.
+
+Observed examples include:
+
+- `Q003`: `maintenance deficiencies contributed to engine failure`;
+- intent: `CONTRIBUTORY_RELATIONSHIP`;
+- relationship: `CONTRIBUTED_TO`;
+- subject phrase: `maintenance deficiencies`;
+- object phrase: `engine failure`.
+
+MAIRA resolves the query components to controlled EMCIP concepts in
+`query_spec_concepts`, including controlled contributing-factor terms,
+accident-event terms and machinery context.
+
+This supports the intended boundary:
+
+`MAIRA governed query interpretation + retrieval -> frozen evidence set -> IKG dual-model interpretation + human review`
+
+IKG should not replace this with an independent keyword or embedding retriever
+unless a future validated requirement explicitly calls for one.
