@@ -524,6 +524,14 @@ candidate_persist_df = (
         "query_id",
         F.lit(identity["query_id"]),
     )
+    .withColumn(
+        "prompt_version",
+        F.lit(identity["prompt_version"]),
+    )
+    .withColumn(
+        "prompt_sha256",
+        F.lit(identity["prompt_sha256"]),
+    )
     .withColumn("reviewer", F.current_user())
     .withColumn("reviewed_at", F.current_timestamp())
     .withColumn("persisted_at", F.current_timestamp())
