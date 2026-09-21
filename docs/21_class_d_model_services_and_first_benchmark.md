@@ -475,3 +475,20 @@ Observed result:
 Neither model introduced a plausible engineering cause from general domain
 knowledge. This benchmark therefore tests evidence-bounded restraint in the
 presence of technically suggestive but causally insufficient information.
+
+
+## 20. Benchmark 010 duplicate/overlapping candidate handling
+
+Benchmark 010 described the same underlying contributing factor twice:
+- the cooling-water strainer was heavily blocked with debris;
+- the obstruction of the strainer reduced cooling-water flow and contributed to overheating.
+
+Human reference:
+
+`blocked/obstructed cooling-water strainer`
+
+Observed result:
+- MODEL_A / GPT-OSS 20B returned one merged factor;
+- MODEL_B / Llama 3.3 70B explicitly recognised both descriptions as referring to the same underlying factor and returned one merged factor.
+
+Both outputs were human-validated. No duplicate-candidate failure was observed.
