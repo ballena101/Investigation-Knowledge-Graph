@@ -96,3 +96,16 @@ human-review metrics have actually been executed.
   Lakeflow retention-cleanup Job.
 
 Raw Class D source ingress remains governed by the separate 24-hour maximum.
+
+
+## Operational correction — 2026-09-21
+
+Notebook `16_analyse_evidence_and_build_graph.py` previously initialised
+`model_run_started = time.perf_counter()` before importing the `time` module.
+This caused the automated Lakeflow workflow to fail immediately after successful
+evidence extraction, leaving analyses at `EVIDENCE_READY`.
+
+The import order was corrected so notebook 16 can start normally when invoked as
+the second task of `Investigation KG - Automated Analysis`. Existing analyses
+with persisted evidence passages can be resumed by repairing the failed
+`analyse_and_build_graph` task; notebook 15 does not need to be rerun.
