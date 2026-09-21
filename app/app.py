@@ -89,7 +89,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-20-daily-retention-usage-v1"
+APP_BUILD = "2026-09-21-capability-home-v1"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -2130,8 +2130,9 @@ analysis_edge_styles = [
 ]
 
 
-tab_new_analysis, tab_analyses, tab_graph, tab_review, tab_mapping_review, tab_about = st.tabs(
+tab_home, tab_new_analysis, tab_analyses, tab_graph, tab_review, tab_mapping_review, tab_about = st.tabs(
     [
+        "Home",
         "New analysis",
         "Analyses",
         "Reference graph",
@@ -2140,6 +2141,90 @@ tab_new_analysis, tab_analyses, tab_graph, tab_review, tab_mapping_review, tab_a
         "About",
     ]
 )
+
+with tab_home:
+    st.subheader("IKF capabilities")
+    st.caption(
+        "The PoC is being built capability by capability. Stable backend "
+        "functions are moved into the App as soon as they have passed their "
+        "controlled validation checkpoint."
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        st.markdown("### Investigation analysis")
+        st.success("Active PoC")
+        st.write(
+            "Analyse investigation documents, preserve evidence provenance, "
+            "compare model outputs and support investigator review."
+        )
+        st.caption(
+            "Current focus: integrate the validated MAIRA governed-retrieval "
+            "and dual-model review path into this App workflow."
+        )
+
+    with c2:
+        st.markdown("### Knowledge graph")
+        st.success("Active PoC")
+        st.write(
+            "Explore evidence-grounded concepts and relationships while "
+            "keeping machine-generated candidates separate from human review."
+        )
+        st.caption(
+            "Only reviewed analytical knowledge should become authoritative "
+            "validated graph knowledge."
+        )
+
+    with c3:
+        st.markdown("### SHIELD classification")
+        st.info("Next capability")
+        st.write(
+            "Classify contributing factors against the SHIELD taxonomy only "
+            "after the contributing factor has been human validated."
+        )
+        st.caption(
+            "SHIELD reference material remains separate from investigation "
+            "input documents."
+        )
+
+    with c4:
+        st.markdown("### News & alerts")
+        st.info("Planned")
+        st.write(
+            "Surface relevant maritime-safety developments and alerts through "
+            "the Databricks-supported monitoring capability."
+        )
+        st.caption(
+            "This capability will be added after the core investigation "
+            "analysis workflow is operational in the App."
+        )
+
+    st.divider()
+    st.markdown("### Current validation milestone")
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Real MAIRA benchmark", "Persisted")
+    m2.metric("Independent Delta verification", "Passed")
+    m3.metric("Canonical gold matching", "Passed")
+
+    st.caption(
+        "The first real frozen-snapshot MAIRA dual-model benchmark has been "
+        "executed, human-reviewed, persisted and independently reproduced from "
+        "Delta. Relationship accuracy and quotation/contract compliance are "
+        "kept as separate validation dimensions."
+    )
+
+    with st.expander("Technical benchmark reference", expanded=False):
+        st.code(
+            "maira_benchmark_9e059930506d33295105addcd06e821d",
+            language=None,
+        )
+        st.write(
+            "Canonical relationship denominator: distinct semantic "
+            "relationships, not the number of supporting passage-level "
+            "evidence assessments."
+        )
 
 with tab_new_analysis:
     st.subheader("New analysis")
