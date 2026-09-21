@@ -894,3 +894,36 @@ normalisation layer and report-language variants before deciding whether
 additional evidence-term mappings are required. This preserves the principle
 that taxonomy labels and source-language evidence terms are distinct and must
 be connected explicitly rather than by unsupported inference.
+
+
+## 32. Q003 first real supported CONTRIBUTED_TO relationship
+
+After adding validated terminology normalisations and an explicit deterministic grammar
+for the construction `factors that contributed to OBJECT included: SUBJECT`, Q003 was
+rerun against the MAIRA investigation MAIN_REPORT passages.
+
+Observed result:
+
+- supported matches: 1
+- document_id: `doc_ce8bf6b1636aa4331674e83a`
+- report_package_id: `pkg_670bccd5fe7adc52aa1ad8c0`
+- passage_id: `passage_72dbb21102453719a48d8352`
+- passage_number: 2
+- pages: 5-9
+- subject evidence term: `standards of maintenance management`
+- object evidence term: `engine failure`
+- cue: `CONTRIBUTED_TO_LISTED_FACTOR`
+- semantic direction: `FORWARD_SEMANTIC`
+
+The source sentence explicitly states that factors contributing to the engine failure
+included standards of maintenance management. This is therefore treated as an explicit,
+deterministically supported relationship rather than an inferred association.
+
+This milestone confirms the intended path:
+
+controlled query concepts -> validated terminology normalisation -> deterministic
+relationship grammar -> supported passage-level relationship evidence.
+
+The next step is to persist the supported relationship using the existing governed
+`query_relationship_assessments` conventions, then freeze the evidence for identical
+dual-model analysis.
