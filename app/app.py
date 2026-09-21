@@ -145,14 +145,14 @@ st.markdown("### AI models, confidentiality and Article 9 suitability")
 model_disclosure_rows = [
     {
         "Information class": "A — Public / technical",
-        "Model": "OpenAI Meta Llama 3.3 70B Instruct",
+        "Model": "Meta Llama 3.3 70B Instruct",
         "Serving route": "Databricks system.ai.meta-llama-3-3-70b-instruct",
         "Confidentiality level": "Public / non-sensitive",
         "Article 9 / Class D": "Not approved for protected Class D evidence",
     },
     {
         "Information class": "B — Published investigation material",
-        "Model": "OpenAI Meta Llama 3.3 70B Instruct",
+        "Model": "Meta Llama 3.3 70B Instruct",
         "Serving route": "Databricks system.ai.meta-llama-3-3-70b-instruct",
         "Confidentiality level": "Published / non-sensitive",
         "Article 9 / Class D": "Not approved for protected Class D evidence",
@@ -248,7 +248,7 @@ controls and the optional dual-model comparison; it does not replace A/B/C.
 
 The App selects the model path from the declared information class:
 
-- **A / B:** OpenAI Meta Llama 3.3 70B Instruct through Databricks
+- **A / B:** Meta Llama 3.3 70B Instruct through Databricks
   `system.ai.meta-llama-3-3-70b-instruct`.
 - **C:** OpenAI GPT-OSS 120B hosted by Databricks through
   `system.ai.gpt-oss-120b`.
@@ -288,7 +288,7 @@ train models or improve Databricks services. Foundation Model APIs may,
 however, temporarily process/store inputs and outputs for abuse/safety
 purposes, and partner-model terms may add further requirements.
 
-For **OpenAI Meta Llama 3.3 70B Instruct**, Databricks lists the applicable OpenAI **Usage
+For **Meta Llama 3.3 70B Instruct**, Databricks lists the applicable OpenAI **Usage
 Policy** and **high-risk use-case mitigation requirements** in addition to the
 customer's Databricks agreement.
 
@@ -2132,15 +2132,15 @@ analysis_edge_styles = [
 ]
 
 
-tab_home, tab_new_analysis, tab_analyses, tab_graph, tab_review, tab_mapping_review, tab_about = st.tabs(
+tab_home, tab_new_analysis, tab_analyses, tab_review, tab_mapping_review, tab_graph, tab_about = st.tabs(
     [
         "Home",
         "New analysis",
         "Analyses",
-        "Reference graph",
         "Relationship review",
         "EMCIP mapping review",
-        "About",
+        "Reference graph",
+        "Terms of reference",
     ]
 )
 
