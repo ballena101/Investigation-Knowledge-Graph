@@ -99,21 +99,48 @@ It does not replace notebook 15, persist a new table, invoke either LLM, modify
 the graph, or classify SHIELD. Those changes follow only after passage parity
 and one end-to-end reviewed case are confirmed.
 
-## Next checkpoint
+## Third read-only checkpoint: dual-model execution
 
-Using the verified temporary retrieval snapshot, run both models independently
-on the same six frozen MAIRA passages and compare the results with the existing
-IKF passage run. Measure:
+Run `notebooks/28_compare_maira_snapshot_dual_model.py` after notebook 27 with:
 
-- evidence retrieval/coverage;
-- evidence-reference accuracy;
-- validated, amended and rejected relationships;
-- causal-overreach failures;
-- human review effort.
+- the same `analysis_id`;
+- the exact `retrieval_snapshot_id` printed by notebook 27;
+- the approved GPT-OSS 20B and Llama 3.3 70B model-service identifiers.
 
-Only then should the document branch of notebook 15 be replaced. Direct text is
-kept as a separate IKF ingress until its chunking calls the reusable MAIRA
-component.
+Notebook 27 now exposes the snapshot both as a notebook-local view and as a
+snapshot-specific, cluster-scoped temporary view. The snapshot-specific name
+prevents one controlled run from silently reading a different snapshot.
+
+Notebook 28:
+
+- verifies the snapshot identity, passage uniqueness and text hashes;
+- resolves the frozen governed question from its exact query specification;
+- constructs one canonical prompt and records its SHA-256;
+- sends that same prompt independently to both model services;
+- handles the GPT-OSS Responses API and Llama Chat Completions API separately;
+- validates returned passage IDs and verbatim evidence quotations;
+- flags causal/contributory candidates for human review;
+- exposes temporary run, candidate and exact-label comparison views;
+- creates no table and modifies no Neo4j graph.
+
+The final execution message is:
+
+```text
+PASS — MAIRA DUAL-MODEL EXECUTION CHECKPOINT
+```
+
+This PASS confirms controlled execution and provenance checks only. It is not a
+model-accuracy decision. Exact-label agreement is descriptive and does not
+replace semantic human review.
+
+## Following checkpoint
+
+Human-review each candidate as `VALIDATED`, `AMENDED` or `REJECTED`, record
+failure types (especially causal overreach and incorrect evidence), and compare
+both models on evidence grounding, relationship correctness, completeness,
+privacy, stability and review effort. Only then should the document branch of
+notebook 15 be replaced. Direct text remains a separate IKF ingress until its
+chunking calls the reusable MAIRA component.
 
 ## Verified Databricks checkpoint
 

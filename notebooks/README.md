@@ -42,7 +42,7 @@ namespace under one AnalysisGroup.
 - `22_model_run_validation_metrics.py` — computes human-review validation metrics once generic model-run reviews exist.
 - `25_validate_maira_passage_bridge.py` — validates a read-only MAIRA passage bridge for one IKF analysis.
 - `26_create_maira_bridge_test_analysis.py` — registers one idempotent Delta-only IKF test analysis from an existing MAIRA document when no matching analysis exists.
-- `27_validate_maira_governed_retrieval.py` — applies a persisted MAIRA query specification to the bridged passages and exposes a deterministic read-only retrieval snapshot.
+- `27_validate_maira_governed_retrieval.py` — applies a persisted MAIRA query specification to the bridged passages and exposes a deterministic read-only retrieval snapshot.\n- `28_compare_maira_snapshot_dual_model.py` — sends one verified frozen snapshot independently to GPT-OSS 20B and Llama 3.3 70B and exposes temporary run, candidate and exact-label comparison views.
 
 Normal investigators do **not** execute these notebooks. They use the App.
 
