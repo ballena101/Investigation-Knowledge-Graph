@@ -139,3 +139,28 @@ Requirements include:
 - review workload metrics;
 - production monitoring;
 - GitHub-native deployment and retirement of the transitional workspace source.
+
+
+## Consolidated integration priority — 2026-09-21
+
+The implementation sequence is now governed by
+`docs/23_maira_bosuil_integration_plan.md`.
+
+Key correction: IKF must converge on MAIRA for investigation-document passages,
+EMCIP controlled vocabulary, governed query specifications, terminology
+normalisation, deterministic retrieval and supported deterministic relationship
+assessment. IKF must not build parallel substitutes for those capabilities.
+
+Bosuil remains an external design reference only. Its useful ideas are evaluated
+as measurable improvements inside the MAIRA→IKF architecture rather than
+introduced as a third runtime stack.
+
+Immediate priorities are:
+
+1. finish one clean generic A/B end-to-end App run;
+2. migrate the IKF document path to canonical MAIRA passages;
+3. generalise relationship and EMCIP review to generated analyses;
+4. consume the governed MAIRA EMCIP registry for mapping;
+5. add versioned Directive/IMO reference-context retrieval;
+6. add Class-D pre-flight fail-closed detection;
+7. apply SHIELD only after human validation of contributing factors.
