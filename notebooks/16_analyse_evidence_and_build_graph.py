@@ -458,13 +458,55 @@ def query_model_json(
                   "no Markdown fences or commentary."
             )
 
-        if model_run_key == "LLAMA70":
-            if not model_service.startswith(("http://", "https://")):
+        # Databricks-provided model APIs in system.ai are Unity Gateway model
+        # services, not /serving-endpoints/{name} endpoints. Query them through
+        # ai_query so notebook-native authentication and governance are retained.
+        if model_service.startswith("system.ai."):
+            if not re.fullmatch(
+                r"system\.ai\.[A-Za-z0-9._-]+",
+                model_service,
+            ):
                 raise ValueError(
-                    "The Ollama Llama 3.3 70B route requires the controlled "
-                    "Ollama service base URL."
+                    "Invalid system.ai model service identifier."
                 )
 
+            combined_prompt = (
+                "SYSTEM INSTRUCTIONS:\n"
+                + system_prompt
+                + "\n\nUSER INPUT:\n"
+                + active_user_prompt
+            )
+
+            request_view = "_ikf_system_ai_request"
+            spark.createDataFrame(
+                [(combined_prompt,)],
+                ["request_text"],
+            ).createOrReplaceTempView(request_view)
+
+            response_row = spark.sql(
+                f"""
+                SELECT ai_query(
+                    '{model_service}',
+                    request_text,
+                    modelParameters => named_struct(
+                        'max_tokens', {int(max_tokens)},
+                        'temperature', 0.0
+                    ),
+                    responseFormat => '{{"type":"json_object"}}'
+                ) AS response_text
+                FROM {request_view}
+                """
+            ).first()
+
+            text = (
+                response_row["response_text"]
+                if response_row
+                else ""
+            )
+
+        elif model_run_key == "LLAMA70" and model_service.startswith(
+            ("http://", "https://")
+        ):
             ollama_url = model_service.rstrip("/") + "/api/chat"
             request_body = json.dumps(
                 {
@@ -508,6 +550,7 @@ def query_model_json(
                 payload.get("message", {})
                 .get("content", "")
             )
+
         else:
             response = w.serving_endpoints.query(
                 name=model_service,
@@ -526,37 +569,37 @@ def query_model_json(
             )
 
             usage = getattr(
-            response,
-            "usage",
-            None,
-        )
-        if usage is not None:
-            model_usage_totals["prompt_tokens"] += int(
-                getattr(
-                    usage,
-                    "prompt_tokens",
-                    0,
-                )
-                or 0
+                response,
+                "usage",
+                None,
             )
-            model_usage_totals["completion_tokens"] += int(
-                getattr(
-                    usage,
-                    "completion_tokens",
-                    0,
+            if usage is not None:
+                model_usage_totals["prompt_tokens"] += int(
+                    getattr(
+                        usage,
+                        "prompt_tokens",
+                        0,
+                    )
+                    or 0
                 )
-                or 0
-            )
-            model_usage_totals["total_tokens"] += int(
-                getattr(
-                    usage,
-                    "total_tokens",
-                    0,
+                model_usage_totals["completion_tokens"] += int(
+                    getattr(
+                        usage,
+                        "completion_tokens",
+                        0,
+                    )
+                    or 0
                 )
-                or 0
-            )
+                model_usage_totals["total_tokens"] += int(
+                    getattr(
+                        usage,
+                        "total_tokens",
+                        0,
+                    )
+                    or 0
+                )
 
-        text = response.choices[0].message.content
+            text = response.choices[0].message.content
 
         try:
             return json.loads(
