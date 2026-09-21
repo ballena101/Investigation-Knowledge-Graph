@@ -40,6 +40,8 @@ namespace under one AnalysisGroup.
 - `20_finalize_class_d_comparison.py` — completes the analysis only when all requested model runs are complete.
 - `21_create_class_d_model_endpoints.py` — creates/validates dedicated custom serving endpoints from approved Unity Catalog model registrations.
 - `22_model_run_validation_metrics.py` — computes human-review validation metrics once generic model-run reviews exist.
+- `25_validate_maira_passage_bridge.py` — validates a read-only MAIRA passage bridge for one IKF analysis.
+- `26_create_maira_bridge_test_analysis.py` — registers one idempotent Delta-only IKF test analysis from an existing MAIRA document when no matching analysis exists.
 
 Normal investigators do **not** execute these notebooks. They use the App.
 
