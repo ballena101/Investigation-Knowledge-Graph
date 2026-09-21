@@ -523,31 +523,89 @@ event/consequence/effect with a contributing factor.
 
 ### API invocation semantics
 
-The two Class D model services do not currently use identical client methods.
+The two Class D model services use different OpenAI-compatible API surfaces and
+their response objects must be handled differently.
 
-GPT-OSS 20B is invoked with the OpenAI Responses API pattern:
+#### MODEL_A — GPT-OSS 20B
+
+Notebook call pattern:
 
 ```python
-client.responses.create(
+response_a = client.responses.create(
     model=MODEL_A,
-    max_output_tokens=...,
-    input=[...]
+    max_output_tokens=600,
+    input=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": prompt}
+            ]
+        }
+    ]
 )
+
+final_text_a = response_a.output_text
 ```
 
-Llama 3.3 70B is invoked with the OpenAI-compatible Chat Completions pattern:
+Databricks returned the underlying model identifier:
+
+`gpt-oss-20b-080525`
+
+The response object is an OpenAI `Response`. It may contain separate reasoning
+items and final assistant-message items. Benchmark scoring uses the final
+user-visible output (`response.output_text`), not the reasoning content.
+
+A response with `status="incomplete"` and
+`incomplete_details.reason="max_output_tokens"` is an execution/configuration
+event and is not scored as a semantic answer.
+
+An empty `input=[]` call is not a valid benchmark request even if the API
+returns a generic assistant response; every benchmark must explicitly send the
+frozen prompt.
+
+#### MODEL_B — Llama 3.3 70B Instruct
+
+Notebook call pattern:
 
 ```python
-client.chat.completions.create(
+response_b = client.chat.completions.create(
     model=MODEL_B,
-    max_tokens=...,
-    messages=[...]
+    max_tokens=600,
+    messages=[
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ]
 )
+
+final_text_b = response_b.choices[0].message.content
 ```
 
-The benchmark controls semantic input equivalence rather than forcing both model
-services through the same client method. Both receive the same source text,
-question, prompt version and equivalent output-token constraint.
+Databricks returned the underlying model identifier:
+
+`meta-llama-3.3-70b-instruct-121024`
+
+The response object is an OpenAI-compatible `ChatCompletion`. The benchmark
+answer is taken from `response_b.choices[0].message.content`. Completion status
+is represented by `choices[0].finish_reason`.
+
+#### Controlled-comparison rule
+
+The benchmark does **not** require identical SDK methods because the two model
+services expose different interfaces. It requires semantic equivalence:
+
+- identical frozen source text;
+- identical frozen question/instructions;
+- identical prompt version;
+- independent requests;
+- equivalent output-token budget;
+- no cross-model answer sharing;
+- model-specific response parsing;
+- explicit recording of execution failures separately from semantic review.
+
+API syntax is therefore part of the reproducibility metadata, not part of the
+semantic task itself.
 
 
 ## 22. Failure taxonomy extension
@@ -557,3 +615,23 @@ Add:
 - `CONSEQUENCE_AS_FACTOR` — the model identifies an event, outcome or effect as
   a contributing factor even though the supplied evidence supports it only as a
   consequence/effect.
+
+
+## 23. Serving/API metadata required for future benchmark records
+
+For reproducibility, future benchmark records should distinguish the configured
+model-service identifier from the underlying model/version returned by the API.
+
+Recommended additional metadata:
+
+- `model_a_api_method = responses.create`;
+- `model_a_underlying_model = gpt-oss-20b-080525`;
+- `model_a_output_accessor = output_text`;
+- `model_b_api_method = chat.completions.create`;
+- `model_b_underlying_model = meta-llama-3.3-70b-instruct-121024`;
+- `model_b_output_accessor = choices[0].message.content`;
+- finish/status metadata for both models.
+
+This prevents API-surface differences from being mistaken for model-semantic
+differences and allows a later model/version change behind a stable endpoint to
+be detected.
