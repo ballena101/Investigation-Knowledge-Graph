@@ -67,8 +67,8 @@ only supported analysis type.
 Normal routing is:
 
 ```text
-A → GPT-5.6 Sol
-B → GPT-5.6 Sol
+A → Meta Llama 3.3 70B Instruct
+B → Meta Llama 3.3 70B Instruct
 C → GPT-OSS 120B
 D → GPT-OSS 20B / Llama 3.3 70B / Both
 ```
@@ -680,7 +680,7 @@ model-generated analytical content.
 Runtime validation in the active Azure Databricks workspace established that
 `system.ai.meta-llama-3-3-70b-instruct`, `system.ai.gpt-oss-120b`, and
 `system.ai.gpt-oss-20b` are reachable through the Unity Gateway model API,
-while `system.ai.gpt-5-6-sol` is not available in this workspace.
+while `system.ai.meta-llama-3-3-70b-instruct` is not available in this workspace.
 
 For the current PoC:
 - Classes A/B use `system.ai.meta-llama-3-3-70b-instruct`.
@@ -690,3 +690,53 @@ For the current PoC:
   API; dedicated custom endpoints continue to use their endpoint-specific route.
 
 This is a workspace-availability decision, not a quality ranking of models.
+
+
+## 17. Reference-framework separation and remaining implementation
+
+The generic analysis pipeline must keep three layers distinct:
+
+1. **Occurrence evidence** — the documents/direct text being investigated.
+2. **Methodological/legal reference context** — Directive 2009/18/EC as amended
+   by Directive (EU) 2024/3017, the IMO Casualty Investigation Code
+   (MSC.255(84), current applicable version) and IMO Guidelines A.1075(28).
+3. **Controlled taxonomies** — EMCIP analytical taxonomy and, later, SHIELD for
+   human-validated contributing factors.
+
+Reference material must never be presented to the model as if it were evidence
+about the occurrence.
+
+Current implementation status:
+- generic evidence/relationship extraction is implemented;
+- privacy validation and graph publication are implemented;
+- information class is user-declared; automatic Class-D pre-screening is not
+  yet implemented;
+- generic EMCIP mapping for newly generated graphs is not yet implemented;
+- the current generic LLM prompt does not yet retrieve Directive/IMO/EMCIP
+  reference context;
+- relationship-review and EMCIP-mapping-review UIs are currently tied to the
+  controlled Commodore Clipper reference graph and must be generalised to each
+  generated analysis graph;
+- SHIELD classification remains subsequent to human validation of a
+  contributing factor.
+
+Recommended Class-D safeguard:
+- retain explicit investigator classification;
+- add an automatic pre-flight detector for obvious protected-data indicators;
+- if A/B/C is selected but Class-D indicators are detected, fail closed and
+  require explicit reclassification/authorised handling rather than silently
+  sending the material through the less-protected route;
+- the detector is a processing safeguard, not a legal determination.
+
+App navigation order:
+1. Home
+2. New analysis
+3. Analyses
+4. Relationship review
+5. EMCIP mapping review
+6. Reference graph
+7. Terms of reference
+
+The reference graph is deliberately placed immediately before Terms of
+reference because it is a methodology demonstrator rather than the primary
+operational workflow.
