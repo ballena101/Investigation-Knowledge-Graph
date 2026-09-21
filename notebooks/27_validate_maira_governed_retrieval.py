@@ -397,13 +397,6 @@ for item in selected_matches:
 snapshot_df = spark.createDataFrame(snapshot_rows)
 snapshot_df.createOrReplaceTempView(TEMP_VIEW)
 
-cluster_temp_view = (
-    TEMP_VIEW
-    + "_"
-    + retrieval_snapshot_id.removeprefix("snapshot_")
-)
-snapshot_df.createOrReplaceGlobalTempView(cluster_temp_view)
-
 # COMMAND ----------
 
 same_passage_ids = {
@@ -438,6 +431,5 @@ print("All-role same-passage candidates:", len(retrieval.same_passage_candidates
 print("Complete candidate packages:", len(retrieval.package_candidates))
 print("Frozen retrieved passages:", len(snapshot_rows))
 print("Retrieval snapshot ID:", retrieval_snapshot_id)
-print("Notebook temporary view:", TEMP_VIEW)
-print("Cluster temporary view:", "global_temp." + cluster_temp_view)
+print("Temporary view:", TEMP_VIEW)
 print("PASS — MAIRA RETRIEVAL CHECKPOINT")

@@ -18,6 +18,17 @@ dbutils.widgets.text(
     "",
     "Retrieval snapshot ID",
 )
+dbutils.widgets.text("query_id", "Q001", "MAIRA query ID")
+dbutils.widgets.text(
+    "query_spec_id",
+    "",
+    "MAIRA query specification ID (optional)",
+)
+dbutils.widgets.text(
+    "maira_src_path",
+    "",
+    "MAIRA src path (optional)",
+)
 dbutils.widgets.text(
     "model_a",
     "bdw_analysis_prod.kg_poc.ikf-gpt-oss-20b-poc",
@@ -42,9 +53,11 @@ dbutils.widgets.text(
 # COMMAND ----------
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
+import sys
 import time
 
 from openai import OpenAI
@@ -63,7 +76,12 @@ from pyspark.sql.types import (
 
 PROMPT_VERSION = "IKF_MAIRA_DUAL_MODEL_V0.1"
 LOCAL_SNAPSHOT_VIEW = "maira_ikf_retrieval_snapshot"
+ANALYSIS_DOCUMENT_TABLE = "bdw_analysis_prod.kg_poc.analysis_document"
+MAIRA_DOCUMENT_TABLE = "bdw_analysis_prod.maira.documents"
+MAIRA_PASSAGE_TABLE = "bdw_analysis_prod.maira.passages"
 QUERY_SPEC_TABLE = "bdw_analysis_prod.maira.query_specifications"
+QUERY_CONCEPT_TABLE = "bdw_analysis_prod.maira.query_spec_concepts"
+RETRIEVAL_CONTRACT_VERSION = "MAIRA_GOVERNED_LEXICAL_V0.1"
 
 RUN_VIEW = "maira_ikf_dual_model_runs"
 CANDIDATE_VIEW = "maira_ikf_dual_model_candidates"
@@ -94,6 +112,8 @@ retrieval_snapshot_id = dbutils.widgets.get(
 ).strip()
 model_a = dbutils.widgets.get("model_a").strip()
 model_b = dbutils.widgets.get("model_b").strip()
+requested_query_id = dbutils.widgets.get("query_id").strip().upper()
+requested_query_spec_id = dbutils.widgets.get("query_spec_id").strip()
 configured_base_url = dbutils.widgets.get(
     "databricks_openai_base_url"
 ).strip()
@@ -120,6 +140,9 @@ if not (is_app_analysis or is_controlled_bridge_test):
 if not re.fullmatch(r"snapshot_[0-9a-f]{32}", retrieval_snapshot_id):
     raise ValueError("Enter the exact snapshot ID printed by notebook 27.")
 
+if not re.fullmatch(r"Q[0-9]{3}", requested_query_id):
+    raise ValueError("Enter a governed MAIRA query ID such as Q001.")
+
 if not model_a or not model_b or model_a == model_b:
     raise ValueError("Enter two different configured model-service identifiers.")
 
@@ -134,26 +157,305 @@ print("Model B:", model_b)
 
 # COMMAND ----------
 
-snapshot_suffix = retrieval_snapshot_id.removeprefix("snapshot_")
-global_snapshot_view = (
-    "global_temp.maira_ikf_retrieval_snapshot_" + snapshot_suffix
-)
+def resolve_maira_src_path():
+    if importlib.util.find_spec("maira") is not None:
+        return None
 
-if spark.catalog.tableExists(LOCAL_SNAPSHOT_VIEW):
-    snapshot_view = LOCAL_SNAPSHOT_VIEW
-elif spark.catalog.tableExists(global_snapshot_view):
-    snapshot_view = global_snapshot_view
-else:
-    raise ValueError(
-        "The frozen retrieval snapshot is not available. Pull the latest "
-        "notebooks, run notebook 27 on this cluster, then rerun notebook 28."
+    configured_path = dbutils.widgets.get("maira_src_path").strip()
+    current_user = spark.sql(
+        "SELECT current_user() AS username"
+    ).first()["username"]
+    candidates = [
+        configured_path,
+        f"/Workspace/Users/{current_user}/MAIRA/src",
+        f"/Workspace/Users/{current_user}/MAIRA-main/src",
+    ]
+
+    checked_paths = []
+    for candidate in candidates:
+        if not candidate:
+            continue
+        candidate = candidate.rstrip("/")
+        if os.path.isfile(
+            os.path.join(candidate, "maira", "__init__.py")
+        ):
+            src_path = candidate
+        elif os.path.isfile(
+            os.path.join(candidate, "src", "maira", "__init__.py")
+        ):
+            src_path = os.path.join(candidate, "src")
+        else:
+            checked_paths.append(candidate)
+            continue
+
+        if src_path not in sys.path:
+            sys.path.insert(0, src_path)
+        importlib.invalidate_caches()
+        if importlib.util.find_spec("maira") is not None:
+            return src_path
+        checked_paths.append(src_path)
+
+    raise ModuleNotFoundError(
+        "The MAIRA package is not installed and no sibling MAIRA/src folder "
+        "was found. Checked: " + ", ".join(checked_paths)
     )
 
-snapshot_df = (
-    spark.table(snapshot_view)
-    .filter(F.col("analysis_id") == analysis_id)
-    .filter(F.col("retrieval_snapshot_id") == retrieval_snapshot_id)
-)
+
+def rebuild_verified_snapshot():
+    resolved_path = resolve_maira_src_path()
+
+    from maira.integration.ikf_passage_contract import (
+        PASSAGE_CONTRACT_VERSION,
+    )
+    from maira.query.terms import derive_evidence_terms
+    from maira.retrieval.lexical import retrieve_candidates
+
+    analysis_documents = (
+        spark.table(ANALYSIS_DOCUMENT_TABLE)
+        .filter(F.col("analysis_id") == analysis_id)
+        .select(
+            "analysis_id",
+            F.col("document_id").alias("ikf_document_id"),
+            F.lower(F.col("sha256")).alias("source_document_sha256"),
+        )
+    )
+    if analysis_documents.count() == 0:
+        raise ValueError(
+            f"No IKF analysis documents found for {analysis_id}."
+        )
+
+    duplicate_inputs = (
+        analysis_documents.groupBy("source_document_sha256")
+        .count()
+        .filter(F.col("count") > 1)
+    )
+    if duplicate_inputs.count():
+        raise ValueError("The IKF analysis contains duplicate document content.")
+
+    maira_documents = spark.table(MAIRA_DOCUMENT_TABLE).select(
+        F.col("document_id").alias("maira_document_id"),
+        "report_package_id",
+        F.lower(F.col("sha256")).alias("source_document_sha256"),
+    )
+    document_matches = analysis_documents.join(
+        maira_documents,
+        on="source_document_sha256",
+        how="left",
+    )
+    match_counts = document_matches.groupBy(
+        "analysis_id",
+        "ikf_document_id",
+        "source_document_sha256",
+    ).agg(F.countDistinct("maira_document_id").alias("maira_document_matches"))
+    if match_counts.filter(F.col("maira_document_matches") != 1).count():
+        raise ValueError(
+            "Every IKF document must match exactly one MAIRA document by "
+            "full SHA-256 before governed retrieval can run."
+        )
+
+    maira_passages = spark.table(MAIRA_PASSAGE_TABLE).select(
+        F.col("document_id").alias("maira_document_id"),
+        "passage_id",
+        "passage_number",
+        "start_page",
+        "end_page",
+        "passage_text",
+        F.lower(F.col("passage_text_sha256")).alias("text_sha256"),
+    )
+    bridge = (
+        document_matches.filter(F.col("maira_document_id").isNotNull())
+        .join(maira_passages, on="maira_document_id", how="inner")
+        .select(
+            "analysis_id",
+            "ikf_document_id",
+            "maira_document_id",
+            "report_package_id",
+            "passage_id",
+            "passage_number",
+            "start_page",
+            "end_page",
+            "passage_text",
+            "text_sha256",
+            "source_document_sha256",
+        )
+    )
+    if bridge.count() == 0:
+        raise ValueError("The matched MAIRA documents contain no passages.")
+    if bridge.filter(
+        F.col("passage_id").isNull()
+        | F.col("passage_text").isNull()
+        | (F.length(F.trim(F.col("passage_text"))) == 0)
+        | (F.sha2(F.col("passage_text"), 256) != F.col("text_sha256"))
+    ).count():
+        raise ValueError("MAIRA passage integrity validation failed.")
+
+    query_specs = spark.table(QUERY_SPEC_TABLE).filter(
+        F.upper(F.col("query_id")) == requested_query_id
+    )
+    if requested_query_spec_id:
+        query_specs = query_specs.filter(
+            F.col("query_spec_id") == requested_query_spec_id
+        )
+    query_spec_rows = query_specs.select(
+        "query_spec_id",
+        "query_id",
+        "query_spec_version",
+        "user_query",
+        "relationship",
+    ).dropDuplicates().collect()
+    if len(query_spec_rows) != 1:
+        raise ValueError(
+            f"Expected one governed specification for {requested_query_id}; "
+            f"found {len(query_spec_rows)}. Enter query_spec_id if needed."
+        )
+    active_query_spec = query_spec_rows[0].asDict()
+    active_query_spec_id = active_query_spec["query_spec_id"]
+
+    concept_rows = (
+        spark.table(QUERY_CONCEPT_TABLE)
+        .filter(F.col("query_spec_id") == active_query_spec_id)
+        .select(
+            "query_spec_id",
+            "component_role",
+            "query_token",
+            "code_value",
+        )
+        .collect()
+    )
+    terms = derive_evidence_terms(
+        [row.asDict() for row in concept_rows],
+        active_query_spec_id,
+    )
+
+    bridge_rows = bridge.orderBy(
+        "report_package_id",
+        "maira_document_id",
+        "passage_number",
+    ).collect()
+    retrieval_input = [
+        {
+            "report_package_id": row["report_package_id"],
+            "document_id": row["maira_document_id"],
+            "passage_id": row["passage_id"],
+            "passage_number": row["passage_number"],
+            "start_page": row["start_page"],
+            "end_page": row["end_page"],
+            "passage_text": row["passage_text"],
+        }
+        for row in bridge_rows
+    ]
+    retrieval = retrieve_candidates(retrieval_input, terms)
+    candidate_package_ids = {
+        item["report_package_id"]
+        for item in retrieval.package_candidates
+    }
+    selected_matches = sorted(
+        (
+            item
+            for item in retrieval.passage_matches
+            if item["report_package_id"] in candidate_package_ids
+        ),
+        key=lambda item: (
+            item["report_package_id"],
+            item["document_id"],
+            item["passage_number"],
+            item["passage_id"],
+        ),
+    )
+    if not selected_matches:
+        raise ValueError(
+            "The governed retrieval produced no complete candidate package."
+        )
+
+    bridge_by_passage_id = {
+        row["passage_id"]: row.asDict()
+        for row in bridge_rows
+    }
+    snapshot_material = "\n".join(
+        "|".join(
+            (
+                item["passage_id"],
+                bridge_by_passage_id[item["passage_id"]]["text_sha256"],
+            )
+        )
+        for item in selected_matches
+    )
+    computed_snapshot_id = "snapshot_" + hashlib.sha256(
+        "|".join(
+            (
+                analysis_id,
+                active_query_spec_id,
+                PASSAGE_CONTRACT_VERSION,
+                RETRIEVAL_CONTRACT_VERSION,
+                snapshot_material,
+            )
+        ).encode("utf-8")
+    ).hexdigest()[:32]
+    if computed_snapshot_id != retrieval_snapshot_id:
+        raise ValueError(
+            "The governed data no longer reproduces the requested frozen "
+            f"snapshot. Expected {retrieval_snapshot_id}; computed "
+            f"{computed_snapshot_id}."
+        )
+
+    rebuilt_rows = []
+    for item in selected_matches:
+        source = bridge_by_passage_id[item["passage_id"]]
+        rebuilt_rows.append(
+            Row(
+                retrieval_snapshot_id=computed_snapshot_id,
+                retrieval_contract_version=RETRIEVAL_CONTRACT_VERSION,
+                passage_contract_version=PASSAGE_CONTRACT_VERSION,
+                analysis_id=analysis_id,
+                query_spec_id=active_query_spec_id,
+                query_id=requested_query_id,
+                report_package_id=source["report_package_id"],
+                ikf_document_id=source["ikf_document_id"],
+                maira_document_id=source["maira_document_id"],
+                passage_id=source["passage_id"],
+                passage_order=source["passage_number"],
+                page_start=source["start_page"],
+                page_end=source["end_page"],
+                passage_text=source["passage_text"],
+                text_sha256=source["text_sha256"],
+                matched_roles=sorted(item["matched_terms"]),
+                matched_terms_json=json.dumps(
+                    {
+                        role: list(values)
+                        for role, values in item["matched_terms"].items()
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+            )
+        )
+
+    rebuilt_df = spark.createDataFrame(rebuilt_rows)
+    print(
+        "Snapshot source: deterministically rebuilt and verified from "
+        "governed tables"
+    )
+    print("MAIRA source:", resolved_path or "installed package")
+    return rebuilt_df
+
+
+snapshot_df = None
+snapshot_view = None
+if spark.catalog.tableExists(LOCAL_SNAPSHOT_VIEW):
+    local_candidate = (
+        spark.table(LOCAL_SNAPSHOT_VIEW)
+        .filter(F.col("analysis_id") == analysis_id)
+        .filter(F.col("retrieval_snapshot_id") == retrieval_snapshot_id)
+    )
+    if local_candidate.limit(1).count():
+        snapshot_df = local_candidate
+        snapshot_view = LOCAL_SNAPSHOT_VIEW
+        print("Snapshot source: notebook-local temporary view")
+
+if snapshot_df is None:
+    snapshot_df = rebuild_verified_snapshot()
+    snapshot_df.createOrReplaceTempView(LOCAL_SNAPSHOT_VIEW)
+    snapshot_view = LOCAL_SNAPSHOT_VIEW
 
 snapshot_rows = snapshot_df.orderBy(
     "report_package_id",
