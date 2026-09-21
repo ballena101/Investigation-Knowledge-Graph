@@ -51,6 +51,14 @@ dbutils.library.restartPython()
 
 # COMMAND ----------
 
+import hashlib
+import json
+import re
+import time
+import uuid
+import urllib.request
+from datetime import datetime, timezone
+
 analysis_id = dbutils.widgets.get("analysis_id").strip()
 model_service = dbutils.widgets.get("model_service").strip()
 model_run_key = dbutils.widgets.get("model_run_key").strip() or "PRIMARY"
@@ -64,14 +72,6 @@ model_usage_totals = {
 }
 
 # COMMAND ----------
-
-import hashlib
-import json
-import re
-import time
-import uuid
-import urllib.request
-from datetime import datetime, timezone
 
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.serving import (
