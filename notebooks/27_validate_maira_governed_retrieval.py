@@ -17,15 +17,74 @@ dbutils.widgets.text(
     "",
     "MAIRA query specification ID (optional)",
 )
+dbutils.widgets.text(
+    "maira_src_path",
+    "",
+    "MAIRA src path (optional)",
+)
 
 # COMMAND ----------
 
 import hashlib
+import importlib.util
 import json
+import os
 import re
+import sys
 
 from pyspark.sql import Row
 from pyspark.sql import functions as F
+
+
+def resolve_maira_src_path():
+    if importlib.util.find_spec("maira") is not None:
+        return None
+
+    configured_path = dbutils.widgets.get("maira_src_path").strip()
+    current_user = spark.sql(
+        "SELECT current_user() AS username"
+    ).first()["username"]
+
+    candidates = [
+        configured_path,
+        f"/Workspace/Users/{current_user}/MAIRA/src",
+        f"/Workspace/Users/{current_user}/MAIRA-main/src",
+    ]
+
+    checked_paths = []
+    for candidate in candidates:
+        if not candidate:
+            continue
+
+        candidate = candidate.rstrip("/")
+        if os.path.isfile(
+            os.path.join(candidate, "maira", "__init__.py")
+        ):
+            src_path = candidate
+        elif os.path.isfile(
+            os.path.join(candidate, "src", "maira", "__init__.py")
+        ):
+            src_path = os.path.join(candidate, "src")
+        else:
+            checked_paths.append(candidate)
+            continue
+
+        if src_path not in sys.path:
+            sys.path.insert(0, src_path)
+        importlib.invalidate_caches()
+
+        if importlib.util.find_spec("maira") is not None:
+            return src_path
+
+        checked_paths.append(src_path)
+
+    raise ModuleNotFoundError(
+        "The MAIRA package is not installed and no sibling MAIRA/src folder "
+        "was found. Checked: " + ", ".join(checked_paths)
+    )
+
+
+resolved_maira_src_path = resolve_maira_src_path()
 
 from maira.integration.ikf_passage_contract import (
     PASSAGE_CONTRACT_VERSION,
@@ -61,6 +120,10 @@ if not re.fullmatch(r"Q[0-9]{3}", query_id):
     raise ValueError("Enter a governed MAIRA query ID such as Q001.")
 
 print("Analysis:", analysis_id)
+print(
+    "MAIRA source:",
+    resolved_maira_src_path or "installed package",
+)
 print("Query:", query_id)
 print("Passage contract:", PASSAGE_CONTRACT_VERSION)
 print("Retrieval contract:", RETRIEVAL_CONTRACT_VERSION)
