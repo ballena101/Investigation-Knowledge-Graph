@@ -8,6 +8,7 @@ components for downstream model analysis and application use.
 from __future__ import annotations
 
 from typing import Any
+import hashlib
 
 from pyspark.sql import functions as F
 
@@ -159,6 +160,11 @@ def run_query(
             continue
 
         for match in assessment.matches:
+            evidence_text = match.evidence_sentence
+            evidence_text_sha256 = hashlib.sha256(
+                evidence_text.encode("utf-8")
+            ).hexdigest()
+
             results.append(
                 {
                     "query_id": query_id,
@@ -174,8 +180,9 @@ def run_query(
                     "object_term": match.object_term,
                     "relation_cue": match.cue,
                     "relation_direction": match.direction,
-                    "evidence_text": match.evidence_sentence,
-                    "evidence_text_sha256": row["passage_text_sha256"],
+                    "evidence_text": evidence_text,
+                    "evidence_text_sha256": evidence_text_sha256,
+                    "source_passage_text_sha256": row["passage_text_sha256"],
                 }
             )
 
