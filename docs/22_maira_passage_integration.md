@@ -105,6 +105,8 @@ Run `notebooks/28_compare_maira_snapshot_dual_model.py` after notebook 27 with:
 
 - the same `analysis_id`;
 - the exact `retrieval_snapshot_id` printed by notebook 27;
+- the same governed `query_id`, initially `Q001`;
+- the exact `query_spec_id` only if more than one governed specification exists;
 - the approved GPT-OSS 20B and Llama 3.3 70B model-service identifiers.
 
 Notebook 27 exposes a notebook-local temporary view. Because serverless compute
