@@ -718,7 +718,8 @@ Current implementation status:
   controlled Commodore Clipper reference graph and must be generalised to each
   generated analysis graph;
 - SHIELD classification remains subsequent to human validation of a
-  contributing factor.
+  contributing factor. The LLM may then suggest a SHIELD mapping, which must
+  receive its own human VALIDATE / AMEND / REJECT decision.
 
 Recommended Class-D safeguard:
 - retain explicit investigator classification;
