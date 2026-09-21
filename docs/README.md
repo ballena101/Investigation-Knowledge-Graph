@@ -81,3 +81,11 @@ Documents (1–5) OR encrypted direct text
 Ollama route: maximum **5 questions per user per day** in the PoC. An App
 administrator may reset the counter. The limit is a resource/cost control, not
 a safety classification.
+
+
+## Integrated architecture and roadmap
+
+- `23_maira_bosuil_integration_plan.md` — authoritative integration plan for
+  MAIRA reuse, EMCIP/query/relationship governance, selective Bosuil-derived
+  design experiments, Directive/IMO reference context, human review, Class D
+  safeguards and SHIELD sequencing.
