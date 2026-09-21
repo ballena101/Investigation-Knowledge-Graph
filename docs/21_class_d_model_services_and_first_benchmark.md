@@ -673,3 +673,90 @@ Both therefore passed this specific de-identification control.
 
 Supplementary controls may be added without changing the locked 12-item core
 benchmark set.
+
+
+## 26. Consolidated summary — 13 executed validation tests
+
+The first validation exercise executed 13 tests in total:
+
+- 12 core benchmark items;
+- 1 supplementary privacy/de-identification control.
+
+### Benchmark-level outcome summary
+
+| Test | Purpose | GPT-OSS 20B | Llama 3.3 70B |
+|---|---|---|---|
+| 001 | Synthetic connectivity / simple extraction | VALIDATED | VALIDATED |
+| 002 | Real contributing-factor passage | AMENDED | AMENDED / mixed candidate review |
+| 003 | Negative-control abstention | VALIDATED | VALIDATED |
+| 004 | Chronology without causal support | VALIDATED after token-limit rerun | VALIDATED |
+| 005 | Explicit contributory relationship | VALIDATED | VALIDATED |
+| 006 | Multiple supported factors | VALIDATED | VALIDATED |
+| 007 | Ambiguous / insufficient evidence | VALIDATED | VALIDATED after clean rerun |
+| 008 | Indirectly supported factor | VALIDATED | VALIDATED |
+| 009 | Unsupported plausible domain inference | VALIDATED | VALIDATED |
+| 010 | Duplicate / overlapping candidate handling | VALIDATED | VALIDATED |
+| 011 | Evidence-quote accuracy / semantic role | VALIDATED | MIXED: one VALIDATED candidate, one REJECTED consequence-as-factor candidate |
+| 012 | Relationship-direction accuracy | VALIDATED | VALIDATED |
+| Supplementary privacy control | De-identification / identifier omission | VALIDATED | VALIDATED |
+
+### Descriptive benchmark-level counts
+
+GPT-OSS 20B:
+- 12 of 13 executed tests were fully validated at benchmark level;
+- benchmark 002 required amendment;
+- no benchmark-level semantic rejection was recorded.
+
+Llama 3.3 70B:
+- 11 of 13 executed tests were fully validated at benchmark level;
+- benchmark 002 required amendment / mixed candidate review;
+- benchmark 011 contained one validated candidate and one rejected candidate;
+- the rejected benchmark-011 candidate was classified as `CONSEQUENCE_AS_FACTOR`.
+
+These counts are descriptive PoC results only. They are not general accuracy
+estimates and must not be used as a model ranking.
+
+### Execution events excluded from semantic scoring
+
+Two execution/notebook events occurred and were excluded from semantic scoring:
+
+1. benchmark 004 / GPT-OSS 20B initially returned an incomplete response because
+   `max_output_tokens=200` was exhausted during reasoning. The benchmark was
+   rerun at 600 tokens and then validated.
+2. benchmark 007 / Llama 3.3 70B initially displayed a response from the prior
+   benchmark due to notebook-state / response reuse. A clean benchmark-007 run
+   returned the expected abstention and was validated.
+
+These are execution-control observations, not semantic model failures.
+
+### API semantics used in the exercise
+
+GPT-OSS 20B:
+- API method: `client.responses.create(...)`;
+- output accessor: `response.output_text`;
+- underlying model observed: `gpt-oss-20b-080525`.
+
+Llama 3.3 70B:
+- API method: `client.chat.completions.create(...)`;
+- output accessor: `response.choices[0].message.content`;
+- underlying model observed: `meta-llama-3.3-70b-instruct-121024`.
+
+The comparison therefore controls semantic input equivalence, not identical SDK
+syntax.
+
+### Interpretation
+
+The 13-test exercise demonstrates that the dual-model validation pipeline,
+candidate-level human review, abstention controls, evidence-grounding checks,
+relationship-direction checks and privacy control are functioning end to end.
+
+The exercise does not establish general model accuracy because:
+- the sample is small;
+- most controls are synthetic;
+- only a limited number of real investigation passages have been used;
+- the benchmark set is designed for behavioural coverage rather than statistical
+  representativeness.
+
+The next phase should integrate the same validation protocol with MAIRA-derived
+passages and provenance so that benchmark inputs come from the governed document
+analysis pipeline rather than manual `SOURCE_TEXT` variables.
