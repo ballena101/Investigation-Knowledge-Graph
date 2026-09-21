@@ -55,12 +55,50 @@ def run_models(
     for item in query_results:
         prompt = _build_prompt(item)
 
-        # Model A: GPT-OSS via Responses API.
-        response_a = client.responses.create(
-            model=MODEL_A_SERVICE,
-            input=prompt,
-            max_output_tokens=model_a_max_output_tokens,
-        )
+        # Model A: prefer Responses API, but some local Databricks gateway
+        # routes expose GPT-OSS through Chat Completions only.
+        model_a_api_method = "responses.create"
+        try:
+            response_a = client.responses.create(
+                model=MODEL_A_SERVICE,
+                input=prompt,
+                max_output_tokens=model_a_max_output_tokens,
+            )
+            model_a_answer = response_a.output_text
+            model_a_underlying_model = getattr(response_a, "model", None)
+            model_a_finish_status = getattr(response_a, "status", None)
+        except Exception as exc:
+            message = str(exc)
+            if (
+                "Responses API passthrough is not supported" not in message
+                and "responses api passthrough is not supported"
+                not in message.lower()
+            ):
+                raise
+
+            response_a = client.chat.completions.create(
+                model=MODEL_A_SERVICE,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                max_tokens=model_a_max_output_tokens,
+                temperature=0.0,
+            )
+            model_a_api_method = "chat.completions.create"
+            model_a_underlying_model = getattr(response_a, "model", None)
+            model_a_finish_status = (
+                response_a.choices[0].finish_reason
+                if response_a.choices
+                else None
+            )
+            model_a_answer = (
+                response_a.choices[0].message.content
+                if response_a.choices
+                else None
+            )
 
         # Model B: Llama via Chat Completions API.
         response_b = client.chat.completions.create(
@@ -89,10 +127,10 @@ def run_models(
                 "prompt_version": prompt_version,
                 "prompt_text": prompt,
                 "model_a_service": MODEL_A_SERVICE,
-                "model_a_api_method": "responses.create",
-                "model_a_underlying_model": getattr(response_a, "model", None),
-                "model_a_finish_status": getattr(response_a, "status", None),
-                "model_a_answer": response_a.output_text,
+                "model_a_api_method": model_a_api_method,
+                "model_a_underlying_model": model_a_underlying_model,
+                "model_a_finish_status": model_a_finish_status,
+                "model_a_answer": model_a_answer,
                 "model_a_max_output_tokens": model_a_max_output_tokens,
                 "model_b_service": MODEL_B_SERVICE,
                 "model_b_api_method": "chat.completions.create",
