@@ -64,6 +64,35 @@ If the package import is temporarily unavailable, the same data-integrity
 checks may run against the versioned compatibility field list, but the notebook
 reports `PASS — DATA BRIDGE` and keeps the MAIRA package import as pending.
 
+## Second read-only checkpoint: governed retrieval
+
+Run `notebooks/27_validate_maira_governed_retrieval.py` with the validated
+analysis ID and a governed MAIRA query ID, initially `Q001`.
+
+The notebook:
+
+- requires the installed MAIRA passage, governed-term and lexical-retrieval
+  modules; there is no IKF compatibility fallback;
+- reconstructs and revalidates the SHA-256 document bridge;
+- loads the exact persisted query specification and concepts;
+- derives terms only from governed `query_spec_concepts`;
+- applies MAIRA's reusable lexical retrieval to the bridged passages;
+- retains all matching passages only from packages satisfying every populated
+  query role;
+- calculates a deterministic retrieval snapshot ID from the query specification,
+  passage IDs and passage hashes;
+- exposes the result as temporary view `maira_ikf_retrieval_snapshot`;
+- creates no table, invokes no model and modifies no graph.
+
+Expected final output:
+
+```text
+PASS — MAIRA RETRIEVAL CHECKPOINT
+```
+
+This checkpoint validates the retrieval hand-off only. The temporary snapshot is
+not yet a persisted benchmark result.
+
 ## What this checkpoint does not do
 
 It does not replace notebook 15, persist a new table, invoke either LLM, modify
