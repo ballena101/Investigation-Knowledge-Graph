@@ -1023,3 +1023,31 @@ executed inline from notebook 28 with:
 ```
 
 Notebook 29 does not invoke either model and does not modify Neo4j.
+
+
+## 35. First MAIRA human-reviewed benchmark persisted
+
+The first frozen-snapshot MAIRA dual-model benchmark was persisted successfully.
+
+Benchmark identifier:
+
+`maira_benchmark_9e059930506d33295105addcd06e821d`
+
+Persistence checkpoint:
+
+`PASS — MAIRA HUMAN-REVIEW BENCHMARK PERSISTED`
+
+The persisted benchmark keeps the following dimensions separate:
+
+- raw model execution and provenance;
+- structured-output / evidence-contract compliance;
+- standalone relationship correctness;
+- governed-query relationship-label adherence;
+- human review;
+- governed MAIRA gold/reference relationships.
+
+No Neo4j graph was modified.
+
+From this checkpoint onward, benchmark verification and metric calculation should
+operate from the persisted benchmark tables rather than notebook-session
+temporary views.
