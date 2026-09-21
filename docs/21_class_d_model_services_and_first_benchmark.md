@@ -994,9 +994,9 @@ structured-output/evidence-contract compliance.
 
 A further benchmark distinction is required for governed MAIRA queries. A model
 may generate a relationship that is true in a passage while still failing to
-answer the relationship requested by the governed query. For Q003 the governed
-target relationship is `CONTRIBUTED_TO`; a generated `FOLLOWED_BY` edge can be
-valid as an incidental fact while not matching the requested relationship label.
+answer the relationship requested by the governed query. The requested
+relationship must therefore be read from the persisted query specification for
+the benchmark item rather than inferred from the candidate wording.
 
 Notebook
 `29_persist_maira_dual_model_benchmark.py`
