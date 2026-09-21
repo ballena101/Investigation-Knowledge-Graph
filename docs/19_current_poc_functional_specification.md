@@ -740,3 +740,18 @@ App navigation order:
 The reference graph is deliberately placed immediately before Terms of
 reference because it is a methodology demonstrator rather than the primary
 operational workflow.
+
+
+## 18. Canonical upstream integration
+
+For investigation documents, the generic PoC must converge on MAIRA as the
+canonical evidence layer. The detailed integration contract and ordered
+implementation plan are defined in:
+
+`docs/23_maira_bosuil_integration_plan.md`
+
+This supersedes any implication that IKF should maintain an independent
+document chunking, EMCIP registry, governed query or deterministic relationship
+assessment stack in parallel with MAIRA.
+
+Bosuil is an external design reference only; it is not an IKF dependency.
