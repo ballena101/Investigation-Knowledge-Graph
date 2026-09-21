@@ -874,3 +874,23 @@ Result:
 
 This confirms that the detector requires explicit contributory wording and does
 not promote simple co-occurrence or chronology into a contributory relationship.
+
+
+## 31. Q003 real-passage assessment returned zero supported matches
+
+Q003 was executed against the current MAIRA investigation main-report passages
+using the deterministic `CONTRIBUTED_TO` detector and the governed concepts
+resolved in `query_spec_concepts`.
+
+Observed result:
+
+`SUPPORTED MATCHES: 0`
+
+This is retained as a legitimate deterministic result. The detector was not
+relaxed merely to produce positive matches.
+
+The next diagnostic step is to inspect MAIRA's governed terminology
+normalisation layer and report-language variants before deciding whether
+additional evidence-term mappings are required. This preserves the principle
+that taxonomy labels and source-language evidence terms are distinct and must
+be connected explicitly rather than by unsupported inference.
