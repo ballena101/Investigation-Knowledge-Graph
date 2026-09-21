@@ -32,7 +32,7 @@ OTHER_CONTENT_RETENTION_HOURS = 72
 LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "5"))
 QUOTA_TIMEZONE = "Europe/Lisbon"
 
-PUBLIC_MODEL_SERVICE = "system.ai.gpt-5-6-sol"
+PUBLIC_MODEL_SERVICE = "system.ai.meta-llama-3-3-70b-instruct"
 INTERNAL_MODEL_SERVICE = "system.ai.gpt-oss-120b"
 CLASS_D_GPT20_ENDPOINT = os.getenv("CLASS_D_GPT20_ENDPOINT")
 CLASS_D_LLAMA70_ENDPOINT = (
@@ -51,7 +51,7 @@ INFORMATION_CLASSES = {
         "label": "A — Public / technical",
         "description": "Code, public technical material or other non-sensitive content.",
         "model": PUBLIC_MODEL_SERVICE,
-        "model_name": "OpenAI GPT-5.6 Sol via Databricks system.ai",
+        "model_name": "Meta Llama 3.3 70B Instruct via Databricks system.ai",
         "data_flow": (
             "Databricks Foundation Model API / ADI path. Suitable for "
             "public/non-sensitive material; Databricks retention and applicable "
@@ -62,7 +62,7 @@ INFORMATION_CLASSES = {
         "label": "B — Published investigation material",
         "description": "Published final reports, published recommendations and other approved non-sensitive investigation material.",
         "model": PUBLIC_MODEL_SERVICE,
-        "model_name": "OpenAI GPT-5.6 Sol via Databricks system.ai",
+        "model_name": "Meta Llama 3.3 70B Instruct via Databricks system.ai",
         "data_flow": (
             "Databricks Foundation Model API / ADI path. Intended for published "
             "material; Databricks retention and applicable provider safety terms may apply."
