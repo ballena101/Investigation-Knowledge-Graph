@@ -853,3 +853,24 @@ The detector is intentionally strict:
 
 This logic remains in MAIRA, not IKG. IKG consumes the resulting governed
 evidence set for dual-model interpretation and human review.
+
+
+## 30. CONTRIBUTED_TO detector unit test passed
+
+The new MAIRA deterministic `CONTRIBUTED_TO` detector was tested in Databricks
+with one positive and one negative control.
+
+Positive control:
+`Inadequate maintenance contributed to the engine failure.`
+
+Result:
+`SUPPORTED_REQUESTED_RELATIONSHIP`
+
+Negative control:
+`Maintenance was carried out before the engine failure.`
+
+Result:
+`UNRESOLVED`
+
+This confirms that the detector requires explicit contributory wording and does
+not promote simple co-occurrence or chronology into a contributory relationship.
