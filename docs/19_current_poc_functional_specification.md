@@ -43,8 +43,8 @@ replace A/B/C.
 
 | Class | Typical content | Default model route | Extra Class-D controls? |
 |---|---|---|---|
-| A | Public / technical material | `system.ai.gpt-5-6-sol` | No |
-| B | Published / non-sensitive investigation material | `system.ai.gpt-5-6-sol` | No |
+| A | Public / technical material | `system.ai.meta-llama-3-3-70b-instruct` | No |
+| B | Published / non-sensitive investigation material | `system.ai.meta-llama-3-3-70b-instruct` | No |
 | C | Internal / restricted analytical material that is not Article 9 protected evidence | `system.ai.gpt-oss-120b` | No |
 | D | Article 9 / protected confidential investigation material | Dedicated GPT-OSS 20B and/or Llama 3.3 70B endpoints | Yes |
 
@@ -673,3 +673,20 @@ the 72-hour boundary.
 
 The cleanup preserves compact audit metadata but not substantive evidence or
 model-generated analytical content.
+
+
+## Workspace-validated model routing — 2026-09-21
+
+Runtime validation in the active Azure Databricks workspace established that
+`system.ai.meta-llama-3-3-70b-instruct`, `system.ai.gpt-oss-120b`, and
+`system.ai.gpt-oss-20b` are reachable through the Unity Gateway model API,
+while `system.ai.gpt-5-6-sol` is not available in this workspace.
+
+For the current PoC:
+- Classes A/B use `system.ai.meta-llama-3-3-70b-instruct`.
+- Class C remains on `system.ai.gpt-oss-120b`.
+- Class D retains the dedicated controlled model routes.
+- `system.ai.*` services are invoked through the Unity Gateway OpenAI-compatible
+  API; dedicated custom endpoints continue to use their endpoint-specific route.
+
+This is a workspace-availability decision, not a quality ranking of models.
