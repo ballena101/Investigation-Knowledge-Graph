@@ -101,8 +101,9 @@ and one end-to-end reviewed case are confirmed.
 
 ## Next checkpoint
 
-Using the temporary bridge view, run both models on the same frozen MAIRA
-passages and compare the results with the existing IKF passage run. Measure:
+Using the verified temporary retrieval snapshot, run both models independently
+on the same six frozen MAIRA passages and compare the results with the existing
+IKF passage run. Measure:
 
 - evidence retrieval/coverage;
 - evidence-reference accuracy;
@@ -136,3 +137,32 @@ contract package; the IKF compatibility fallback was not used. This validates
 document matching by SHA-256, passage identity, exact text-hash integrity and
 the read-only cross-project contract for this controlled case. It does not yet
 validate retrieval quality or LLM interpretation performance.
+
+## Verified governed-retrieval checkpoint
+
+Date: 2026-09-21
+
+Governed query `Q001` was executed for controlled analysis
+`ikf_maira_test_001` against the validated Wight Sky passage bridge.
+
+Observed result:
+
+```text
+Bridge passages inspected: 6
+Passages matching at least one governed role: 6
+All-role same-passage candidates: 2
+Complete candidate packages: 1
+Frozen retrieved passages: 6
+Retrieval snapshot ID: snapshot_742f8e0adbccbbf8bf3610015e824415
+Temporary view: maira_ikf_retrieval_snapshot
+PASS — MAIRA RETRIEVAL CHECKPOINT
+```
+
+All six validated passages entered the governed candidate set, two passages
+contained terms for every populated query role in the same passage, and one
+report package satisfied the complete-package gate. The deterministic snapshot
+ID binds the query specification to the selected passage IDs and text hashes.
+
+This validates the governed retrieval hand-off for the controlled case. It does
+not validate either model's interpretation accuracy. The snapshot remains a
+temporary view and is not yet a persisted benchmark result.
