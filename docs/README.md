@@ -27,6 +27,10 @@ the product architecture.
 6. [03_architecture.md](03_architecture.md) and [04_data_model.md](04_data_model.md)  
    Technical architecture and graph/data model.
 
+7. [22_maira_passage_integration.md](22_maira_passage_integration.md)  
+   Read-only MAIRA passage contract, controlled test-analysis registration,
+   parity gate and staged removal of duplicate document chunking from IKF.
+
 ## Methodology and governance
 
 - [02_methodology.md](02_methodology.md) — evidence-first graph methodology.
