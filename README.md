@@ -240,8 +240,8 @@ This is a product-design objective as well as a compliance safeguard.
 
 All four classes remain supported:
 
-- A — public/technical → GPT-5.6 Sol
-- B — published/non-sensitive investigation material → GPT-5.6 Sol
+- A — public/technical → Meta Llama 3.3 70B Instruct
+- B — published/non-sensitive investigation material → Meta Llama 3.3 70B Instruct
 - C — internal/restricted, non-Article-9 → GPT-OSS 120B
 - D — protected/Article 9 → dedicated GPT-OSS 20B, Llama 3.3 70B, or both
 
@@ -264,7 +264,7 @@ Both routes use the same evidence-grounded pipeline and privacy controls.
 
 Model routing is determined by information class:
 
-- A/B → `system.ai.gpt-5-6-sol`
+- A/B → `system.ai.meta-llama-3-3-70b-instruct`
 - C → `system.ai.gpt-oss-120b`
 - D → dedicated IKG GPT-OSS 20B and/or Llama 3.3 70B model services through Databricks Unity Gateway; fail closed if a requested model service is unavailable
 
@@ -279,8 +279,8 @@ The App must disclose every model route used by the PoC.
 
 | Information class | Model | Serving route | Confidentiality position | Article 9 / Class D position |
 |---|---|---|---|---|
-| A | OpenAI GPT-5.6 Sol | Databricks `system.ai.gpt-5-6-sol` | Public / non-sensitive | Not approved for protected Class D evidence |
-| B | OpenAI GPT-5.6 Sol | Databricks `system.ai.gpt-5-6-sol` | Published / non-sensitive | Not approved for protected Class D evidence |
+| A | OpenAI GPT-5.6 Sol | Databricks `system.ai.meta-llama-3-3-70b-instruct` | Public / non-sensitive | Not approved for protected Class D evidence |
+| B | OpenAI GPT-5.6 Sol | Databricks `system.ai.meta-llama-3-3-70b-instruct` | Published / non-sensitive | Not approved for protected Class D evidence |
 | C | OpenAI GPT-OSS 120B | Databricks-hosted `system.ai.gpt-oss-120b` | Internal / restricted | Not automatically approved for Article 9 evidence |
 | D | OpenAI GPT-OSS 20B | Dedicated Databricks endpoint | Protected / confidential | Conditionally suitable only after endpoint approval |
 | D | Meta Llama 3.3 70B Instruct | Dedicated Databricks endpoint | Protected / confidential | Conditionally suitable only after endpoint approval |
