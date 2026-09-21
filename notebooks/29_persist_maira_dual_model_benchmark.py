@@ -239,6 +239,8 @@ reviewed_candidates = (
         candidate_df.select(
             "model_key",
             "candidate_signature",
+            "evidence_quote",
+            "evidence_class",
             "evidence_reference_valid",
             "requires_causal_review",
             "validation_errors",
