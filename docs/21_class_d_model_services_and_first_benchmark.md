@@ -635,3 +635,23 @@ Recommended additional metadata:
 This prevents API-surface differences from being mistaken for model-semantic
 differences and allows a later model/version change behind a stable endpoint to
 be detected.
+
+
+## 24. Benchmark 012 relationship-direction accuracy
+
+Benchmark 012 tested whether the models preserved the direction of an explicitly
+supported causal relationship.
+
+Source relation:
+
+`loss of lubricating-oil pressure -> engine shutdown`
+
+Observed result:
+
+- MODEL_A / GPT-OSS 20B correctly identified the contributing factor, outcome,
+  relationship direction and supporting sentence.
+- MODEL_B / Llama 3.3 70B also preserved the correct direction. Its outcome
+  wording (`engine to shut down`) was stylistically awkward but semantically
+  equivalent for this benchmark and did not reverse the relationship.
+
+Both model outputs were human-validated for relationship-direction accuracy.
