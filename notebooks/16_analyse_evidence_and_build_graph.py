@@ -57,6 +57,7 @@ import re
 import time
 import uuid
 import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 
 analysis_id = dbutils.widgets.get("analysis_id").strip()
@@ -419,6 +420,36 @@ print("Analysis batches:", len(batches))
 
 # COMMAND ----------
 
+def extract_chat_final_text(content):
+    """Return user-visible final text from OpenAI-compatible chat content."""
+    if content is None:
+        return ""
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        final_parts = []
+
+        for part in content:
+            if isinstance(part, dict):
+                part_type = str(
+                    part.get("type") or ""
+                ).lower()
+
+                if part_type in {
+                    "text",
+                    "output_text",
+                }:
+                    value = part.get("text")
+                    if value is not None:
+                        final_parts.append(str(value))
+
+        return "\n".join(final_parts)
+
+    return str(content)
+
+
 def strip_code_fences(text):
     value = (text or "").strip()
     fence = chr(96) * 3
@@ -458,9 +489,6 @@ def query_model_json(
                   "no Markdown fences or commentary."
             )
 
-        # Databricks-provided model APIs in system.ai are Unity Gateway model
-        # services, not /serving-endpoints/{name} endpoints. Query them through
-        # ai_query so notebook-native authentication and governance are retained.
         if model_service.startswith("system.ai."):
             if not re.fullmatch(
                 r"system\.ai\.[A-Za-z0-9._-]+",
@@ -470,38 +498,83 @@ def query_model_json(
                     "Invalid system.ai model service identifier."
                 )
 
-            combined_prompt = (
-                "SYSTEM INSTRUCTIONS:\n"
-                + system_prompt
-                + "\n\nUSER INPUT:\n"
-                + active_user_prompt
+            gateway_url = (
+                w.config.host.rstrip("/")
+                + "/ai-gateway/mlflow/v1/chat/completions"
             )
 
-            request_view = "_ikf_system_ai_request"
-            spark.createDataFrame(
-                [(combined_prompt,)],
-                ["request_text"],
-            ).createOrReplaceTempView(request_view)
+            auth_headers = w.config.authenticate()
 
-            response_row = spark.sql(
-                f"""
-                SELECT ai_query(
-                    '{model_service}',
-                    request_text,
-                    modelParameters => named_struct(
-                        'max_tokens', {int(max_tokens)},
-                        'temperature', 0.0
-                    ),
-                    responseFormat => '{{"type":"json_object"}}'
-                ) AS response_text
-                FROM {request_view}
-                """
-            ).first()
+            request_body = json.dumps(
+                {
+                    "model": model_service,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": system_prompt,
+                        },
+                        {
+                            "role": "user",
+                            "content": active_user_prompt,
+                        },
+                    ],
+                    "max_tokens": int(max_tokens),
+                    "temperature": 0.0,
+                }
+            ).encode("utf-8")
 
-            text = (
-                response_row["response_text"]
-                if response_row
-                else ""
+            request = urllib.request.Request(
+                gateway_url,
+                data=request_body,
+                headers={
+                    **auth_headers,
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+
+            try:
+                with urllib.request.urlopen(
+                    request,
+                    timeout=600,
+                ) as gateway_response:
+                    payload = json.loads(
+                        gateway_response.read().decode("utf-8")
+                    )
+            except urllib.error.HTTPError as exc:
+                error_body = exc.read().decode(
+                    "utf-8",
+                    errors="replace",
+                )
+                raise RuntimeError(
+                    "Unity Gateway model request failed "
+                    f"for {model_service}: HTTP {exc.code}: "
+                    f"{error_body[:1000]}"
+                ) from exc
+
+            choices = payload.get("choices") or []
+            if not choices:
+                raise ValueError(
+                    "Unity Gateway returned no chat choices."
+                )
+
+            content = (
+                choices[0]
+                .get("message", {})
+                .get("content")
+            )
+
+            text = extract_chat_final_text(content)
+
+            usage = payload.get("usage") or {}
+            model_usage_totals["prompt_tokens"] += int(
+                usage.get("prompt_tokens") or 0
+            )
+            model_usage_totals["completion_tokens"] += int(
+                usage.get("completion_tokens") or 0
+            )
+            model_usage_totals["total_tokens"] += int(
+                usage.get("total_tokens") or 0
             )
 
         elif model_run_key == "LLAMA70" and model_service.startswith(
@@ -599,7 +672,9 @@ def query_model_json(
                     or 0
                 )
 
-            text = response.choices[0].message.content
+            text = extract_chat_final_text(
+                response.choices[0].message.content
+            )
 
         try:
             return json.loads(
