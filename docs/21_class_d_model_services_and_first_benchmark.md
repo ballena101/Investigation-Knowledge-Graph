@@ -389,3 +389,23 @@ Both outputs were human-validated for this benchmark item.
 This benchmark complements benchmark 004: benchmark 004 tests restraint when
 only chronology is present, while benchmark 005 tests recognition when a
 contributory relationship is explicitly stated.
+
+
+## 16. Benchmark 006 multiple supported contributing factors
+
+Benchmark 006 used a synthetic control containing two explicitly supported
+contributing factors:
+
+1. inadequate maintenance of the cooling system;
+2. delayed detection of the rising temperature.
+
+Observed result:
+
+- MODEL_A / GPT-OSS 20B recovered both factors, kept them separate and cited the
+  supporting wording;
+- MODEL_B / Llama 3.3 70B recovered the same two factors, kept them separate and
+  cited the supporting wording.
+
+No unsupported additional factor was introduced.
+
+Both model outputs were human-validated for this benchmark item.
