@@ -311,3 +311,33 @@ This benchmark measures abstention/restraint rather than extraction ability. It
 provides evidence that, under prompt version `cf_extraction_v1`, both model
 routes can refrain from inventing a contributing factor on this specific
 negative-control example. It does not establish a general false-positive rate.
+
+
+## 13. Planned first validation round
+
+The first PoC validation round targets 15 benchmark items. The purpose is
+coverage of distinct behaviours, not statistical representativeness.
+
+Planned coverage:
+
+1. synthetic connectivity/extraction check — completed;
+2. real contributing-factor extraction — completed;
+3. negative-control abstention — completed;
+4. chronology without causal support;
+5. explicit causal relationship;
+6. multiple contributing factors in one passage;
+7. ambiguous/insufficient evidence requiring abstention;
+8. supported factor expressed indirectly;
+9. unsupported plausible-domain inference;
+10. duplicate/overlapping factor candidates;
+11. evidence-quote accuracy;
+12. relationship-direction accuracy;
+13. privacy/de-identification behaviour;
+14. mixed supported and unsupported candidates in one passage;
+15. repeated-run stability on a locked benchmark item.
+
+Most items should use real investigation passages. Synthetic items are retained
+only where they provide a clean control condition.
+
+Results from this first 15-item round are descriptive PoC validation evidence
+and must not be presented as a general model-performance estimate.
