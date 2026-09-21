@@ -6,7 +6,7 @@ The Class D PoC evaluates two privacy-oriented model routes on the same
 protected/confidential investigation analysis task:
 
 - GPT-OSS 20B;
-- Meta Llama 3.3 70B Instruct via Ollama.
+- Meta Llama 3.3 70B Instruct.
 
 The user can provide either:
 
@@ -18,7 +18,7 @@ The user also supplies the investigation question/objective.
 The user may run:
 
 - GPT-OSS 20B only;
-- Ollama Llama 3.3 70B only;
+- Llama 3.3 70B only;
 - both models.
 
 When both are selected, both models receive the same evidence passages and the
@@ -29,20 +29,18 @@ side by side.
 
 Class D does not use the public/non-sensitive A/B model path.
 
-Target endpoints:
+Current PoC model-service identifiers:
 
-- `CLASS_D_GPT20_ENDPOINT`
-- `CLASS_D_OLLAMA_LLAMA70_URL`
+- `bdw_analysis_prod.kg_poc.ikf-gpt-oss-20b-poc`
+- `bdw_analysis_prod.kg_poc.ikf-llama-3-3-70b-poc`
 
 GPT-OSS 20B is intended to use a dedicated/custom Databricks Model Serving
 endpoint approved for Class D use.
 
-The larger comparison route is **Ollama** running `llama3.3:70b` on controlled
-compute reachable from the Class D Databricks Job. Ollama is the serving
-runtime; Llama 3.3 70B is the model. The Ollama service URL is supplied through
-`CLASS_D_OLLAMA_LLAMA70_URL`.
-
-The Ollama service must not be a public/uncontrolled endpoint for Class D data.
+The current comparison route uses Meta Llama 3.3 70B Instruct through a
+Databricks Unity Gateway model service. Both Class D PoC models currently use
+pay-per-token model services for controlled validation. Production approval for
+protected Class D evidence remains a separate governance decision.
 
 The App fails closed if a requested endpoint is unavailable.
 
@@ -81,7 +79,7 @@ The Class D Lakeflow Job runs:
 
 1. evidence extraction once;
 2. GPT-OSS 20B analysis when selected;
-3. Ollama Llama 3.3 70B analysis when selected;
+3. Llama 3.3 70B analysis when selected;
 4. final comparison completion check.
 
 Each model run has its own:
@@ -100,7 +98,7 @@ A model cannot overwrite the other model's graph.
 
 ## Llama usage control
 
-The PoC default limits Ollama Llama 3.3 70B to:
+The PoC default limits Llama 3.3 70B to:
 
 **5 questions per user per day**
 
@@ -134,7 +132,7 @@ The daily limit is a PoC cost/resource-control rule, not a model-safety limit.
 ## Side-by-side comparison
 
 When both models are selected, the completed analysis displays independent
-columns for GPT-OSS 20B and Ollama Llama 3.3 70B.
+columns for GPT-OSS 20B and Llama 3.3 70B.
 
 Each column includes:
 
@@ -157,7 +155,7 @@ inspect them independently.
 
 The intended larger comparison model is:
 
-**Meta Llama 3.3 70B Instruct via Ollama**
+**Meta Llama 3.3 70B Instruct**
 
 Ollama model identifier:
 
@@ -187,21 +185,27 @@ Implemented in repository:
 - comparison finalizer;
 - privacy validation before graph publication.
 
-Still requiring environment setup/validation:
+Current environment milestone:
 
-- deploy/approve GPT-OSS 20B endpoint;
-- deploy/approve controlled Ollama Llama 3.3 70B service;
-- configure App resources/secrets;
-- create/update Class D Lakeflow Job;
-- run end-to-end Class D validation;
-- confirm private networking/logging/retention configuration.
+- GPT-OSS 20B PoC model service connected successfully;
+- Llama 3.3 70B PoC model service connected successfully;
+- both services reachable through Databricks Unity Gateway;
+- first same-input dual-model synthetic test completed and persisted;
+- benchmark Delta table created in `bdw_analysis_prod.kg_poc`.
+
+Still requiring validation/hardening:
+
+- execute locked real investigation-passage benchmarks;
+- configure App resources and Class D Lakeflow orchestration;
+- generalise model-specific human review;
+- confirm networking/logging/retention configuration for authorised Class D use.
 
 
 ## Ollama terminology
 
 Ollama is a runtime, not the comparison model.
 
-The larger model in this PoC is **Meta Llama 3.3 70B Instruct via Ollama**. It can be run
+The larger model in this PoC is **Meta Llama 3.3 70B Instruct**. It can be run
 through Ollama in other/local environments, but IKG's Class D design uses an
 approved dedicated Databricks serving endpoint. This avoids adding an Ollama
 server as another protected-data processing boundary.
