@@ -3,7 +3,7 @@
 ## 1. What has been validated so far
 
 The Commodore Clipper work provides a **validated graph/evidence reference
-case**, not yet a formal validation of GPT-OSS 20B or Ollama Llama 3.3 70B.
+case**, not yet a formal validation of GPT-OSS 20B or Llama 3.3 70B.
 
 The reference work established:
 
@@ -18,7 +18,7 @@ new generic models perform correctly.
 
 ## 2. What the Class D PoC will validate
 
-GPT-OSS 20B and Ollama Llama 3.3 70B will be evaluated independently on identical
+GPT-OSS 20B and Llama 3.3 70B will be evaluated independently on identical
 evidence/question sets.
 
 Validation dimensions:
@@ -265,11 +265,12 @@ Current state:
 
 - graph/evidence methodology: validated on controlled Commodore Clipper case;
 - generic extraction pipeline: implemented, not yet formally benchmarked;
-- GPT-OSS 20B Class D performance: not yet benchmarked;
-- Ollama Llama 3.3 70B Class D performance: not yet benchmarked;
+- GPT-OSS 20B Class D model service: connected; formal real-case performance benchmark pending;
+- Llama 3.3 70B Class D model service: connected; formal real-case performance benchmark pending;
+- first synthetic same-input dual-model validation cycle: completed and persisted;
 - privacy validator: implemented at basic deterministic level, not yet
   sensitivity/recall benchmarked;
-- dual-model comparison: implemented in code, pending deployed-endpoint test;
+- dual-model comparison: connectivity and persistence path verified; formal locked benchmark pending;
 - human-feedback learning loop: designed, not yet activated for model training.
 
 The project must keep this distinction visible in the App/documentation.
@@ -284,7 +285,7 @@ For every benchmark item:
 
 1. freeze the source evidence and investigation question;
 2. freeze the extraction/passage version;
-3. run GPT-OSS 20B and Ollama Llama 3.3 70B independently with the same evidence and
+3. run GPT-OSS 20B and Llama 3.3 70B independently with the same evidence and
    prompt/pipeline version;
 4. preserve each raw model result and generated graph separately;
 5. compare each model against the human-reviewed benchmark graph;
@@ -399,7 +400,7 @@ evidence in another investigation.
 
 ## 9. Recommended PoC validation protocol
 
-For each benchmark question, run GPT-OSS 20B and Ollama Llama 3.3 70B against
+For each benchmark question, run GPT-OSS 20B and Llama 3.3 70B against
 the **same frozen passages and same prompt/pipeline version**.
 
 Record independently for each model:
@@ -442,3 +443,31 @@ For formal comparison:
 
 The current project therefore validates **methodology and implementation**
 before it validates model quality.
+
+
+## 12. First persisted dual-model validation milestone
+
+On 21 September 2026 the PoC completed its first end-to-end synthetic dual-model
+validation cycle using GPT-OSS 20B and Llama 3.3 70B through Databricks Unity
+Gateway. Both models received the same synthetic source text and question and
+returned the expected contributing factor, `water ingress`.
+
+The result was persisted in:
+
+`bdw_analysis_prod.kg_poc.ikf_model_benchmark_results`
+
+with benchmark identifier:
+
+`ikf_benchmark_001`
+
+and human validation state:
+
+`validated`
+
+This is a connectivity/persistence milestone only and must not be interpreted
+as model-quality evidence. The first meaningful performance benchmark starts
+with frozen real investigation passages, versioned prompts, independent model
+outputs and explicit human review.
+
+Implementation details are recorded in
+`docs/21_class_d_model_services_and_first_benchmark.md`.
