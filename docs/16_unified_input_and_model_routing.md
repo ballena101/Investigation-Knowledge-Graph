@@ -35,8 +35,8 @@ HUMAN REVIEW
 
 | Class | Model path | Normal use |
 |---|---|---|
-| A | `system.ai.gpt-5-6-sol` | Public / technical |
-| B | `system.ai.gpt-5-6-sol` | Published investigation material |
+| A | `system.ai.meta-llama-3-3-70b-instruct` | Public / technical |
+| B | `system.ai.meta-llama-3-3-70b-instruct` | Published investigation material |
 | C | `system.ai.gpt-oss-120b` | Internal/restricted analytical material |
 
 A/B use GPT-5.6 Sol through Databricks.
@@ -216,7 +216,7 @@ either Class D model is validated.
 The generic A/B/C analysis notebook now distinguishes Databricks-provided
 `system.ai` model services from dedicated Model Serving endpoints.
 
-- `system.ai.*` services, including `system.ai.gpt-5-6-sol`, are invoked
+- `system.ai.*` services, including `system.ai.meta-llama-3-3-70b-instruct`, are invoked
   through Databricks `ai_query` / Unity Gateway semantics.
 - Dedicated/custom endpoint identifiers continue to use the Databricks
   Serving Endpoints API.
@@ -226,3 +226,20 @@ The generic A/B/C analysis notebook now distinguishes Databricks-provided
 
 This correction preserves the intended policy routing while aligning each model
 identifier with its supported Databricks invocation path.
+
+
+## Workspace-validated model routing — 2026-09-21
+
+Runtime validation in the active Azure Databricks workspace established that
+`system.ai.meta-llama-3-3-70b-instruct`, `system.ai.gpt-oss-120b`, and
+`system.ai.gpt-oss-20b` are reachable through the Unity Gateway model API,
+while `system.ai.gpt-5-6-sol` is not available in this workspace.
+
+For the current PoC:
+- Classes A/B use `system.ai.meta-llama-3-3-70b-instruct`.
+- Class C remains on `system.ai.gpt-oss-120b`.
+- Class D retains the dedicated controlled model routes.
+- `system.ai.*` services are invoked through the Unity Gateway OpenAI-compatible
+  API; dedicated custom endpoints continue to use their endpoint-specific route.
+
+This is a workspace-availability decision, not a quality ranking of models.
