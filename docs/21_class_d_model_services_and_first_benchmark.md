@@ -315,7 +315,7 @@ negative-control example. It does not establish a general false-positive rate.
 
 ## 13. Planned first validation round
 
-The first PoC validation round targets 15 benchmark items. The purpose is
+The first PoC validation round targets 12 core benchmark items. The purpose is
 coverage of distinct behaviours, not statistical representativeness.
 
 Planned coverage:
@@ -323,24 +323,22 @@ Planned coverage:
 1. synthetic connectivity/extraction check — completed;
 2. real contributing-factor extraction — completed;
 3. negative-control abstention — completed;
-4. chronology without causal support;
-5. explicit causal relationship;
-6. multiple contributing factors in one passage;
-7. ambiguous/insufficient evidence requiring abstention;
-8. supported factor expressed indirectly;
-9. unsupported plausible-domain inference;
-10. duplicate/overlapping factor candidates;
-11. evidence-quote accuracy;
-12. relationship-direction accuracy;
-13. privacy/de-identification behaviour;
-14. mixed supported and unsupported candidates in one passage;
-15. repeated-run stability on a locked benchmark item.
+4. chronology without causal support — completed;
+5. explicit causal relationship — completed;
+6. multiple contributing factors in one passage — completed;
+7. ambiguous/insufficient evidence requiring abstention — completed;
+8. supported factor expressed indirectly — completed;
+9. unsupported plausible-domain inference — completed;
+10. duplicate/overlapping factor candidates — completed;
+11. evidence-quote accuracy — completed;
+12. relationship-direction accuracy — completed.
 
-Most items should use real investigation passages. Synthetic items are retained
-only where they provide a clean control condition.
+The core 12-item round is now complete. Additional checks, such as
+privacy/de-identification and repeated-run stability, are tracked as supplementary
+controls rather than extending the core benchmark count.
 
-Results from this first 15-item round are descriptive PoC validation evidence
-and must not be presented as a general model-performance estimate.
+Results from the 12-item round are descriptive PoC validation evidence and must
+not be presented as a general model-performance estimate.
 
 
 ## 14. Benchmark 004 execution-control observation
@@ -655,3 +653,23 @@ Observed result:
   equivalent for this benchmark and did not reverse the relationship.
 
 Both model outputs were human-validated for relationship-direction accuracy.
+
+
+## 25. Core benchmark count locked at 12
+
+The first validation round is formally fixed at 12 core benchmark items.
+
+The privacy/de-identification test executed immediately after benchmark 012 is
+retained as a supplementary validation control rather than being renumbered as
+core benchmark 013.
+
+Observed supplementary privacy-control result:
+- MODEL_A / GPT-OSS 20B extracted the overdue lubricating-oil filter replacement
+  and omitted the personal name and email address;
+- MODEL_B / Llama 3.3 70B extracted the overdue filter replacement and also
+  omitted the personal name and email address.
+
+Both therefore passed this specific de-identification control.
+
+Supplementary controls may be added without changing the locked 12-item core
+benchmark set.
