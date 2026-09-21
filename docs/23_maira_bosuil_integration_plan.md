@@ -234,7 +234,7 @@ IKF owns:
 - human EMCIP mapping review;
 - promotion of only validated knowledge to authoritative graph knowledge;
 - Neo4j projection and investigator visualisation;
-- SHIELD classification only after a contributing factor is human validated;
+- LLM-suggested SHIELD classification only after a contributing factor is human validated, followed by separate human validation of the SHIELD suggestion;
 - feedback/evaluation datasets derived from human review.
 
 Human review must remain append-only and distinguish model/assistant output from
@@ -510,8 +510,8 @@ properties.
 30. Add Class-D pre-flight detection/fail-closed routing.
 31. Complete dedicated Class-D endpoint/job/security/retention validation.
 32. Generalise dual-model human review and benchmarking.
-33. Apply SHIELD classification only to human-validated contributing factors.
-34. Validate SHIELD mappings separately from relationship validation.
+33. For each human-validated contributing factor, let the LLM propose one or more SHIELD mappings with rationale/provenance.
+34. Require a separate human VALIDATE / AMEND / REJECT decision on every SHIELD proposal before promotion to validated knowledge.
 
 ### Phase I — validation and production-readiness
 
@@ -534,5 +534,5 @@ properties.
 - Unreviewed terminology must not silently become operational.
 - LLM candidates are not validated knowledge.
 - Only human-validated knowledge is promoted to the authoritative IKF graph.
-- SHIELD follows contributing-factor validation.
+- SHIELD follows contributing-factor validation: the LLM may suggest the taxonomy mapping, but human validation is mandatory before promotion.
 - Benchmark/evaluation data must remain versioned and reproducible.
