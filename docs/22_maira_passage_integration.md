@@ -84,3 +84,26 @@ passages and compare the results with the existing IKF passage run. Measure:
 Only then should the document branch of notebook 15 be replaced. Direct text is
 kept as a separate IKF ingress until its chunking calls the reusable MAIRA
 component.
+
+## Verified Databricks checkpoint
+
+Date: 2026-09-21
+
+The cross-schema bridge was executed with controlled analysis
+`ikf_maira_test_001` using the MAIRA Wight Sky investigation document
+(`doc_6f9e9b308bc074427763a014`).
+
+Observed result:
+
+```text
+Documents validated: 1
+Passages validated: 6
+Temporary view: maira_ikf_passage_bridge
+PASS — MAIRA_IKF_PASSAGE_V0.1
+```
+
+The unqualified `PASS` confirms that Databricks imported the actual MAIRA
+contract package; the IKF compatibility fallback was not used. This validates
+document matching by SHA-256, passage identity, exact text-hash integrity and
+the read-only cross-project contract for this controlled case. It does not yet
+validate retrieval quality or LLM interpretation performance.
