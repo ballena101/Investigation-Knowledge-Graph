@@ -288,3 +288,26 @@ Benchmark 002 assignments:
 | MODEL_B | Modification of boiler settings | AMENDED | OVER_GENERALISATION |
 
 These labels are descriptive validation categories, not model-quality rankings.
+
+
+## 12. Benchmark 003 negative-control result
+
+A synthetic negative-control benchmark was executed using a passage that
+contained ordinary vessel/port events but no evidence supporting a contributing
+factor.
+
+Expected response:
+
+`NO_SUPPORTED_CONTRIBUTING_FACTOR`
+
+Observed result:
+
+- MODEL_A / GPT-OSS 20B: `NO_SUPPORTED_CONTRIBUTING_FACTOR`;
+- MODEL_B / Llama 3.3 70B: `NO_SUPPORTED_CONTRIBUTING_FACTOR`.
+
+Both model outputs were therefore human-validated for this benchmark item.
+
+This benchmark measures abstention/restraint rather than extraction ability. It
+provides evidence that, under prompt version `cf_extraction_v1`, both model
+routes can refrain from inventing a contributing factor on this specific
+negative-control example. It does not establish a general false-positive rate.
