@@ -25,7 +25,7 @@ dbutils.widgets.text(
 
 dbutils.widgets.text(
     "model_service",
-    "system.ai.gpt-5-6-sol",
+    "system.ai.meta-llama-3-3-70b-instruct",
     "Databricks model service / endpoint",
 )
 
