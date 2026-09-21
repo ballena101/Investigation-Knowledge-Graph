@@ -163,4 +163,4 @@ Immediate priorities are:
 4. consume the governed MAIRA EMCIP registry for mapping;
 5. add versioned Directive/IMO reference-context retrieval;
 6. add Class-D pre-flight fail-closed detection;
-7. apply SHIELD only after human validation of contributing factors.
+7. after human validation of a contributing factor, let the LLM suggest SHIELD classification and require a separate human validation of that SHIELD mapping.
