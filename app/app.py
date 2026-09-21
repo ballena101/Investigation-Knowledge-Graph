@@ -145,15 +145,15 @@ st.markdown("### AI models, confidentiality and Article 9 suitability")
 model_disclosure_rows = [
     {
         "Information class": "A — Public / technical",
-        "Model": "OpenAI GPT-5.6 Sol",
-        "Serving route": "Databricks system.ai.gpt-5-6-sol",
+        "Model": "OpenAI Meta Llama 3.3 70B Instruct",
+        "Serving route": "Databricks system.ai.meta-llama-3-3-70b-instruct",
         "Confidentiality level": "Public / non-sensitive",
         "Article 9 / Class D": "Not approved for protected Class D evidence",
     },
     {
         "Information class": "B — Published investigation material",
-        "Model": "OpenAI GPT-5.6 Sol",
-        "Serving route": "Databricks system.ai.gpt-5-6-sol",
+        "Model": "OpenAI Meta Llama 3.3 70B Instruct",
+        "Serving route": "Databricks system.ai.meta-llama-3-3-70b-instruct",
         "Confidentiality level": "Published / non-sensitive",
         "Article 9 / Class D": "Not approved for protected Class D evidence",
     },
@@ -248,8 +248,8 @@ controls and the optional dual-model comparison; it does not replace A/B/C.
 
 The App selects the model path from the declared information class:
 
-- **A / B:** OpenAI GPT-5.6 Sol through Databricks
-  `system.ai.gpt-5-6-sol`.
+- **A / B:** OpenAI Meta Llama 3.3 70B Instruct through Databricks
+  `system.ai.meta-llama-3-3-70b-instruct`.
 - **C:** OpenAI GPT-OSS 120B hosted by Databricks through
   `system.ai.gpt-oss-120b`.
 - **D:** dedicated GPT-OSS 20B and Meta Llama 3.3 70B Databricks model services. The investigator chooses GPT-OSS 20B,
@@ -288,7 +288,7 @@ train models or improve Databricks services. Foundation Model APIs may,
 however, temporarily process/store inputs and outputs for abuse/safety
 purposes, and partner-model terms may add further requirements.
 
-For **OpenAI GPT-5.6 Sol**, Databricks lists the applicable OpenAI **Usage
+For **OpenAI Meta Llama 3.3 70B Instruct**, Databricks lists the applicable OpenAI **Usage
 Policy** and **high-risk use-case mitigation requirements** in addition to the
 customer's Databricks agreement.
 
