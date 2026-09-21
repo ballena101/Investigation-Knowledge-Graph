@@ -825,3 +825,31 @@ This supports the intended boundary:
 
 IKG should not replace this with an independent keyword or embedding retriever
 unless a future validated requirement explicitly calls for one.
+
+
+## 29. Missing MAIRA CONTRIBUTED_TO detector restored
+
+During IKG-to-MAIRA integration, Q003 was found to have a persisted governed
+query specification and controlled concept resolution but no rows in
+`maira.query_relationship_assessments`.
+
+Repository inspection showed that MAIRA had a reusable deterministic
+`FOLLOWED_BY` detector but no committed `CONTRIBUTED_TO` module.
+
+A new MAIRA source module was therefore added:
+
+`src/maira/relationships/contributed_to.py`
+
+and exported through:
+
+`src/maira/relationships/__init__.py`
+
+The detector is intentionally strict:
+- subject/object/context terms come from the governed query specification;
+- positive support requires explicit contributory wording;
+- co-occurrence, chronology and plausible domain inference are insufficient;
+- relationship direction is preserved;
+- unsupported text returns `UNRESOLVED`.
+
+This logic remains in MAIRA, not IKG. IKG consumes the resulting governed
+evidence set for dual-model interpretation and human review.
