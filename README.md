@@ -46,7 +46,7 @@ The current PoC demonstrates:
 - documents or encrypted direct text as source input;
 - an investigator-defined question/objective;
 - information classification A/B/C/D;
-- Class D selection of GPT-OSS 20B, Ollama-hosted Llama 3.3 70B, or both;
+- Class D selection of GPT-OSS 20B, Llama 3.3 70B Instruct, or both through Databricks Unity Gateway;
 - one evidence extraction followed by independent model runs;
 - side-by-side model outputs when both are selected;
 - evidence-grounded graph generation;
@@ -142,6 +142,7 @@ docs/
     18_model_validation_and_feedback.md
     19_current_poc_functional_specification.md
     20_class_d_neo4j_assurance.md
+    21_class_d_model_services_and_first_benchmark.md
 
 notebooks/
     01_neo4j_connection_test.py
@@ -178,13 +179,13 @@ Core stack:
 
 ## Status
 
-Current status: **Class D dual-model PoC implemented in repository; endpoint/job deployment and formal model benchmarking remain to be completed.**
+Current status: **Class D dual-model PoC implemented; GPT-OSS 20B and Llama 3.3 70B PoC model services are connected through Databricks Unity Gateway, and the first persisted synthetic dual-model validation cycle has been completed. Formal investigation-report benchmarking remains to be executed.**
 
 Immediate next steps:
 
-1. deploy/approve the dedicated GPT-OSS 20B endpoint and controlled Ollama Llama 3.3 70B service;
-2. configure the Class D dual-model Lakeflow Job and App resources;
-3. run end-to-end comparison tests;
+1. extend the benchmark-results schema for reproducible real-case validation;
+2. run the first locked investigation-passage benchmark through GPT-OSS 20B and Llama 3.3 70B independently;
+3. configure the Class D dual-model Lakeflow Job and App resources;
 4. generalise human review to model-run graphs;
 5. execute the validation framework in `docs/18_model_validation_and_feedback.md`.
 
