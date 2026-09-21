@@ -214,3 +214,34 @@ Do not commit to GitHub:
 
 The repository documents the method and schemas; governed investigation data
 remain in Databricks.
+
+
+## 9. Candidate-level human-feedback table
+
+After benchmark 002, answer-level validation was found to be too coarse because a
+single model response can contain multiple contributing-factor candidates with
+different review outcomes.
+
+The PoC therefore adds a candidate-level feedback table:
+
+`bdw_analysis_prod.kg_poc.ikf_model_benchmark_candidates`
+
+Recommended schema:
+
+| Column | Type | Purpose |
+|---|---|---|
+| benchmark_id | STRING | Parent benchmark item |
+| model_role | STRING | Model A or Model B |
+| model_id | STRING | Exact model identifier |
+| candidate_id | STRING | Stable candidate identifier within the benchmark/model |
+| candidate_concept | STRING | Concise model-proposed concept |
+| evidence_quote | STRING | Source wording cited by the model |
+| review_decision | STRING | VALIDATED / REJECTED / AMENDED |
+| amended_concept | STRING | Human-amended concept where applicable |
+| reviewer_comment | STRING | Reason for the decision |
+| prompt_version | STRING | Prompt version used |
+| created_at | TIMESTAMP | Record creation timestamp |
+
+This table is the preferred unit for model-quality metrics because it allows
+mixed decisions within one response and preserves the original model proposal
+without overwriting it.
