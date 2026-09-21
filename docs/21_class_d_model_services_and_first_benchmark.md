@@ -366,3 +366,26 @@ unchanged.
 
 Execution/configuration failures must remain analytically separate from
 semantic validation failures.
+
+
+## 15. Benchmark 005 explicit contributory relationship
+
+Benchmark 005 used a synthetic control in which the source explicitly stated
+that a blocked cooling-water inlet contributed to engine overheating.
+
+Human reference:
+
+`blocked cooling-water inlet`
+
+Observed outputs:
+
+- MODEL_A / GPT-OSS 20B identified the blocked cooling-water inlet and cited the
+  supporting wording;
+- MODEL_B / Llama 3.3 70B identified the same factor and explicitly linked it to
+  the source phrase `contributed to the overheating of the engine`.
+
+Both outputs were human-validated for this benchmark item.
+
+This benchmark complements benchmark 004: benchmark 004 tests restraint when
+only chronology is present, while benchmark 005 tests recognition when a
+contributory relationship is explicitly stated.
