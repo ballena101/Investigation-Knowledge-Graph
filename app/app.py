@@ -5696,79 +5696,15 @@ with tab_new_analysis:
             "Create an analysis to follow the four processing stages."
         )
 
-    st.divider()
-    with st.expander(
-        "Recent analyses",
-        expanded=False,
-    ):
-        try:
-            recent_analyses = (
-                load_recent_analyses()
-            )
-            if recent_analyses:
-                for analysis in recent_analyses:
-                    source_label = (
-                        "text"
-                        if analysis.get(
-                            "input_mode"
-                        )
-                        == "DIRECT_TEXT"
-                        else (
-                            str(
-                                analysis[
-                                    "document_count"
-                                ]
-                            )
-                            + " document(s)"
-                        )
-                    )
-                    class_label = (
-                        analysis.get(
-                            "information_class"
-                        )
-                        or "unclassified"
-                    )
-                    st.write(
-                        str(
-                            analysis[
-                                "analysis_title"
-                            ]
-                        )
-                        + " · "
-                        + source_label
-                        + " · Class "
-                        + class_label
-                        + " · "
-                        + str(
-                            analysis[
-                                "status"
-                            ]
-                        )
-                    )
-                    st.caption(
-                        analysis[
-                            "analysis_id"
-                        ]
-                    )
-            else:
-                st.caption(
-                    "No analysis groups have been created yet."
-                )
-        except Exception as exc:
-            st.caption(
-                "Recent analyses could not be loaded."
-            )
-            st.exception(
-                exc
-            )
 
 
     st.divider()
-    st.markdown("### Analysis results")
+    st.markdown("### Analysis summary")
     st.caption(
-        "See what the analysis identified before asking any questions. "
-        "These are model-derived analytical outputs with source provenance; "
-        "relationships remain candidates until human review."
+        "Compact overview of what the completed analysis produced. "
+        "Use Findings & Evidence for item-level inspection and source pages, "
+        "Knowledge Graph for relationship exploration, and Review & Validate "
+        "for human decisions."
     )
 
     try:
@@ -5917,211 +5853,6 @@ with tab_new_analysis:
                 len(recommendation_nodes),
             )
 
-            result_category = st.radio(
-                "Show results",
-                options=[
-                    "All",
-                    "Events",
-                    "Contributing factors",
-                    "Findings",
-                    "Safety issues",
-                    "Recommendations",
-                    "Relationships",
-                ],
-                horizontal=True,
-                key=(
-                    "analyse_result_category_"
-                    + result_analysis_id
-                ),
-            )
-
-            try:
-                result_relationship_reviews = (
-                    load_latest_relationship_reviews(
-                        result_analysis_id
-                    )
-                )
-            except Exception:
-                result_relationship_reviews = {}
-
-            node_kind_by_id = {
-                node["node_id"]: (
-                    node.get("node_kind")
-                    or "Other"
-                )
-                for node in result_nodes
-            }
-
-            validated_contributing_factor_ids = set()
-
-            for edge in result_edges:
-                if (
-                    edge.get("relationship")
-                    != "CONTRIBUTED_TO"
-                    or node_kind_by_id.get(
-                        edge.get("source_id")
-                    )
-                    != "ContributingFactor"
-                ):
-                    continue
-
-                review = (
-                    result_relationship_reviews.get(
-                        edge.get("edge_id")
-                    )
-                )
-
-                if not review:
-                    continue
-
-                if (
-                    review.get("decision")
-                    == "VALIDATED"
-                ):
-                    validated_contributing_factor_ids.add(
-                        edge.get("source_id")
-                    )
-                elif (
-                    review.get("decision")
-                    == "AMENDED"
-                    and review.get(
-                        "amended_relationship"
-                    )
-                    == "CONTRIBUTED_TO"
-                ):
-                    validated_contributing_factor_ids.add(
-                        edge.get("source_id")
-                    )
-
-            def render_result_group(
-                title,
-                items,
-                empty_text,
-            ):
-                st.markdown(
-                    "#### " + title
-                )
-                if not items:
-                    st.caption(
-                        empty_text
-                    )
-                    return
-
-                for item in items:
-                    with st.expander(
-                        item.get("label")
-                        or "Unnamed item",
-                        expanded=False,
-                    ):
-                        item_left, item_right = (
-                            st.columns(
-                                [1.25, 1.0]
-                            )
-                        )
-
-                        with item_left:
-                            if (
-                                item.get(
-                                    "node_kind"
-                                )
-                                == "ContributingFactor"
-                                and item.get(
-                                    "node_id"
-                                )
-                                in (
-                                    validated_contributing_factor_ids
-                                )
-                            ):
-                                st.success(
-                                    "Human validated: contributing "
-                                    "relationship confirmed."
-                                )
-                            else:
-                                st.caption(
-                                    "Status: AI identified / candidate"
-                                )
-
-                            st.write(
-                                item.get(
-                                    "description"
-                                )
-                                or "No description was published."
-                            )
-
-                        with item_right:
-                            references = (
-                                item.get(
-                                    "evidence_references"
-                                )
-                                or []
-                            )
-
-                            st.markdown(
-                                "**Investigation evidence**"
-                            )
-
-                            if references:
-                                for reference in references:
-                                    st.write(
-                                        "• "
-                                        + str(reference)
-                                    )
-                            else:
-                                st.caption(
-                                    "No page-level citation is available "
-                                    "for this item."
-                                )
-
-            if result_category in {
-                "All",
-                "Events",
-            }:
-                render_result_group(
-                    "Events / casualty sequence",
-                    event_nodes,
-                    "No Event nodes were identified.",
-                )
-
-            if result_category in {
-                "All",
-                "Contributing factors",
-            }:
-                render_result_group(
-                    "Contributing factors",
-                    contributing_nodes,
-                    "No ContributingFactor nodes were identified.",
-                )
-
-            if result_category in {
-                "All",
-                "Findings",
-            }:
-                render_result_group(
-                    "Findings",
-                    finding_nodes,
-                    "No Finding nodes were identified.",
-                )
-
-            if result_category in {
-                "All",
-                "Safety issues",
-            }:
-                render_result_group(
-                    "Safety issues",
-                    safety_issue_nodes,
-                    "No SafetyIssue nodes were identified.",
-                )
-
-            if result_category in {
-                "All",
-                "Recommendations",
-            }:
-                render_result_group(
-                    "Safety recommendations",
-                    recommendation_nodes,
-                    "No Recommendation nodes were identified.",
-                )
-
             analytical_relationships = [
                 edge
                 for edge in result_edges
@@ -6139,47 +5870,25 @@ with tab_new_analysis:
                 )
             ]
 
-            if result_category in {
-                "All",
-                "Relationships",
-            }:
-                st.markdown(
-                    "#### Analytical relationships"
-                    )
-                st.caption(
-                    "These relationships describe sequence/support/contribution "
-                    "as extracted from the report. They are not authoritative "
-                    "until reviewed where human validation is required."
-                )
-
-                if analytical_relationships:
-                    for edge in analytical_relationships:
-                        st.write(
-                            "• "
-                            + edge["source_label"]
-                            + " — "
-                            + edge["relationship"]
-                            + " → "
-                            + edge["target_label"]
-                        )
-                        for reference in (
-                            edge.get(
-                                "evidence_references"
-                            )
-                            or []
-                        ):
-                            st.caption(
-                                str(reference)
-                            )
-                else:
-                    st.caption(
-                        "No evidence-derived analytical relationships were published."
-                    )
+            summary_second_row = st.columns(3)
+            summary_second_row[0].metric(
+                "Analytical relationships",
+                len(analytical_relationships),
+            )
+            summary_second_row[1].metric(
+                "Graph concepts",
+                len(result_nodes),
+            )
+            summary_second_row[2].metric(
+                "Graph relationships",
+                len(result_edges),
+            )
 
             st.info(
-                "Use Findings & Knowledge for detailed evidence browsing and "
-                "the graph. Use Review & Validate for human decisions. Use "
-                "Ask / Compare LLMs only when you want to pose a question."
+                "For the detailed content behind these counts, open "
+                "Findings & Evidence. To explore how the concepts connect, "
+                "open Knowledge Graph. Human validation remains in "
+                "Review & Validate."
             )
     else:
         st.info(
@@ -7006,7 +6715,7 @@ with tab_findings:
                 )
 
             selected_evidence_index = st.selectbox(
-                "Answer / finding / relationship",
+                "Finding / event / concept / relationship",
                 options=list(range(len(evidence_items))),
                 format_func=lambda index: evidence_items[index]["label"],
                 key="knowledge_evidence_selector",
