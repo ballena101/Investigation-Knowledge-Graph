@@ -980,3 +980,40 @@ model.
 
 If deterministic lexical retrieval finds no matching passage, the system
 returns a deterministic insufficient-evidence result and does not call the LLM.
+
+
+## 2G. Generic EMCIP mapping proposal and review
+
+EMCIP mapping is a separate on-demand capability after a model graph exists.
+
+Workflow:
+
+```text
+AnalysisGroup + ModelRun graph
+        ↓
+MAIRA EMCIP operational registry
+        ↓
+deterministic shortlist
+        ↓
+LLM chooses shortlist candidate or NO_MAPPING
+        ↓
+EMCIPMappingProposal
+        ↓
+human VALIDATED / REJECTED / AMENDED
+```
+
+Controls:
+- IKF does not duplicate the EMCIP registry.
+- The model cannot emit a code outside the shortlist.
+- Proposal generation is model-run scoped.
+- Proposals are not written onto the KGNode as authoritative mappings.
+- Human decisions are append-only.
+- An AMENDED review must use another candidate from the same governed shortlist.
+- The review UI exposes source report/page evidence and the cited PDF page.
+- Class-D dual-model proposals remain separated by model_run_id.
+
+Source:
+- notebook 40 — proposal generation;
+- notebook 41 — on-demand Job setup;
+- notebook 42 — read-only proposal/review validation;
+- App resource: `EMCIP_MAPPING_JOB_ID <- emcip_mapping_job`.
