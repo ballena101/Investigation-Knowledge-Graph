@@ -536,3 +536,23 @@ properties.
 - Only human-validated knowledge is promoted to the authoritative IKF graph.
 - SHIELD follows contributing-factor validation: the LLM may suggest the taxonomy mapping, but human validation is mandatory before promotion.
 - Benchmark/evaluation data must remain versioned and reproducible.
+
+
+## 12. News & Alerts dashboard integration checkpoint — 2026-09-22
+
+The existing Databricks AI/BI country-news dashboard is integrated into the IKF
+application as a separate `News & Alerts` capability.
+
+Implementation rule:
+
+- the dashboard remains owned and maintained as a Databricks dashboard;
+- IKF embeds the published dashboard rather than recreating its visualisations;
+- the App reads the embed URL from `NEWS_DASHBOARD_EMBED_URL`;
+- dashboard viewing remains separate from validated investigation knowledge;
+- access continues to follow Databricks dashboard sharing and underlying data
+  permissions;
+- governed LLM access to the underlying news tables is a later capability and
+  is deliberately not coupled to the first visual-integration milestone.
+
+This preserves the previously agreed product separation: news/alerts are an
+IKF capability, while MAIRA remains the investigation-evidence layer.
