@@ -62,17 +62,34 @@ with driver.session() as session:
             """
             MATCH (a:AnalysisGroup)
             WHERE
-                coalesce(a.retention_policy, '') = 'TRANSIENT_72H'
-                AND coalesce(a.retain_for_validation, false) = false
-                AND a.derived_expires_at IS NOT NULL
-                AND a.derived_expires_at <= datetime()
+                coalesce(a.retain_for_validation, false) = false
+                AND coalesce(
+                    a.content_expires_at,
+                    a.derived_expires_at
+                ) IS NOT NULL
+                AND coalesce(
+                    a.content_expires_at,
+                    a.derived_expires_at
+                ) <= datetime()
                 AND a.status IN ['COMPLETED', 'FAILED']
-                AND coalesce(a.retention_purge_status, 'ACTIVE') <> 'PURGED'
+                AND coalesce(
+                    a.content_purge_status,
+                    a.retention_purge_status,
+                    'ACTIVE'
+                ) <> 'PURGED'
             RETURN
                 a.analysis_id AS analysis_id,
                 a.status AS status,
-                toString(a.derived_expires_at) AS derived_expires_at
-            ORDER BY a.derived_expires_at
+                toString(
+                    coalesce(
+                        a.content_expires_at,
+                        a.derived_expires_at
+                    )
+                ) AS derived_expires_at
+            ORDER BY coalesce(
+                a.content_expires_at,
+                a.derived_expires_at
+            )
             """
         )
     ]
@@ -144,6 +161,29 @@ for item in expired:
         session.run(
             """
             MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+            OPTIONAL MATCH (a)-[:HAS_QUESTION_RUN]->(q:QuestionRun)
+            OPTIONAL MATCH (q)-[:HAS_MODEL_ANSWER]->(qm:QuestionModelRun)
+            REMOVE
+                q.question_text,
+                q.encrypted_question_text,
+                q.processing_error,
+                qm.answer,
+                qm.passage_ids,
+                qm.evidence_references,
+                qm.evidence_locations,
+                qm.limitations,
+                qm.processing_error
+            SET
+                q.content_purge_status = 'PURGED',
+                q.content_purged_at = datetime(),
+                qm.derived_content_purged_at = datetime()
+            """,
+            analysis_id=analysis_id,
+        ).consume()
+
+        session.run(
+            """
+            MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
             REMOVE
                 a.analysis_summary,
                 a.key_findings,
@@ -151,6 +191,7 @@ for item in expired:
                 a.source_conflicts,
                 a.processing_error
             SET
+                a.content_purge_status = 'PURGED',
                 a.retention_purge_status = 'PURGED',
                 a.derived_content_purged = true,
                 a.derived_purged_at = datetime(),
