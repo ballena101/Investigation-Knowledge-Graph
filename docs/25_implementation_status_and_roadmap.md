@@ -76,6 +76,9 @@ and human-validated knowledge distinct.
   canonical entry.
 - MAIRA-owned source files are exempt from IKF source-retention semantics.
 - User-facing selector identifies repository and MAIRA document role.
+- The underlying catalogue can contain both owners, but the analysis selector
+  is now classification-scoped: Class B exposes MAIRA only; A/C/D expose IKF
+  only.
 
 ### Explicit question answering and evidence traceability
 
@@ -162,10 +165,15 @@ the normal App workflow.
 ### P1 — searchable document selector
 
 Add search/filter to Available documents so the investigator can quickly find
-reports by title, vessel, filename and MAIRA role/repository.
+the relevant source within the **active classification-specific catalogue**:
 
-Keep the catalogue source as MAIRA + IKF; do not create another index of source
-ownership.
+- Class B: search MAIRA investigation material by report title, vessel,
+  filename and document role;
+- Classes A/C/D: search the IKF-managed library by filename/title and available
+  metadata.
+
+Do not search across both repositories after classification has selected the
+source domain, and do not create another source-ownership index.
 
 ### P2 — governed MAIRA query/retrieval in normal App analyses
 
