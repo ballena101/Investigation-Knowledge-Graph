@@ -7772,17 +7772,282 @@ with tab_graph:
 
     st.markdown("### Similar cases")
     similar_left, similar_right = st.columns(2)
+
     with similar_left:
         st.markdown("**MAIRA investigation reports**")
-        st.info(
-            "Coming soon: retrieve similar cases from the MAIRA PDF repository "
-            "and list each report with a short evidence-grounded description."
+        st.caption(
+            "Deterministic lexical retrieval from processed case concepts. "
+            "No embedding or LLM similarity score is used."
         )
+
+        if (
+            knowledge_analyses
+            and knowledge_meta.get("status")
+            == "COMPLETED"
+        ):
+            if st.button(
+                "Find similar MAIRA cases",
+                key=(
+                    "find_similar_cases_"
+                    + knowledge_analysis_id
+                ),
+                disabled=(
+                    not SIMILAR_CASES_JOB_ID
+                ),
+            ):
+                try:
+                    similar_job_run_id = (
+                        trigger_similar_cases_job(
+                            knowledge_analysis_id
+                        )
+                    )
+                    load_similar_case_candidates.clear()
+                    st.success(
+                        "Similar-case retrieval queued."
+                    )
+                    st.caption(
+                        "Databricks run: "
+                        + similar_job_run_id
+                    )
+                except Exception as exc:
+                    st.error(
+                        "Similar-case retrieval could not be queued."
+                    )
+                    st.exception(exc)
+
+            if not SIMILAR_CASES_JOB_ID:
+                st.caption(
+                    "Similar MAIRA Cases Job is not attached to this "
+                    "App deployment yet."
+                )
+
+            similar_candidates = (
+                load_similar_case_candidates(
+                    knowledge_analysis_id
+                )
+            )
+
+            if similar_candidates:
+                global_source_by_id = {
+                    source[
+                        "document_id"
+                    ]: source
+                    for source in load_source_documents()
+                }
+
+                st.caption(
+                    "Retrieval: "
+                    + (
+                        similar_candidates[0].get(
+                            "retrieval_method"
+                        )
+                        or "deterministic"
+                    )
+                )
+
+                for candidate in similar_candidates:
+                    candidate_title = (
+                        candidate.get(
+                            "report_title"
+                        )
+                        or candidate.get(
+                            "vessel_name"
+                        )
+                        or candidate.get(
+                            "source_filename"
+                        )
+                        or candidate[
+                            "report_package_id"
+                        ]
+                    )
+
+                    with st.expander(
+                        (
+                            f"#{candidate.get('rank') or '—'} · "
+                            + candidate_title
+                        ),
+                        expanded=(
+                            candidate.get(
+                                "rank"
+                            )
+                            == 1
+                        ),
+                    ):
+                        matched_terms = (
+                            candidate.get(
+                                "matched_query_terms"
+                            )
+                            or []
+                        )
+
+                        if matched_terms:
+                            st.markdown(
+                                "**Why this matched**"
+                            )
+                            st.write(
+                                ", ".join(
+                                    matched_terms
+                                )
+                            )
+
+                        if candidate.get(
+                            "publication_date"
+                        ):
+                            st.caption(
+                                "Publication: "
+                                + str(
+                                    candidate[
+                                        "publication_date"
+                                    ]
+                                )
+                            )
+
+                        references = (
+                            candidate.get(
+                                "evidence_references"
+                            )
+                            or []
+                        )
+
+                        if references:
+                            st.markdown(
+                                "**Matched source pages**"
+                            )
+                            for reference in references:
+                                st.write(
+                                    f"• {reference}"
+                                )
+
+                        locations = [
+                            parsed
+                            for parsed in (
+                                parse_evidence_location(
+                                    value
+                                )
+                                for value in (
+                                    candidate.get(
+                                        "evidence_locations"
+                                    )
+                                    or []
+                                )
+                            )
+                            if parsed is not None
+                        ]
+
+                        if locations:
+                            similar_location_index = (
+                                st.selectbox(
+                                    "Matched page",
+                                    options=list(
+                                        range(
+                                            len(
+                                                locations
+                                            )
+                                        )
+                                    ),
+                                    format_func=lambda index: (
+                                        format_evidence_location(
+                                            locations[
+                                                index
+                                            ],
+                                            global_source_by_id.get(
+                                                locations[
+                                                    index
+                                                ][
+                                                    "document_id"
+                                                ]
+                                            ),
+                                        )
+                                    ),
+                                    key=(
+                                        "similar_case_page_"
+                                        + candidate[
+                                            "candidate_id"
+                                        ]
+                                    ),
+                                )
+                            )
+
+                            similar_location = (
+                                locations[
+                                    similar_location_index
+                                ]
+                            )
+                            similar_source = (
+                                global_source_by_id.get(
+                                    similar_location[
+                                        "document_id"
+                                    ]
+                                )
+                            )
+
+                            if (
+                                similar_source
+                                and str(
+                                    similar_source.get(
+                                        "source_type"
+                                    )
+                                    or ""
+                                ).upper()
+                                == "PDF"
+                                and similar_source.get(
+                                    "viewer_source_path"
+                                )
+                            ):
+                                try:
+                                    similar_pdf_bytes = (
+                                        download_source_file_as_user(
+                                            similar_source[
+                                                "viewer_source_path"
+                                            ]
+                                        )
+                                    )
+                                    similar_excerpt = (
+                                        pdf_page_range_bytes(
+                                            similar_pdf_bytes,
+                                            similar_location.get(
+                                                "page_start"
+                                            ),
+                                            similar_location.get(
+                                                "page_end"
+                                            ),
+                                        )
+                                    )
+                                    st.pdf(
+                                        similar_excerpt,
+                                        height=520,
+                                        key=(
+                                            "similar_case_pdf_"
+                                            + candidate[
+                                                "candidate_id"
+                                            ]
+                                        ),
+                                    )
+                                except PermissionError as exc:
+                                    st.warning(
+                                        str(exc)
+                                    )
+                                except Exception as exc:
+                                    st.caption(
+                                        "Matched page could not be rendered: "
+                                        + str(exc)
+                                    )
+            else:
+                st.info(
+                    "No similar-case retrieval result is stored yet for "
+                    "this analysis."
+                )
+        else:
+            st.info(
+                "Select a completed analysis to retrieve similar MAIRA cases."
+            )
+
     with similar_right:
         st.markdown("**News & alerts**")
         st.info(
-            "Coming soon: identify potentially related news alerts and clearly "
-            "report when no related alerts are found."
+            "External/news similarity remains separate from validated "
+            "investigation knowledge and is handled in the News/dashboard "
+            "workstream."
         )
 
 with tab_example:
