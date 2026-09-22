@@ -254,3 +254,112 @@ Backup branch before this case-centric GUI refinement:
 
 The changes remain **runtime-validation pending** until the updated Databricks
 App is redeployed and checked.
+
+
+## Pre-validation restoration: processing stages and graph workspace
+
+Implemented in source on 2026-09-22 before continuing functional validation.
+
+### Analyse Documents
+
+The previously implemented four investigator-facing processing stages are
+restored as the primary status view:
+
+1. **Prepare evidence**
+2. **Analyse evidence**
+3. **Check output**
+4. **Build result**
+
+They are rendered horizontally as four compact status cards rather than as
+vertical rows.
+
+The Analyse Documents order is now:
+
+1. create/configure analysis;
+2. **Refresh status**;
+3. four-stage horizontal processing view;
+4. collapsed **Recent analyses** history;
+5. structured **Analysis results**.
+
+This keeps the current analysis result visible without allowing analysis
+history to consume the page.
+
+Technical stages remain available under the collapsed Technical details
+section.
+
+### Findings & Evidence
+
+The previous Findings & Knowledge page is renamed **Findings & Evidence**.
+
+It remains read-only and is responsible for:
+
+- extracted concepts/findings/relationships;
+- cited source pages and embedded evidence viewing;
+- deterministic similar MAIRA cases.
+
+The graph is no longer embedded as a secondary expander here.
+
+### Knowledge Graph workspace
+
+A dedicated **Knowledge Graph** tab is now a first-class capability.
+
+It uses the shared Active analysis and supports:
+
+- model-graph selection when more than one completed model graph exists;
+- document-scope selection;
+- concept/node-type filtering;
+- relationship-type filtering;
+- diagram layout selection;
+- graph size counters;
+- interactive Cytoscape rendering.
+
+Available diagram layouts currently include force-directed, hierarchy, circle,
+concentric and grid.
+
+Document selection is an evidence-scope control. Node/relationship/layout
+controls are view controls only and never mutate validated knowledge.
+
+When a document subset is selected, graph nodes and relationships are limited
+to items whose persisted evidence locations are supported by those documents,
+plus structural relationships needed to connect the selected evidence-backed
+concepts.
+
+### Graph-scoped questions
+
+The Knowledge Graph page can ask a question using the document scope currently
+selected for the graph.
+
+It reuses the governed QuestionRun and Ask Job infrastructure, but records:
+
+`interaction_surface = KNOWLEDGE_GRAPH`
+
+Normal Ask / Compare questions remain:
+
+`interaction_surface = ASK_COMPARE`
+
+The histories are therefore kept separate in the UI.
+
+The graph question is grounded in governed source evidence. Visual
+node/relationship filters do **not** silently remove passages from question
+retrieval; only the selected document evidence scope changes retrieval.
+
+REFERENCE_CONTEXT remains optional and remains separate from SOURCE_EVIDENCE.
+
+Class-D graph questions continue to follow the approved Class-D model routes and
+quota controls.
+
+### Governance boundary
+
+The Knowledge Graph workspace may change how knowledge is **viewed**, not what
+is authoritative.
+
+Actual relationship validation, rejection or amendment remains exclusively in
+**Review & Validate**.
+
+### Rollback
+
+Backup branch created before this slice:
+
+`backup/pre-graph-workspace-2026-09-22`
+
+Status: **code/documentation complete; runtime validation pending**.
