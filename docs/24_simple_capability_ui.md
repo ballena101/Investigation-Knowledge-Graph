@@ -249,3 +249,25 @@ shows the current human review when one exists.
 
 The LLM does not edit the graph. Human approval creates governance/review
 metadata from which authoritative semantics are derived.
+
+
+## Similar MAIRA cases
+
+Findings & Knowledge now exposes a simple deterministic similar-case action.
+
+```text
+Processed case
+    ↓
+Find similar MAIRA cases
+    ↓
+Top candidate report packages
+    ↓
+Why this matched
++ matched terms
++ report/page evidence
++ cited-page viewer
+```
+
+The UI intentionally does not display an AI-generated similarity percentage.
+The current version is deterministic lexical candidate retrieval and clearly
+labels the returned reports as candidates for investigator exploration.
