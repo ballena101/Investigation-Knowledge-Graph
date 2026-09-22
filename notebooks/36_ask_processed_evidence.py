@@ -880,7 +880,7 @@ if include_reference_context:
         message = (
             "Reference context was requested, but the governed IKF "
             "REFERENCE_CONTEXT corpus has not been indexed. "
-            "Run notebook 43 first."
+            "Run notebook 44 first."
         )
         with driver.session() as session:
             session.run(
