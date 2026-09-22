@@ -253,3 +253,24 @@ An implementation slice is considered complete only when:
 - evidence/provenance remains traceable;
 - no new parallel canonical data model is introduced;
 - this implementation-status document is updated with DONE / NEXT / PENDING.
+
+
+### Classification-driven document catalogue
+
+Implemented in code on 2026-09-22:
+
+- Class A — Public / technical → IKF-managed documents only.
+- Class B — Published investigation material → MAIRA investigation documents
+  only.
+- Class C — Internal / restricted → IKF-managed documents only.
+- Class D — Protected / confidential → IKF-managed documents only.
+- Direct text is unaffected by this document-catalogue filter and continues to
+  follow the selected information-class/model route.
+- The App displays the active catalogue scope and available-document count.
+
+Reason: MAIRA is the actual canonical store for saved investigation reports;
+the remaining project/technical documentation is held in the IKF-managed
+library.
+
+Status: **code complete; runtime validation intentionally deferred** to avoid an
+additional App deployment/run before the next planned validation session.
