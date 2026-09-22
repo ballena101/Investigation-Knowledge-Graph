@@ -59,3 +59,18 @@ The original KG node and its mapping remain unchanged.
 ## Governance note
 
 This is a pragmatic PoC persistence layer. A later governed implementation can export review records to Delta / Unity Catalog without changing the review semantics or provenance model.
+
+
+## Superseded operational status
+
+The Commodore Clipper-specific mapping-review implementation documented above is
+retained only as historical/reference material.
+
+The operational generic workflow is now documented in:
+
+`docs/26_generic_emcip_mapping_review.md`
+
+New analyses use AnalysisGroup/ModelRun-scoped `EMCIPMappingProposal` records
+generated from the MAIRA EMCIP operational registry. Human amendments must
+select another governed shortlist candidate; they no longer use free-text
+replacement taxonomy values.
