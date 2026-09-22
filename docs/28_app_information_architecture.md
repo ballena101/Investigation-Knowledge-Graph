@@ -487,3 +487,69 @@ App build:
 `2026-09-22-evidence-viewer-v26`
 
 Status: **code/documentation complete; runtime validation pending redeploy**.
+
+
+## Evidence viewer simplification and action follow-up
+
+Implemented in source on 2026-09-22.
+
+### Findings & Evidence viewer
+
+The detailed evidence view is now investigator-facing:
+
+1. **Description**
+2. **Supporting evidence**
+3. **Source page** rendered from the structured evidence location
+4. optional **View full source report**
+5. collapsed **Technical provenance (advanced)**
+
+The PDF excerpt is driven by the persisted structured evidence location:
+
+`document_id | page_start | page_end`
+
+Behavior is intentionally simple:
+
+- one supporting location: show it directly and render the cited PDF section;
+- two or more locations: show a Supporting evidence selector and render the
+  selected PDF section;
+- textual reference but no structured location: show the reference and state
+  that embedded page viewing is unavailable for that older analysis;
+- no page-level evidence: show an explicit unavailable message.
+
+Technical provenance remains available only under the advanced expander and
+contains internal passage IDs, stored references and raw structured locations
+for audit/validation/reproducibility.
+
+### Asynchronous action follow-up rule
+
+The App now applies one GUI rule consistently:
+
+**Any action that launches an asynchronous Databricks process must provide a
+visible follow-up path.**
+
+The pattern is:
+
+- confirm that the process was queued;
+- show the latest Databricks run state when the run ID is available;
+- provide a nearby Refresh control for the App result/status.
+
+Current async actions covered:
+
+- Create and analyse → four-stage processing status + Refresh status;
+- Ask / Compare question → question history/status + Refresh status;
+- Knowledge Graph question → run status + Refresh graph question status;
+- Similar MAIRA cases → run status + Refresh similar-case status;
+- Relationship quality check → run status + Refresh proposal status;
+- EMCIP proposal generation → Refresh mapping status;
+- SHIELD proposal generation → Refresh SHIELD status.
+
+Human save/review actions are synchronous writes and immediately rerun/update
+the page; they do not require a separate background-process tracker.
+
+### Rollback
+
+Backup branch:
+
+`backup/pre-action-followup-2026-09-22`
+
+Status: **code/documentation complete; runtime validation pending redeploy**.
