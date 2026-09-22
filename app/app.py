@@ -5029,8 +5029,8 @@ with tab_home:
             "the relationship graph only when it helps."
         )
         st.caption(
-            "LLM search and assisted relationship correction are shown as "
-            "previews."
+            "Cited knowledge questions, human-governed relationship checks "
+            "and deterministic similar-case retrieval are implemented in source."
         )
 
     st.divider()
