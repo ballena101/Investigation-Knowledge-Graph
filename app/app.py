@@ -1567,6 +1567,10 @@ def load_analysis_groups():
         a.pages_processed AS pages_processed,
         a.passages_total AS passages_total,
         properties(a)["processing_error"] AS processing_error,
+        properties(a)["classification_prescreen_version"] AS classification_prescreen_version,
+        properties(a)["classification_prescreen_status"] AS classification_prescreen_status,
+        coalesce(properties(a)["classification_prescreen_rule_ids"], []) AS classification_prescreen_rule_ids,
+        properties(a)["classification_prescreen_required_class"] AS classification_prescreen_required_class,
         properties(a)["job_run_id"] AS job_run_id,
         properties(a)["job_id"] AS job_id,
         properties(a)["requested_model_service"] AS requested_model_service,
@@ -1778,6 +1782,7 @@ def render_pipeline_status(
 
     failure_to_step = {
         "PREPARE_EVIDENCE_FAILED": 0,
+        "CLASSIFICATION_PRESCREEN_BLOCKED": 0,
         "EXTRACTION_FAILED": 0,
         "CANDIDATE_EXTRACTION_FAILED": 1,
         "RESOLUTION_FAILED": 1,
@@ -5188,6 +5193,31 @@ def render_compare_llms():
             f"{'Direct text' if input_mode_value == 'DIRECT_TEXT' else 'Documents'} · "
             f"{INFORMATION_CLASSES.get(class_value, {}).get('label', class_value)}"
         )
+
+        if selected_analysis.get(
+            "classification_prescreen_status"
+        ):
+            st.markdown(
+                "**Classification pre-screen**"
+            )
+            st.write(
+                selected_analysis[
+                    "classification_prescreen_status"
+                ]
+            )
+            prescreen_rules = (
+                selected_analysis.get(
+                    "classification_prescreen_rule_ids"
+                )
+                or []
+            )
+            if prescreen_rules:
+                st.caption(
+                    "Triggered rules: "
+                    + ", ".join(
+                        prescreen_rules
+                    )
+                )
 
         if selected_analysis.get("analysis_description"):
             st.markdown("**Description**")
