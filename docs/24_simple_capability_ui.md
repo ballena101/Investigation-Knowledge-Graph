@@ -146,3 +146,39 @@ Model mode
 The answer surface must always place evidence references close to the answer,
 using document/report name plus page/page range. Page citations must not be
 hidden only inside technical provenance fields.
+
+
+## Operational Ask / Compare interaction
+
+The Ask / Compare capability now has an operational source design:
+
+```text
+Select processed analysis
+        ↓
+Evidence scope
+  ○ whole case
+  ○ one document
+  ○ selected documents
+        ↓
+Free-text question
+        ↓
+Approved model route
+        ↓
+Answer
++ report/page citations
++ cited-page PDF viewer
+```
+
+For Class D only, the model-mode control allows:
+- GPT-OSS 20B;
+- Llama 3.3 70B;
+- Both.
+
+For A/B/C, the class-approved default model is used automatically.
+
+Question history is preserved per AnalysisGroup. Each QuestionRun displays its
+scope, status and retrieval provenance. Governed MAIRA retrieval is explicitly
+labelled when activated.
+
+The existing analysis/model outputs remain available below the Ask interaction,
+but asking a question never rebuilds the graph.
