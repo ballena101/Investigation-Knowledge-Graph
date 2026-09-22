@@ -91,7 +91,7 @@ def run_query(
 
     normalisations = (
         spark.table("bdw_analysis_prod.maira.terminology_normalisations")
-        .filter(F.col("review_status") == "VALIDATED")
+        .filter(F.col("review_status") == "HUMAN_VALIDATED")
         .select("source_expression", "target_code_idcode")
     )
 
