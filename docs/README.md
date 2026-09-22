@@ -6,9 +6,9 @@ the product architecture.
 
 ## Read these first — current PoC
 
-1. [17_class_d_dual_model_poc.md](17_class_d_dual_model_poc.md)  
-   Current Class D PoC: text/documents + question + GPT-OSS 20B, Ollama Llama
-   3.3 70B, or both; side-by-side output; daily Ollama quota.
+1. [28_app_information_architecture.md](28_app_information_architecture.md)  
+   Current operational App separation: Analyse Documents, Ask / Compare,
+   Findings & Knowledge, Review & Validate, and the external News capability.
 
 2. [18_model_validation_and_feedback.md](18_model_validation_and_feedback.md)  
    What has and has not been validated; benchmark metrics; how human-validated
@@ -57,34 +57,27 @@ first developed against it:
 The reference case is retained because it provides reviewed graph/evidence
 material useful for regression tests and future benchmarks.
 
-## Current Class D PoC in one diagram
+## Current operational App flow
 
 ```text
-Documents (1–5) OR encrypted direct text
-                  ↓
-       investigation question
-                  ↓
-        evidence extraction once
-                  ↓
-       ┌──────────┴──────────┐
-       ↓                     ↓
- GPT-OSS 20B          Ollama runtime
- dedicated DBX        Llama 3.3 70B
- endpoint             controlled host
-       ↓                     ↓
- graph + summary       graph + summary
-       └──────────┬──────────┘
-                  ↓
-     side-by-side when both selected
-                  ↓
-          human validation
-                  ↓
- versioned benchmark / feedback assets
+Governed source selection
+        ↓
+Analyse Documents
+(question-independent extraction)
+        ↓
+structured outputs + provenance
+        ├──────────────→ Ask / Compare LLMs
+        │                 scoped questions + citations
+        │
+        ├──────────────→ Findings & Knowledge
+        │                 read-only evidence / graph / similar cases
+        │
+        └──────────────→ Review & Validate
+                          human relationship / EMCIP / SHIELD decisions
 ```
 
-Ollama route: maximum **5 questions per user per day** in the PoC. An App
-administrator may reset the counter. The limit is a resource/cost control, not
-a safety classification.
+Class D model routing remains a governed sub-capability of this wider flow;
+it is no longer the organising principle of the whole App.
 
 
 ## Integrated architecture and roadmap
