@@ -546,13 +546,15 @@ application as a separate `News & Alerts` capability.
 Implementation rule:
 
 - the dashboard remains owned and maintained as a Databricks dashboard;
-- IKF embeds the published dashboard rather than recreating its visualisations;
-- the App reads the embed URL from `NEWS_DASHBOARD_EMBED_URL`;
+- because dashboard embedding is not available to the current user, IKF exposes
+  the published dashboard through its normal Databricks shared link rather than
+  recreating its visualisations;
+- the App reads the shared URL from `NEWS_DASHBOARD_URL`;
 - dashboard viewing remains separate from validated investigation knowledge;
 - access continues to follow Databricks dashboard sharing and underlying data
   permissions;
 - governed LLM access to the underlying news tables is a later capability and
-  is deliberately not coupled to the first visual-integration milestone.
+  is deliberately not coupled to this first dashboard-access milestone.
 
 This preserves the previously agreed product separation: news/alerts are an
 IKF capability, while MAIRA remains the investigation-evidence layer.
