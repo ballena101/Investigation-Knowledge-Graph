@@ -142,66 +142,67 @@ and human-validated knowledge distinct.
 
 ## 3. NEXT — current milestone
 
-### Development — Knowledge assistant and relationship correction proposals
+### Development — similar MAIRA investigation cases
 
-Extend Findings & Knowledge so investigators can:
+Add a simple, evidence-traceable similar-case capability in Findings & Knowledge.
 
-1. ask/research processed knowledge with citations;
-2. select an existing relationship;
-3. ask the LLM to check that relationship against its source evidence;
-4. receive a separate correction proposal:
-   - KEEP;
-   - CHANGE_RELATIONSHIP;
-   - REJECT_RELATIONSHIP;
-5. inspect evidence and rationale;
-6. explicitly approve/reject/amend the correction proposal.
+Target behaviour:
 
-Non-negotiable:
-- the LLM never edits the graph directly;
-- human-approved change is stored as review/governance metadata first;
-- validated graph semantics must be derived from the latest human decision;
-- source passage/page provenance remains mandatory;
-- candidate and human-validated knowledge remain visibly distinct.
+1. start from one completed AnalysisGroup;
+2. derive deterministic search terms from the processed case knowledge/evidence;
+3. search MAIRA MAIN_REPORT passages only;
+4. exclude the current source report/package;
+5. rank candidate report packages deterministically;
+6. show a short "why this matched" explanation using matched terms and cited
+   report/page evidence;
+7. never label a case "similar" merely because an LLM says so;
+8. preserve the retrieval method/version and selected passage IDs.
+
+Keep this first slice simple:
+- no embeddings;
+- no opaque vector similarity score;
+- no cross-case causal inference;
+- no automatic graph merging.
+
+News/external-signal integration remains outside this conversation and is not
+part of this milestone.
 
 ### Consolidated runtime validation
 
-Add SHIELD validation to the already planned consolidated session:
+The next single deployment/test session should include the already accumulated
+resources and validators:
 
-1. ensure the existing persistent `SHIELD/` folder contains the governed SHIELD
-   source documents;
-2. run notebook 45 and require:
-   `PASS — PERSISTENT SHIELD CORPUS INDEXED`;
-3. run notebook 47 to create/update:
-   `Investigation KG - SHIELD Proposals`;
-4. attach App resource:
-   - key: `shield_proposal_job`;
-   - permission: `Can manage run`;
-5. redeploy once with the other accumulated resources;
-6. human-validate one ContributingFactor — CONTRIBUTED_TO relationship;
-7. generate SHIELD proposals;
-8. confirm the assistant proposal shows SHIELD page evidence;
-9. save one Gate-2 human decision;
-10. run notebook 48 and require:
-    `PASS — SHIELD PROPOSALS REQUIRE GATE 1 AND AUTHORITATIVE CLASSIFICATION REQUIRES GATE 2`.
+- notebook 32 — MAIRA passage contract;
+- notebook 35 — source viewer/page ranges;
+- notebook 38 — scoped Ask provenance;
+- notebook 43 — Class-D pre-screen;
+- notebook 44 — REFERENCE_CONTEXT indexing;
+- notebook 45 — SHIELD corpus indexing;
+- notebook 47 — SHIELD proposal Job;
+- notebook 48 — SHIELD two-gate validation;
+- notebook 50 — relationship-correction Job;
+- notebook 51 — relationship-correction governance validation.
 
-Notebook 43 remains the Class-D pre-screen validator.
-Notebook 44 indexes REFERENCE_CONTEXT.
+Relationship-correction App resource:
+- key: `relationship_correction_job`;
+- permission: `Can manage run`.
 
 ## 4. PENDING — planned implementation sequence
 
-### P1 — knowledge assistant and relationship correction
+### P1 — similar MAIRA cases
 
-- Ask/Research over processed knowledge with citations.
-- Distinguish candidate from human-validated knowledge.
-- Allow LLM to propose relationship corrections from the graph.
-- Never change validated graph relationships without explicit human approval.
+- deterministic candidate retrieval over MAIRA MAIN_REPORT passages;
+- package-level ranking;
+- visible matched terms and report/page evidence;
+- current case excluded;
+- retrieval provenance retained.
 
-### P2 — similar cases and external signals
+### P2 — external signals / News
 
-- Retrieve similar MAIRA investigation reports.
 - Keep News & Alerts separate as external/unvalidated information.
-- Later allow governed read-only LLM access to the news backend without mixing
-  news with validated investigation findings.
+- This work remains in the separate News/dashboard conversation unless
+  explicitly brought back here.
+- Do not mix news with validated investigation findings.
 
 ### P3 — production-readiness validation
 
