@@ -7582,7 +7582,7 @@ with tab_graph:
                                 )
                                 st.exception(exc)
 
-                        with st.expander("View graph", expanded=False):
+            with st.expander("View graph", expanded=False):
                 st.caption(
                     "Colour key — event: amber · contributing factor: red · "
                     "finding: blue · safety issue: purple · recommendation: "
