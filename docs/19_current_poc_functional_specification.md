@@ -756,3 +756,41 @@ document chunking, EMCIP registry, governed query or deterministic relationship
 assessment stack in parallel with MAIRA.
 
 Bosuil is an external design reference only; it is not an IKF dependency.
+
+
+## 2C. Classification-driven document catalogue
+
+Document selection follows information classification and source ownership.
+
+For document-based analyses:
+
+| Information class | Document catalogue shown |
+|---|---|
+| A — Public / technical | IKF-managed document library |
+| B — Published investigation material | MAIRA investigation-document catalogue only |
+| C — Internal / restricted | IKF-managed document library |
+| D — Protected / confidential | IKF-managed document library |
+
+Rationale:
+
+- MAIRA is the canonical repository for saved published investigation reports
+  and associated investigation-package documents.
+- IKF holds the remaining project documentation, including technical material,
+  and is the controlled path for internal/protected inputs.
+- The App must not present MAIRA's published investigation corpus as if it were
+  the source repository for Class C or D.
+- Direct text remains available independently of the document catalogue and is
+  handled according to the selected information class.
+
+The selector therefore changes its available document set immediately after the
+user changes the information classification.
+
+The App must also explain the active catalogue scope to the user, for example:
+
+```text
+Class B → MAIRA published investigation material
+Class A/C/D → IKF document library
+```
+
+This routing is implemented in code but remains pending runtime/deployment
+validation in the next scheduled App test.
