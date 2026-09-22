@@ -855,3 +855,75 @@ Implementation status:
 - Compare LLMs renamed to Ask / Compare LLMs;
 - scoped free-text question execution backend remains the next implementation
   slice.
+
+
+## 2E. Scoped Ask execution
+
+Ask / Compare LLMs is now implemented in source as a separate interaction over
+already processed evidence.
+
+### Scope
+
+An investigator can ask against:
+
+1. the entire processed case / AnalysisGroup;
+2. one source document;
+3. a selected group of source documents.
+
+A QuestionRun preserves:
+- AnalysisGroup ID;
+- information class;
+- scope mode;
+- selected document IDs;
+- question SHA-256;
+- model plan;
+- processing status;
+- retrieval mode;
+- creation identity/timestamp.
+
+The question does not modify the analysis graph.
+
+### Model policy
+
+- A/B → class-approved Meta Llama 3.3 70B system.ai route;
+- C → class-approved GPT-OSS 120B route;
+- D → dedicated GPT-OSS 20B, dedicated Llama 3.3 70B, or Both.
+
+For Class D, the question itself is encrypted before persistence. No downgrade
+to A/B/C model routes is allowed.
+
+### Answer contract
+
+Each QuestionModelRun returns:
+- evidence-grounded answer;
+- supporting passage IDs;
+- report/document + page/page-range references;
+- machine-readable document/page locations;
+- insufficient-evidence flag;
+- limitations;
+- model/version/service metadata;
+- duration and token metadata.
+
+The App can render the cited PDF page directly when the current investigator has
+Unity Catalog access.
+
+### Current retrieval behaviour
+
+For ordinary free-text questions, the first operational path uses all passages
+inside the selected evidence scope, subject to a strict controlled size limit.
+If the scope exceeds that limit, the run fails with
+`GOVERNED_RETRIEVAL_REQUIRED` rather than silently truncating evidence.
+
+For Class-B questions that exactly match the normalised `user_query` of one
+persisted MAIRA governed query specification:
+- the QuestionRun records the MAIRA query/spec identifiers;
+- IKF uses the MAIRA-governed relationship runner;
+- current supported deterministic relationships are `FOLLOWED_BY` and
+  `CONTRIBUTED_TO`;
+- only supported relationship-evidence passages are sent to the LLM;
+- if no explicit governed support exists, the system returns a deterministic
+  insufficient-evidence outcome and does not ask the LLM to infer the
+  relationship.
+
+There is deliberately no fuzzy or LLM-generated mapping from arbitrary free text
+to a governed query specification at this stage.
