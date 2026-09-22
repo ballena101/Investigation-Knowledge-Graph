@@ -171,7 +171,7 @@ Next validation session:
 2. Populate:
    `/Volumes/bdw_analysis_prod/kg_poc/reference_context`
    with the governed legal/IMO/technical reference files.
-3. Run notebook 43 and require:
+3. Run notebook 44 and require:
    `PASS — IKF REFERENCE_CONTEXT CORPUS INDEXED`.
 4. Run notebook 37 to create/update the Ask Job.
 5. Attach App Job resource:
@@ -469,7 +469,7 @@ Status: **code complete; runtime validation deferred**.
 ### Dedicated reference-context corpus
 
 Implemented in code:
-- added notebook `43_index_reference_context.py`;
+- added notebook `44_index_reference_context.py`;
 - dedicated source root:
   `/Volumes/bdw_analysis_prod/kg_poc/reference_context`;
 - governed Delta tables:
