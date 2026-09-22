@@ -4872,7 +4872,7 @@ def render_compare_llms():
             elif not available_reference_documents:
                 st.caption(
                     "No REFERENCE_CONTEXT documents are indexed yet. "
-                    "Notebook 43 indexes the governed reference_context volume."
+                    "Notebook 44 indexes the governed reference_context volume."
                 )
 
             with st.form(
