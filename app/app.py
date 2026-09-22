@@ -1,8 +1,12 @@
 import hashlib
 import os
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import fitz
 import streamlit as st
 from cryptography.fernet import Fernet
 from databricks.sdk import WorkspaceClient
@@ -31,6 +35,17 @@ CLASS_D_CONTENT_RETENTION_HOURS = 24
 OTHER_CONTENT_RETENTION_HOURS = 72
 LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "5"))
 QUOTA_TIMEZONE = "Europe/Lisbon"
+
+IKF_SOURCE_VOLUME_ROOT = (
+    "/Volumes/bdw_analysis_prod/kg_poc/investigation_sources"
+)
+MAIRA_SOURCE_VOLUME_ROOT = (
+    "/Volumes/bdw_analysis_prod/maira/source_documents"
+)
+ALLOWED_SOURCE_VOLUME_ROOTS = (
+    IKF_SOURCE_VOLUME_ROOT,
+    MAIRA_SOURCE_VOLUME_ROOT,
+)
 
 PUBLIC_MODEL_SERVICE = "system.ai.meta-llama-3-3-70b-instruct"
 INTERNAL_MODEL_SERVICE = "system.ai.gpt-oss-120b"
@@ -94,7 +109,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-evidence-sheet-and-answer-v4"
+APP_BUILD = "2026-09-22-authorized-source-viewer-v5"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -668,6 +683,177 @@ def get_analysis_job_run(run_id):
         return None
 
 
+def get_user_access_token():
+    """Return the Databricks OBO token forwarded to the Streamlit App."""
+
+    try:
+        headers = st.context.headers
+        return (
+            headers.get("X-Forwarded-Access-Token")
+            or headers.get("x-forwarded-access-token")
+        )
+    except Exception:
+        return None
+
+
+def normalise_allowed_source_path(path):
+    """Validate that a source path remains inside an approved UC volume."""
+
+    value = str(path or "").strip()
+    if not value:
+        raise ValueError("No source file path is available.")
+
+    normalized = os.path.normpath(value)
+
+    if not normalized.startswith("/Volumes/"):
+        raise ValueError(
+            "The document viewer accepts Unity Catalog volume paths only."
+        )
+
+    allowed = any(
+        normalized == root
+        or normalized.startswith(root.rstrip("/") + "/")
+        for root in ALLOWED_SOURCE_VOLUME_ROOTS
+    )
+
+    if not allowed:
+        raise PermissionError(
+            "The source path is outside the approved IKF/MAIRA document volumes."
+        )
+
+    return normalized
+
+
+def download_source_file_as_user(path):
+    """Read a UC-volume file through Databricks Files API as the logged-in user."""
+
+    normalized = normalise_allowed_source_path(path)
+    token = get_user_access_token()
+
+    if not token:
+        raise PermissionError(
+            "No forwarded Databricks user token is available. "
+            "User authorization with the files scope is required."
+        )
+
+    host = get_workspace_client().config.host.rstrip("/")
+    encoded_path = urllib.parse.quote(
+        normalized,
+        safe="/",
+    )
+    url = (
+        host
+        + "/api/2.0/fs/files"
+        + encoded_path
+    )
+
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+        },
+        method="GET",
+    )
+
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=90,
+        ) as response:
+            return response.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise PermissionError(
+                "You are not authorised to read this source document "
+                "from its Unity Catalog volume."
+            ) from exc
+        if exc.code == 404:
+            raise FileNotFoundError(
+                "The source document is no longer available at the "
+                "registered Unity Catalog path."
+            ) from exc
+        raise RuntimeError(
+            f"Databricks Files API returned HTTP {exc.code}."
+        ) from exc
+
+
+def parse_evidence_location(value):
+    """Parse document_id|page_start|page_end emitted by notebook 16."""
+
+    parts = str(value or "").split("|")
+    if len(parts) != 3 or not parts[0]:
+        return None
+
+    def parse_page(raw):
+        raw = raw.strip()
+        return int(raw) if raw.isdigit() else None
+
+    return {
+        "document_id": parts[0],
+        "page_start": parse_page(parts[1]),
+        "page_end": parse_page(parts[2]),
+    }
+
+
+def pdf_page_range_bytes(pdf_bytes, page_start, page_end):
+    """Create a small PDF containing only the evidence page range."""
+
+    source = fitz.open(
+        stream=pdf_bytes,
+        filetype="pdf",
+    )
+    try:
+        if source.page_count < 1:
+            raise ValueError("The PDF contains no pages.")
+
+        start = int(page_start or 1)
+        end = int(page_end or start)
+
+        if start < 1 or end < start or start > source.page_count:
+            raise ValueError(
+                "The evidence page reference is outside the source PDF."
+            )
+
+        end = min(end, source.page_count)
+
+        excerpt = fitz.open()
+        try:
+            excerpt.insert_pdf(
+                source,
+                from_page=start - 1,
+                to_page=end - 1,
+            )
+            return excerpt.tobytes()
+        finally:
+            excerpt.close()
+    finally:
+        source.close()
+
+
+def format_evidence_location(location, source):
+    filename = (
+        (source or {}).get("viewer_source_filename")
+        or (source or {}).get("filename")
+        or location["document_id"]
+    )
+    start = location.get("page_start")
+    end = location.get("page_end")
+
+    if start is None:
+        page_text = "page unknown"
+    elif end is None or end == start:
+        page_text = f"p. {start}"
+    else:
+        page_text = f"pp. {start}–{end}"
+
+    repository = (
+        (source or {}).get("viewer_source_repository")
+        or "source"
+    )
+
+    return f"{filename} · {page_text} · {repository}"
+
+
 @st.cache_data(ttl=30)
 def load_source_documents():
     query = """
@@ -993,6 +1179,18 @@ def load_analysis_sources(analysis_id):
         d.source_type AS source_type,
         d.byte_size AS byte_size,
         coalesce(
+            properties(d)["viewer_source_path"],
+            d.volume_path
+        ) AS viewer_source_path,
+        coalesce(
+            properties(d)["viewer_source_repository"],
+            "IKF"
+        ) AS viewer_source_repository,
+        coalesce(
+            properties(d)["viewer_source_filename"],
+            d.filename
+        ) AS viewer_source_filename,
+        coalesce(
             properties(d)["detected_language"],
             "PENDING"
         ) AS detected_language
@@ -1276,6 +1474,7 @@ def load_analysis_result(analysis_id):
         properties(a)["answer_to_question"] AS answer_to_question,
         coalesce(properties(a)["answer_passage_ids"], []) AS answer_passage_ids,
         coalesce(properties(a)["answer_references"], []) AS answer_references,
+        coalesce(properties(a)["answer_locations"], []) AS answer_locations,
         properties(a)["analysis_summary"] AS overview,
         coalesce(properties(a)["key_findings"], []) AS key_findings,
         coalesce(properties(a)["uncertainties"], []) AS uncertainties,
@@ -1313,6 +1512,7 @@ def load_model_runs(analysis_id):
         properties(m)["answer_to_question"] AS answer_to_question,
         coalesce(properties(m)["answer_passage_ids"], []) AS answer_passage_ids,
         coalesce(properties(m)["answer_references"], []) AS answer_references,
+        coalesce(properties(m)["answer_locations"], []) AS answer_locations,
         properties(m)["overview"] AS overview,
         coalesce(properties(m)["key_findings"], []) AS key_findings,
         coalesce(properties(m)["uncertainties"], []) AS uncertainties,
@@ -1361,7 +1561,8 @@ def load_model_run_graph(
         n.node_kind AS node_kind,
         properties(n)["description"] AS description,
         coalesce(properties(n)["evidence_passage_ids"], []) AS passage_ids,
-        coalesce(properties(n)["evidence_references"], []) AS evidence_references
+        coalesce(properties(n)["evidence_references"], []) AS evidence_references,
+        coalesce(properties(n)["evidence_locations"], []) AS evidence_locations
     ORDER BY n.label
     """
 
@@ -1383,7 +1584,8 @@ def load_model_run_graph(
         properties(r)["evidence_class"] AS evidence_class,
         coalesce(properties(r)["edge_class"], "REPORT_DERIVED") AS edge_class,
         coalesce(properties(r)["evidence_passage_ids"], []) AS passage_ids,
-        coalesce(properties(r)["evidence_references"], []) AS evidence_references
+        coalesce(properties(r)["evidence_references"], []) AS evidence_references,
+        coalesce(properties(r)["evidence_locations"], []) AS evidence_locations
     ORDER BY source.label, relationship, target.label
     """
 
@@ -1514,6 +1716,10 @@ def render_model_run(
                         node.get("evidence_references")
                         or []
                     ),
+                    "evidence_locations": (
+                        node.get("evidence_locations")
+                        or []
+                    ),
                 }
             }
             for node in graph["nodes"]
@@ -1536,6 +1742,10 @@ def render_model_run(
                     ),
                     "evidence_references": (
                         edge.get("evidence_references")
+                        or []
+                    ),
+                    "evidence_locations": (
+                        edge.get("evidence_locations")
                         or []
                     ),
                 }
@@ -1574,7 +1784,8 @@ def load_analysis_graph(analysis_id):
         n.node_kind AS node_kind,
         properties(n)["description"] AS description,
         coalesce(properties(n)["evidence_passage_ids"], []) AS passage_ids,
-        coalesce(properties(n)["evidence_references"], []) AS evidence_references
+        coalesce(properties(n)["evidence_references"], []) AS evidence_references,
+        coalesce(properties(n)["evidence_locations"], []) AS evidence_locations
     ORDER BY n.label
     """
 
@@ -1592,7 +1803,8 @@ def load_analysis_graph(analysis_id):
         properties(r)["evidence_class"] AS evidence_class,
         coalesce(properties(r)["edge_class"], "REPORT_DERIVED") AS edge_class,
         coalesce(properties(r)["evidence_passage_ids"], []) AS passage_ids,
-        coalesce(properties(r)["evidence_references"], []) AS evidence_references
+        coalesce(properties(r)["evidence_references"], []) AS evidence_references,
+        coalesce(properties(r)["evidence_locations"], []) AS evidence_locations
     ORDER BY source.label, relationship, target.label
     """
 
@@ -3574,6 +3786,9 @@ with tab_graph:
                         "evidence_references": node.get(
                             "evidence_references"
                         ) or [],
+                        "evidence_locations": node.get(
+                            "evidence_locations"
+                        ) or [],
                     }
                 }
                 for node in knowledge_graph["nodes"]
@@ -3590,6 +3805,9 @@ with tab_graph:
                         "evidence_references": edge.get(
                             "evidence_references"
                         ) or [],
+                        "evidence_locations": edge.get(
+                            "evidence_locations"
+                        ) or [],
                     }
                 }
                 for edge in knowledge_graph["edges"]
@@ -3599,11 +3817,43 @@ with tab_graph:
         if knowledge_elements["nodes"]:
             st.markdown("### Evidence sheet")
             st.caption(
-                "Select a finding, event, concept or relationship to see "
-                "where its description is supported in the source."
+                "Select the original question, a finding, event, concept or "
+                "relationship to inspect its evidence and source page."
             )
 
             evidence_items = []
+            knowledge_result = load_analysis_result(
+                knowledge_analysis_id
+            )
+            knowledge_meta = knowledge_by_id[
+                knowledge_analysis_id
+            ]
+
+            if (
+                knowledge_meta.get("analysis_objective")
+                and knowledge_result.get("answer_to_question")
+            ):
+                evidence_items.append(
+                    {
+                        "kind": "Answer",
+                        "label": "Answer to analysis question / objective",
+                        "description": knowledge_result[
+                            "answer_to_question"
+                        ],
+                        "references": (
+                            knowledge_result.get("answer_references")
+                            or []
+                        ),
+                        "locations": (
+                            knowledge_result.get("answer_locations")
+                            or []
+                        ),
+                        "passage_ids": (
+                            knowledge_result.get("answer_passage_ids")
+                            or []
+                        ),
+                    }
+                )
 
             for node in knowledge_graph["nodes"]:
                 evidence_items.append(
@@ -3618,6 +3868,10 @@ with tab_graph:
                         ),
                         "references": (
                             node.get("evidence_references")
+                            or []
+                        ),
+                        "locations": (
+                            node.get("evidence_locations")
                             or []
                         ),
                         "passage_ids": (
@@ -3644,6 +3898,10 @@ with tab_graph:
                             edge.get("evidence_references")
                             or []
                         ),
+                        "locations": (
+                            edge.get("evidence_locations")
+                            or []
+                        ),
                         "passage_ids": (
                             edge.get("passage_ids")
                             or []
@@ -3652,7 +3910,7 @@ with tab_graph:
                 )
 
             selected_evidence_index = st.selectbox(
-                "Finding / relationship",
+                "Answer / finding / relationship",
                 options=list(range(len(evidence_items))),
                 format_func=lambda index: evidence_items[index]["label"],
                 key="knowledge_evidence_selector",
@@ -3663,11 +3921,20 @@ with tab_graph:
             ]
 
             evidence_left, evidence_right = st.columns(
-                [1.1, 0.9]
+                [1.0, 1.2]
             )
 
             with evidence_left:
-                st.markdown("**Description**")
+                if selected_evidence["kind"] == "Answer":
+                    st.markdown("**Analysis question / objective**")
+                    st.write(
+                        knowledge_meta.get("analysis_objective")
+                        or "—"
+                    )
+                    st.markdown("**Grounded answer**")
+                else:
+                    st.markdown("**Description**")
+
                 st.write(selected_evidence["description"])
 
                 st.markdown("**Source reference**")
@@ -3685,13 +3952,142 @@ with tab_graph:
                         st.code(passage_id, language=None)
 
             with evidence_right:
-                st.markdown("**Document viewer**")
-                st.info(
-                    "The page reference is ready. In-App PDF viewing will "
-                    "be enabled once the App is given governed read-only "
-                    "access to the source document bytes; the current App "
-                    "does not have that access."
+                st.markdown("**Source document**")
+
+                parsed_locations = [
+                    parsed
+                    for parsed in (
+                        parse_evidence_location(value)
+                        for value in selected_evidence["locations"]
+                    )
+                    if parsed is not None
+                ]
+
+                analysis_sources = load_analysis_sources(
+                    knowledge_analysis_id
                 )
+                source_by_id = {
+                    source["document_id"]: source
+                    for source in analysis_sources
+                }
+
+                if not parsed_locations:
+                    st.info(
+                        "No source-page location is available for this "
+                        "item. New analyses created with analysis version "
+                        "V0.6 or later include viewer locations."
+                    )
+                else:
+                    location_index = st.selectbox(
+                        "Evidence page",
+                        options=list(range(len(parsed_locations))),
+                        format_func=lambda index: format_evidence_location(
+                            parsed_locations[index],
+                            source_by_id.get(
+                                parsed_locations[index]["document_id"]
+                            ),
+                        ),
+                        key=(
+                            "knowledge_source_page_"
+                            + str(selected_evidence_index)
+                        ),
+                    )
+
+                    location = parsed_locations[
+                        location_index
+                    ]
+                    source = source_by_id.get(
+                        location["document_id"]
+                    )
+
+                    if source is None:
+                        st.warning(
+                            "The evidence reference exists, but its source "
+                            "document is not linked to this analysis."
+                        )
+                    else:
+                        source_path = source.get(
+                            "viewer_source_path"
+                        )
+                        source_type = str(
+                            source.get("source_type") or ""
+                        ).upper()
+
+                        if source_type != "PDF":
+                            st.info(
+                                "The source reference is available, but the "
+                                "embedded viewer currently supports PDF "
+                                "documents only."
+                            )
+                        elif not source_path:
+                            st.warning(
+                                "No governed source-document path is "
+                                "registered for this evidence."
+                            )
+                        else:
+                            try:
+                                pdf_bytes = download_source_file_as_user(
+                                    source_path
+                                )
+                                excerpt_bytes = pdf_page_range_bytes(
+                                    pdf_bytes,
+                                    location.get("page_start"),
+                                    location.get("page_end"),
+                                )
+
+                                st.caption(
+                                    format_evidence_location(
+                                        location,
+                                        source,
+                                    )
+                                )
+                                st.pdf(
+                                    excerpt_bytes,
+                                    height=720,
+                                    key=(
+                                        "evidence_pdf_"
+                                        + hashlib.sha256(
+                                            (
+                                                source_path
+                                                + "|"
+                                                + str(location.get("page_start"))
+                                                + "|"
+                                                + str(location.get("page_end"))
+                                            ).encode("utf-8")
+                                        ).hexdigest()[:16]
+                                    ),
+                                )
+
+                                with st.expander(
+                                    "View full source report",
+                                    expanded=False,
+                                ):
+                                    st.pdf(
+                                        pdf_bytes,
+                                        height=800,
+                                        key=(
+                                            "full_pdf_"
+                                            + hashlib.sha256(
+                                                source_path.encode("utf-8")
+                                            ).hexdigest()[:16]
+                                        ),
+                                    )
+
+                            except PermissionError as exc:
+                                st.warning(str(exc))
+                                st.caption(
+                                    "The viewer uses your Databricks user "
+                                    "authorization, so Unity Catalog access "
+                                    "is not bypassed."
+                                )
+                            except FileNotFoundError as exc:
+                                st.warning(str(exc))
+                            except Exception as exc:
+                                st.error(
+                                    "The source document could not be "
+                                    "rendered."
+                                )
+                                st.caption(str(exc))
 
             with st.expander("View graph", expanded=False):
                 st.caption(
