@@ -132,3 +132,22 @@ It is a reusable framework layer available optionally to Ask / Compare LLMs.
 
 SHIELD documents remain outside REFERENCE_CONTEXT because they have their own
 classification-governance workflow.
+
+
+## SHIELD governed classification source
+
+SHIELD is a persistent governed classification resource stored under:
+
+`/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/SHIELD`
+
+It is excluded from the normal IKF SourceDocument catalogue and transient
+source-retention semantics.
+
+SHIELD has its own governed corpus:
+- `shield_document`;
+- `shield_passage`;
+- source layer `SHIELD_TAXONOMY`.
+
+It is neither SOURCE_EVIDENCE nor REFERENCE_CONTEXT. It may be used only after
+Gate-1 human validation of a contributing factor, and any assistant SHIELD
+classification remains non-authoritative until Gate-2 human review.
