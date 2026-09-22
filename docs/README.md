@@ -31,6 +31,10 @@ the product architecture.
    Read-only MAIRA passage contract, controlled test-analysis registration,
    parity gate and staged removal of duplicate document chunking from IKF.
 
+8. [24_simple_capability_ui.md](24_simple_capability_ui.md)
+   Simplified App navigation, Findings & Knowledge, optional graph views and
+   the human-controlled LLM graph-correction workflow.
+
 ## Methodology and governance
 
 - [02_methodology.md](02_methodology.md) — evidence-first graph methodology.
