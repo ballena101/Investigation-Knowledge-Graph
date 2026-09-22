@@ -142,76 +142,68 @@ and human-validated knowledge distinct.
 
 ## 3. NEXT — current milestone
 
-### Development — SHIELD workflow
+### Development — Knowledge assistant and relationship correction proposals
 
-Implement the governed two-human-gate SHIELD workflow:
+Extend Findings & Knowledge so investigators can:
 
-```text
-candidate contributing factor
-        ↓
-human validates CF
-        ↓
-LLM suggests SHIELD classification
-        ↓
-human validates / amends / rejects SHIELD
-        ↓
-only validated SHIELD becomes authoritative
-```
+1. ask/research processed knowledge with citations;
+2. select an existing relationship;
+3. ask the LLM to check that relationship against its source evidence;
+4. receive a separate correction proposal:
+   - KEEP;
+   - CHANGE_RELATIONSHIP;
+   - REJECT_RELATIONSHIP;
+5. inspect evidence and rationale;
+6. explicitly approve/reject/amend the correction proposal.
 
-Required principles:
-
-- SHIELD classification must never be proposed before the contributing factor
-  itself has been human-validated;
-- the LLM suggestion is a candidate only;
-- SHIELD source documents/taxonomy remain separate from SOURCE_EVIDENCE and
-  REFERENCE_CONTEXT;
-- proposal provenance must include the validated CF, model/prompt version and
-  SHIELD taxonomy/version;
-- human SHIELD review is append-only;
-- no model output silently overwrites a validated classification.
+Non-negotiable:
+- the LLM never edits the graph directly;
+- human-approved change is stored as review/governance metadata first;
+- validated graph semantics must be derived from the latest human decision;
+- source passage/page provenance remains mandatory;
+- candidate and human-validated knowledge remain visibly distinct.
 
 ### Consolidated runtime validation
 
-The accumulated App/Job changes remain intentionally undeployed to avoid
-repeated Databricks cost.
+Add SHIELD validation to the already planned consolidated session:
 
-The next consolidated test session must also include Class-D pre-screen checks:
+1. ensure the existing persistent `SHIELD/` folder contains the governed SHIELD
+   source documents;
+2. run notebook 45 and require:
+   `PASS — PERSISTENT SHIELD CORPUS INDEXED`;
+3. run notebook 47 to create/update:
+   `Investigation KG - SHIELD Proposals`;
+4. attach App resource:
+   - key: `shield_proposal_job`;
+   - permission: `Can manage run`;
+5. redeploy once with the other accumulated resources;
+6. human-validate one ContributingFactor — CONTRIBUTED_TO relationship;
+7. generate SHIELD proposals;
+8. confirm the assistant proposal shows SHIELD page evidence;
+9. save one Gate-2 human decision;
+10. run notebook 48 and require:
+    `PASS — SHIELD PROPOSALS REQUIRE GATE 1 AND AUTHORITATIVE CLASSIFICATION REQUIRES GATE 2`.
 
-- one synthetic non-D direct-text attempt blocked by the App preflight;
-- one backend non-D protected-content attempt that reaches notebook 15 and fails
-  closed before passages/model execution;
-- one declared Class-D case proving the detector never downgrades D;
-- one published MAIRA Class-B report proving the published-report exemption;
-- notebook 43 must return:
-  `PASS — INFORMATION-CLASS PRESCREEN FAILS CLOSED WITHOUT DOWNGRADING CLASS D`.
-
-Reference-context indexing is notebook 44.
+Notebook 43 remains the Class-D pre-screen validator.
+Notebook 44 indexes REFERENCE_CONTEXT.
 
 ## 4. PENDING — planned implementation sequence
 
-### P1 — SHIELD workflow
-
-- Candidate contributing factor
-  → human validation
-  → LLM SHIELD suggestion
-  → independent human SHIELD validation.
-- Only validated SHIELD classification becomes authoritative.
-
-### P2 — knowledge assistant and relationship correction
+### P1 — knowledge assistant and relationship correction
 
 - Ask/Research over processed knowledge with citations.
 - Distinguish candidate from human-validated knowledge.
 - Allow LLM to propose relationship corrections from the graph.
 - Never change validated graph relationships without explicit human approval.
 
-### P3 — similar cases and external signals
+### P2 — similar cases and external signals
 
 - Retrieve similar MAIRA investigation reports.
 - Keep News & Alerts separate as external/unvalidated information.
 - Later allow governed read-only LLM access to the news backend without mixing
   news with validated investigation findings.
 
-### P4 — production-readiness validation
+### P3 — production-readiness validation
 
 - Reproducible benchmarks.
 - Versioned prompts/models/retrieval snapshots.
@@ -489,5 +481,36 @@ Implemented in source:
 - generic public email alone does not trigger Class D; the test suite now
   matches that governed rule;
 - notebook 43 validates fail-closed routing and App audit privacy constraints.
+
+Status: **code complete; runtime validation deferred**.
+
+
+### SHIELD two-gate classification workflow
+
+Implemented in source:
+
+- generic source indexer excludes reserved `SHIELD/` from ordinary
+  SourceDocument catalogue/retention;
+- previously indexed SHIELD SourceDocument metadata is migrated to
+  `RESERVED_TAXONOMY` / `IKF_SHIELD` with persistent exemption;
+- notebook 45 indexes persistent `shield_document` / `shield_passage`;
+- corpus snapshot is deterministic from source-file SHA-256 values;
+- notebook 46 generates proposals only for factors whose latest Gate-1
+  RelationshipReview confirms `CONTRIBUTED_TO`;
+- MAIRA deterministic free-text retrieval is reused over SHIELD passages;
+- assistant label/code must occur in cited SHIELD source text;
+- ungrounded output becomes `NO_GROUNDED_PROPOSAL`;
+- ShieldProposal preserves Gate-1 review, factor, target, model, retrieval and
+  corpus-snapshot provenance;
+- stale proposals are blocked when Gate 1 receives a newer human review;
+- notebook 47 defines the one-task SHIELD proposal Job;
+- App resource is `SHIELD_PROPOSAL_JOB_ID <- shield_proposal_job`;
+- Review & Validate exposes grounded SHIELD source pages and Gate-2
+  VALIDATED / REJECTED / AMENDED review;
+- every Gate-2 action creates append-only `ShieldReview`;
+- proposal/KGNode are never overwritten;
+- notebook 48 validates both human gates, grounding and provenance;
+- transient SHIELD proposal rationale/evidence follows analysis retention;
+- persistent SHIELD source corpus and compact human-review governance remain.
 
 Status: **code complete; runtime validation deferred**.
