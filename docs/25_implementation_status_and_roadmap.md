@@ -705,3 +705,20 @@ Implemented in source on 2026-09-22:
   `backup/pre-graph-workspace-2026-09-22`.
 
 Status: **code/documentation complete; runtime validation pending redeploy**.
+
+
+### Analysis summary / evidence separation
+
+Implemented in source on 2026-09-22:
+
+- removed the Recent analyses list from Analyse Documents;
+- the sidebar Active analysis selector is now the only analysis-switching
+  control;
+- renamed detailed Analysis results to **Analysis summary**;
+- Analyse Documents now shows counts/structural metrics only;
+- detailed extracted items and source-page evidence remain exclusively in
+  **Findings & Evidence**;
+- App build:
+  `2026-09-22-summary-evidence-separation-v24`.
+
+Status: **code/documentation complete; runtime validation pending redeploy**.
