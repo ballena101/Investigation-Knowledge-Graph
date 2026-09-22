@@ -661,3 +661,50 @@ This does not yet retire the fallback parser and does not change the direct-text
 ingress. The next integration step is to connect governed MAIRA query/retrieval
 logic to normal App analyses where the investigator's question can be expressed
 by a governed query specification.
+
+
+### Evidence sheet and explicit answer interface
+
+The App now treats the analysis question/objective as an explicit output contract,
+not only as prompt context.
+
+For new model runs:
+- the resolution model must return a direct evidence-grounded answer to the
+  supplied analysis question/objective;
+- the answer must include valid supporting passage IDs;
+- answers without valid evidence references are not presented as grounded;
+- the App displays the answer separately from the general analysis summary;
+- report/page references are derived deterministically from the supporting
+  passages.
+
+Graph nodes and relationships now also carry human-readable evidence references,
+for example `Report.pdf · p. 12` or `Report.pdf · pp. 12–13`.
+
+The Findings & Knowledge capability includes an Evidence sheet where an
+investigator can select a finding, event, concept or relationship and inspect:
+- its analytical description;
+- the supporting report/page reference(s);
+- the underlying passage IDs for technical traceability.
+
+Target document-review interface:
+
+```text
+analysis question
+      ↓
+explicit grounded answer
+      ↓
+finding / relationship
+      ↓
+report + page reference
+      ↓
+embedded source document opened at that page
+```
+
+The final PDF pane requires governed read-only access from the Databricks App to
+the source-document Unity Catalog volume. It must use least privilege and must
+not bypass the established App/user authorization model. The page-reference
+layer is already implemented, so the viewer can be added without changing
+evidence identity or graph semantics.
+
+Analyses completed before this output contract was introduced do not contain
+the new answer/page-reference metadata unless they are deliberately rerun.
