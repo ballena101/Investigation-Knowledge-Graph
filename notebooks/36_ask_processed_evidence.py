@@ -927,6 +927,161 @@ with driver.session() as session:
 
 print("Retrieval snapshot:", retrieval_snapshot_id)
 
+# REFERENCE_CONTEXT retrieval is deliberately separate from primary case
+# retrieval. Reference passages can explain framework/methodology but are never
+# part of the occurrence-evidence retrieval snapshot.
+
+reference_rows = []
+reference_retrieval_mode = "NONE"
+reference_retrieval_passage_ids = []
+reference_retrieval_snapshot_id = None
+
+if reference_analysis_ids:
+    if maira_import_error is not None:
+        message = (
+            "Reference context requires MAIRA's deterministic free-text "
+            "retrieval module, but the MAIRA runtime package is unavailable."
+        )
+        with driver.session() as session:
+            session.run(
+                """
+                MATCH (q:QuestionRun {
+                    question_run_id: $question_run_id
+                })
+                SET
+                    q.status = 'FAILED',
+                    q.processing_stage = 'REFERENCE_RETRIEVAL_RUNTIME_UNAVAILABLE',
+                    q.processing_error = $message,
+                    q.updated_at = datetime()
+                """,
+                question_run_id=question_run_id,
+                message=message,
+            ).consume()
+        driver.close()
+        raise RuntimeError(message)
+
+    from maira.retrieval import retrieve_free_text
+
+    reference_candidates = (
+        spark.table(ANALYSIS_PASSAGE_TABLE)
+        .filter(
+            F.col("analysis_id").isin(
+                reference_analysis_ids
+            )
+        )
+        .select(
+            "analysis_id",
+            "document_id",
+            "passage_id",
+            "page_start",
+            "page_end",
+            "passage_order",
+            "detected_language",
+            "passage_text",
+        )
+        .orderBy(
+            "analysis_id",
+            "document_id",
+            "passage_order",
+        )
+        .collect()
+    )
+
+    if reference_candidates:
+        reference_retrieval = retrieve_free_text(
+            [
+                {
+                    "document_id": row["document_id"],
+                    "passage_id": row["passage_id"],
+                    "passage_number": row["passage_order"],
+                    "start_page": row["page_start"],
+                    "end_page": row["page_end"],
+                    "passage_text": row["passage_text"],
+                    "report_package_id": row["analysis_id"],
+                }
+                for row in reference_candidates
+            ],
+            question_text,
+            expansions=None,
+            max_passages=REFERENCE_MAX_PASSAGES,
+            max_characters=REFERENCE_MAX_CHARS,
+        )
+
+        selected_reference_ids = {
+            hit.passage_id
+            for hit in reference_retrieval.hits
+        }
+
+        reference_rows = [
+            row
+            for row in reference_candidates
+            if row["passage_id"]
+            in selected_reference_ids
+        ]
+
+        reference_retrieval_mode = (
+            reference_retrieval.method
+        )
+        reference_retrieval_passage_ids = sorted(
+            selected_reference_ids
+        )
+
+    reference_snapshot_payload = {
+        "question_sha256": hashlib.sha256(
+            question_text.encode("utf-8")
+        ).hexdigest(),
+        "reference_analysis_ids": sorted(
+            reference_analysis_ids
+        ),
+        "reference_retrieval_mode": reference_retrieval_mode,
+        "reference_retrieval_passage_ids": (
+            reference_retrieval_passage_ids
+        ),
+    }
+
+    reference_retrieval_snapshot_id = (
+        "reference_snapshot_"
+        + hashlib.sha256(
+            json.dumps(
+                reference_snapshot_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()[:32]
+    )
+
+    with driver.session() as session:
+        session.run(
+            """
+            MATCH (q:QuestionRun {
+                question_run_id: $question_run_id
+            })
+            SET
+                q.reference_retrieval_mode = $reference_retrieval_mode,
+                q.reference_retrieval_passage_ids = $reference_retrieval_passage_ids,
+                q.reference_retrieval_snapshot_id = $reference_retrieval_snapshot_id,
+                q.reference_context_passage_count = $reference_context_passage_count,
+                q.updated_at = datetime()
+            """,
+            question_run_id=question_run_id,
+            reference_retrieval_mode=reference_retrieval_mode,
+            reference_retrieval_passage_ids=reference_retrieval_passage_ids,
+            reference_retrieval_snapshot_id=reference_retrieval_snapshot_id,
+            reference_context_passage_count=len(
+                reference_rows
+            ),
+        ).consume()
+
+print(
+    "REFERENCE_CONTEXT passages:",
+    len(reference_rows),
+)
+if reference_retrieval_snapshot_id:
+    print(
+        "Reference retrieval snapshot:",
+        reference_retrieval_snapshot_id,
+    )
+
 # COMMAND ----------
 
 def format_page_reference(page_start, page_end):
