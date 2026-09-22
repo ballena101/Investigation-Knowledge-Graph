@@ -142,32 +142,23 @@ and human-validated knowledge distinct.
 
 ## 3. NEXT — current milestone
 
-### Development — reference-context retrieval
+### Development — Class-D completion
 
-Add legal/methodological reference material as a separate retrieval layer.
+Complete the automatic information-class pre-screen and fail-closed routing for
+protected investigation material.
 
-Required separation:
+Required principles:
 
-```text
-SOURCE_EVIDENCE
-    occurrence-specific report evidence
-
-REFERENCE_CONTEXT
-    Directive 2009/18/EC
-    Directive (EU) 2024/3017
-    IMO Casualty Investigation Code MSC.255(84)
-    IMO Guidelines A.1075(28)
-    other governed technical/methodological references
-
-CONTROLLED_TAXONOMY
-    EMCIP registry
-```
-
-Reference context may guide interpretation or answer framework questions, but it
-must never be presented as proof that an accident fact occurred.
-
-The App must preserve the source-layer label in retrieval, citations and model
-prompts.
+- investigator-declared A/B/C/D remains visible and auditable;
+- automatic screening is a safeguard, not a silent reclassification engine;
+- obvious protected indicators can escalate/reroute but must not downgrade D;
+- ambiguous material fails closed toward the more protected path;
+- witness statements, identities, medical/personal data, investigator drafts,
+  VTS/VDR and equivalent protected evidence remain Class-D indicators;
+- raw protected production content must not become a general Neo4j evidence
+  store;
+- dedicated Class-D model routes remain mandatory;
+- rule version and trigger reason must be logged deterministically.
 
 ### Consolidated runtime validation
 
@@ -176,57 +167,54 @@ repeated Databricks cost.
 
 Next validation session:
 
-1. Pull current IKF `main` and current MAIRA `main`.
-2. Run notebook `37_create_ask_processed_evidence_job.py`.
-3. Attach Job resource:
+1. Pull current IKF `main` and MAIRA `main`.
+2. Populate:
+   `/Volumes/bdw_analysis_prod/kg_poc/reference_context`
+   with the governed legal/IMO/technical reference files.
+3. Run notebook 43 and require:
+   `PASS — IKF REFERENCE_CONTEXT CORPUS INDEXED`.
+4. Run notebook 37 to create/update the Ask Job.
+5. Attach App Job resource:
    - key: `ask_job`;
    - permission: `Can manage run`.
-4. Run notebook `41_create_emcip_mapping_proposal_job.py`.
-5. Attach Job resource:
+6. Run notebook 41 to create/update the EMCIP mapping Job.
+7. Attach:
    - key: `emcip_mapping_job`;
    - permission: `Can manage run`.
-6. Redeploy the App once.
-7. Create/retry one Class-B MAIRA MAIN_REPORT analysis.
-8. Require notebook 32:
-   `PASS — NORMAL APP ANALYSIS PRESERVES MAIRA_IKF_PASSAGE_V0.1`.
-9. Require notebook 35:
-   `PASS — SOURCE VIEWER METADATA AND PAGE RANGES ARE VALID`.
-10. Confirm report/page citations and cited PDF rendering in the App.
-11. Run an ordinary Ask question and a document-scoped Ask question.
-12. Require notebook 38:
-   `PASS — SCOPED ASK / COMPARE RUN IS EVIDENCE-BOUNDED`.
-13. Test one exact persisted MAIRA governed query and confirm:
-   `GOVERNED_RELATIONSHIP_EVIDENCE`.
-14. Test one large ordinary free-text scope and confirm:
-   `DETERMINISTIC_FREE_TEXT_LEXICAL_V0.1`.
-15. Save at least one generic relationship review and require notebook 39:
-   `PASS — GENERIC RELATIONSHIP REVIEWS PRESERVE ANALYSIS AND MODEL PROVENANCE`.
-16. Generate generic EMCIP proposals from Review & Validate.
-17. Save at least one mapping review and require notebook 42:
-   `PASS — GENERIC EMCIP PROPOSALS AND REVIEWS REMAIN GOVERNED`.
+8. Redeploy the App once.
+9. Create/retry one Class-B MAIRA MAIN_REPORT analysis.
+10. Require notebook 32:
+    `PASS — NORMAL APP ANALYSIS PRESERVES MAIRA_IKF_PASSAGE_V0.1`.
+11. Require notebook 35:
+    `PASS — SOURCE VIEWER METADATA AND PAGE RANGES ARE VALID`.
+12. Confirm visible report/page citations and cited PDF rendering.
+13. Run one ordinary Ask question and one document-scoped Ask question.
+14. Run one Ask question with REFERENCE_CONTEXT enabled.
+15. Require notebook 38:
+    `PASS — SCOPED ASK / COMPARE PRESERVES SOURCE_EVIDENCE AND REFERENCE_CONTEXT BOUNDARIES`.
+16. Test one exact persisted MAIRA governed query and confirm:
+    `GOVERNED_RELATIONSHIP_EVIDENCE`.
+17. Test one large ordinary free-text scope and confirm:
+    `DETERMINISTIC_FREE_TEXT_LEXICAL_V0.1`.
+18. Save at least one generic relationship review and require notebook 39:
+    `PASS — GENERIC RELATIONSHIP REVIEWS PRESERVE ANALYSIS AND MODEL PROVENANCE`.
+19. Generate generic EMCIP proposals from Review & Validate.
+20. Save at least one mapping review and require notebook 42:
+    `PASS — GENERIC EMCIP PROPOSALS AND REVIEWS REMAIN GOVERNED`.
 
-No question, relationship review or EMCIP mapping review should rebuild the case
-graph.
+No question, reference retrieval, relationship review or EMCIP mapping review
+should rebuild the case graph.
 
 ## 4. PENDING — planned implementation sequence
 
-### P1 — reference-context retrieval
-
-- Retrieve legal/methodological reference fragments separately from occurrence
-  evidence.
-- Preserve source-layer labels:
-  SOURCE_EVIDENCE / REFERENCE_CONTEXT / CONTROLLED_TAXONOMY.
-- Reference context may guide interpretation but cannot prove an accident fact.
-- Keep reference citations distinguishable from report-evidence citations.
-
-### P2 — Class-D completion
+### P1 — Class-D completion
 
 - Automated A/B/C/D pre-screen with fail-closed routing.
 - Complete protected-data controls and assurance.
 - Keep production protected raw content outside Neo4j.
 - Preserve dual-model comparison and privacy validation.
 
-### P3 — SHIELD workflow
+### P2 — SHIELD workflow
 
 - Candidate contributing factor
   → human validation
@@ -234,21 +222,21 @@ graph.
   → independent human SHIELD validation.
 - Only validated SHIELD classification becomes authoritative.
 
-### P4 — knowledge assistant and relationship correction
+### P3 — knowledge assistant and relationship correction
 
 - Ask/Research over processed knowledge with citations.
 - Distinguish candidate from human-validated knowledge.
 - Allow LLM to propose relationship corrections from the graph.
 - Never change validated graph relationships without explicit human approval.
 
-### P5 — similar cases and external signals
+### P4 — similar cases and external signals
 
 - Retrieve similar MAIRA investigation reports.
 - Keep News & Alerts separate as external/unvalidated information.
 - Later allow governed read-only LLM access to the news backend without mixing
   news with validated investigation findings.
 
-### P6 — production-readiness validation
+### P5 — production-readiness validation
 
 - Reproducible benchmarks.
 - Versioned prompts/models/retrieval snapshots.
@@ -474,5 +462,29 @@ Implemented in code:
   analyses;
 - notebook 38 validates cross-layer provenance and prevents layer leakage;
 - retention cleanup scrubs layer-specific citation/provenance content.
+
+Status: **code complete; runtime validation deferred**.
+
+
+### Dedicated reference-context corpus
+
+Implemented in code:
+- added notebook `43_index_reference_context.py`;
+- dedicated source root:
+  `/Volumes/bdw_analysis_prod/kg_poc/reference_context`;
+- governed Delta tables:
+  `reference_document` and `reference_passage`;
+- compact `ReferenceDocument` metadata mirrored to Neo4j;
+- source layer is explicitly `REFERENCE_CONTEXT`;
+- SHIELD remains outside this corpus;
+- Ask exposes an optional reference-context control;
+- MAIRA deterministic free-text retrieval is reused for reference passages;
+- source-evidence and reference-context retrieval snapshots are independent;
+- model prompt and output contract preserve source-layer boundaries;
+- App renders case citations and reference citations separately;
+- reference PDF pages use the same user-authorised viewer path;
+- old completed-Class-A-analysis reference mechanism was removed so there is
+  only one reference-context architecture;
+- notebook 38 now validates the dedicated corpus boundary.
 
 Status: **code complete; runtime validation deferred**.
