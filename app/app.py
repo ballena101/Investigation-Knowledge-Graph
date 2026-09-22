@@ -308,7 +308,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-summary-evidence-separation-v24"
+APP_BUILD = "2026-09-22-findings-index-v25"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -6667,7 +6667,7 @@ with tab_findings:
             len(findings_recommendation_nodes),
         )
         index_cols[5].metric(
-            "Relationships",
+            "Analytical relationships",
             len(findings_relationships),
         )
 
@@ -6678,7 +6678,7 @@ with tab_findings:
             "Findings",
             "Safety issues",
             "Safety recommendations",
-            "Relationships",
+            "Analytical relationships",
         ]
         findings_category = st.radio(
             "Browse category",
@@ -6785,10 +6785,13 @@ with tab_findings:
                 )
 
             for edge in knowledge_graph["edges"]:
+                if edge.get("edge_class") == "STRUCTURAL":
+                    continue
+
                 evidence_items.append(
                     {
                         "kind": "Relationship",
-                        "category": "Relationships",
+                        "category": "Analytical relationships",
                         "label": (
                             f"{edge['source_label']} — "
                             f"{edge['relationship']} → "
