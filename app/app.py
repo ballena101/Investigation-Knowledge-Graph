@@ -72,13 +72,6 @@ APP_PRESCREEN_VERSION = "IKF_APP_PRESCREEN_V0.1"
 
 _APP_PROTECTED_TEXT_RULES = (
     (
-        "DIRECT_EMAIL_IDENTIFIER",
-        re.compile(
-            r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
         "PERSONAL_ID_RECORD",
         re.compile(
             r"\b(?:passport|national\s+id|identity\s+card|id\s+number)"
