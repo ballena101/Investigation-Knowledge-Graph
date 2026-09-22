@@ -2314,31 +2314,39 @@ with tab_home:
 with tab_news:
     st.subheader("News & Alerts")
     st.caption(
-        "A simple entry point for the existing country news dashboard. "
-        "The dashboard and governed read-only news view will be connected here."
+        "Existing Databricks AI/BI dashboard for maritime-safety news and "
+        "country-level alerts."
     )
 
     n1, n2, n3 = st.columns(3)
-    n1.metric("Country dashboard", "To connect")
+    n1.metric(
+        "Country dashboard",
+        "Connected" if NEWS_DASHBOARD_URL else "Ready to connect",
+    )
     n2.metric("News table access", "Read-only")
-    n3.metric("LLM questions", "Preview")
+    n3.metric("LLM questions", "Next step")
 
     st.info(
-        "News is treated as external, unvalidated information. It will not be "
+        "News is treated as external, unvalidated information. It is not "
         "mixed silently with validated investigation findings."
     )
 
-    news_question = st.text_input(
-        "Ask about the news",
-        placeholder="Example: What relevant ferry alerts were reported this week?",
-        disabled=True,
-        key="news_question_preview",
-    )
-    st.button(
-        "Ask the news assistant — coming soon",
-        disabled=True,
-        key="news_assistant_preview",
-    )
+    if NEWS_DASHBOARD_URL:
+        st.link_button(
+            "Open News & Alerts dashboard",
+            NEWS_DASHBOARD_URL,
+            type="primary",
+            use_container_width=True,
+        )
+        st.caption(
+            "The dashboard opens in Databricks and uses your existing "
+            "dashboard and data permissions."
+        )
+    else:
+        st.write(
+            "Copy the published dashboard link from Databricks and configure "
+            "it as NEWS_DASHBOARD_URL for this App."
+        )
 
 with tab_new_analysis:
     st.subheader("Analyse Documents")
