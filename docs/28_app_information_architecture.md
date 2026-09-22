@@ -438,3 +438,52 @@ contains investigation-analysis relationships rather than graph plumbing.
 
 Detailed item text, source references and cited-page rendering remain in the
 Evidence sheet below the index.
+
+
+## Simplified supporting-evidence viewer
+
+Implemented in source on 2026-09-22.
+
+The Findings & Evidence detail view now follows one investigator-facing path:
+
+**Description → Supporting evidence → Source page**
+
+The previous separate visible concepts of Source reference, Source document,
+Evidence page and Technical evidence ID have been consolidated.
+
+### Normal user behaviour
+
+- when exactly one structured evidence location exists, the citation is shown
+  directly and its PDF page/range is rendered automatically;
+- when two or more structured evidence locations exist, a
+  **Supporting evidence (N)** selector lets the investigator choose the cited
+  document/page to display;
+- when a textual source reference exists but no structured page location is
+  available, the reference is shown with an explicit message that embedded
+  page viewing is unavailable for that older analysis;
+- when no page-level evidence exists, the UI states this directly.
+
+The PDF viewer is driven by the structured evidence location
+(`document_id + page_start/page_end`), not by the passage ID.
+
+### Technical details
+
+Internal provenance is hidden by default under **Technical details**. It may
+contain:
+
+- evidence passage IDs;
+- stored human-readable source references;
+- raw structured evidence locations.
+
+These fields remain available for audit, debugging and validation but are not
+part of the normal investigator workflow.
+
+Backup branch created before this change:
+
+`backup/pre-evidence-viewer-simplification-2026-09-22`
+
+App build:
+
+`2026-09-22-evidence-viewer-v26`
+
+Status: **code/documentation complete; runtime validation pending redeploy**.
