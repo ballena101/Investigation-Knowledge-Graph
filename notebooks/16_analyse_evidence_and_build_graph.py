@@ -89,7 +89,7 @@ CANDIDATE_REL_TABLE = (
 )
 SUMMARY_TABLE = "bdw_analysis_prod.kg_poc.analysis_summary"
 
-ANALYSIS_VERSION = "GROUP_ANALYSIS_LLM_V0.6"
+ANALYSIS_VERSION = "GROUP_ANALYSIS_LLM_V0.7_QUESTION_INDEPENDENT"
 PRIVACY_OUTPUT_MODE = "DE_IDENTIFIED_BY_DEFAULT"
 MAX_PASSAGES = 500
 MAX_BATCH_CHARS = 14000
@@ -278,7 +278,8 @@ def load_analysis_meta():
     RETURN
         a.analysis_id AS analysis_id,
         a.analysis_title AS analysis_title,
-        a.analysis_objective AS analysis_objective,
+        properties(a)["analysis_description"] AS analysis_description,
+        a.analysis_objective AS legacy_analysis_objective,
         a.status AS status,
         a.language_mode AS language_mode,
         a.output_language AS output_language,
@@ -950,10 +951,11 @@ try:
 
         user_prompt = (
             f"Analysis title: {analysis['analysis_title']}\n"
-            f"Analysis objective: "
-            f"{analysis.get('analysis_objective') or 'General investigation analysis'}\n\n"
+            f"Analysis description: "
+            f"{analysis.get('analysis_description') or 'General investigation evidence set'}\n\n"
             "Extract evidence-grounded candidate concepts and supported "
-            "relationships from these passages:\n\n"
+            "relationships from these passages without optimising the extraction "
+            "for any later user question:\n\n"
             + "\n\n---\n\n".join(
                 passage_block(row)
                 for row in batch
@@ -1205,9 +1207,8 @@ Your job is to:
 1. merge candidates that clearly refer to the same real concept/event/factor;
 2. retain genuinely distinct concepts separately;
 3. consolidate candidate relationships;
-4. when analysis_objective contains a question or requested analytical objective,
-   answer it explicitly and directly from the supplied evidence;
-5. produce a concise analysis summary in the requested output language.
+4. produce a concise, question-independent analysis summary in the requested
+   output language.
 
 Critical rules:
 - Do NOT create a causal/contributory relationship that is not already present
@@ -1215,10 +1216,6 @@ Critical rules:
 - Do NOT convert FOLLOWED_BY into RESULTED_IN or CONTRIBUTED_TO.
 - Do NOT invent facts from outside the supplied candidates.
 - Preserve all supporting passage_ids.
-- The explicit answer must contain only claims supported by supplied candidates.
-- Return the passage_ids that support the explicit answer.
-- If the supplied evidence is insufficient to answer the question/objective,
-  say so explicitly; do not fill the gap from general knowledge.
 - Conflicting source claims must be listed in source_conflicts instead of
   silently resolved.
 - Node kinds must remain within the supplied controlled node-kind vocabulary.
@@ -1253,10 +1250,6 @@ Required JSON shape:
       "evidence_class": "DIRECT"
     }
   ],
-  "answer": {
-    "text": "direct evidence-grounded answer to analysis_objective, or empty if no objective was supplied",
-    "passage_ids": ["passage_..."]
-  },
   "summary": {
     "overview": "concise overall description",
     "key_findings": ["..."],
@@ -1278,8 +1271,8 @@ try:
         "analysis_title": analysis[
             "analysis_title"
         ],
-        "analysis_objective": analysis.get(
-            "analysis_objective"
+        "analysis_description": analysis.get(
+            "analysis_description"
         ),
         "output_language": analysis.get(
             "output_language"
@@ -1873,51 +1866,10 @@ for node in resolved_nodes:
 
 # COMMAND ----------
 
-answer_payload = resolution.get(
-    "answer",
-    {},
-) or {}
-
-answer_text_raw = str(
-    answer_payload.get(
-        "text",
-        "",
-    )
-).strip()
-
-valid_passage_ids = set(passage_reference_by_id)
-
-answer_passage_ids = sorted(
-    {
-        str(passage_id)
-        for passage_id in answer_payload.get(
-            "passage_ids",
-            [],
-        )
-        if str(passage_id) in valid_passage_ids
-    }
-)
-
-# An explicit answer without evidence references is not presented as grounded.
-if analysis.get("analysis_objective") and answer_text_raw and not answer_passage_ids:
-    answer_text_raw = (
-        "The model produced a response, but no valid supporting passage "
-        "reference was returned. Treat the question as not yet answered."
-    )
-
-answer_text = redact_direct_identifiers(
-    answer_text_raw
-)
-privacy_redaction_count += int(
-    answer_text != answer_text_raw
-)
-
-answer_references = evidence_references(
-    answer_passage_ids
-)
-answer_locations = evidence_locations(
-    answer_passage_ids
-)
+answer_text = ""
+answer_passage_ids = []
+answer_references = []
+answer_locations = []
 
 summary = resolution.get(
     "summary",
