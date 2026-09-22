@@ -12,7 +12,10 @@ import hashlib
 
 from pyspark.sql import functions as F
 
-from maira.relationships import detect_contributed_to
+from maira.relationships import (
+    detect_contributed_to,
+    detect_followed_by,
+)
 
 
 def _distinct_values(df, column: str) -> list[str]:
@@ -28,11 +31,13 @@ def run_query(
     query_id: str,
     *,
     document_id: str | None = None,
+    document_ids: list[str] | tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     """Run a governed MAIRA query and return supported relationship evidence.
 
     Current PoC support:
-    - CONTRIBUTED_TO relationship queries such as Q003.
+    - FOLLOWED_BY governed relationship queries such as Q001/Q002;
+    - CONTRIBUTED_TO governed relationship queries such as Q003.
 
     Parameters
     ----------
@@ -41,8 +46,11 @@ def run_query(
     query_id:
         Governed query identifier from MAIRA query_specifications.
     document_id:
-        Optional MAIRA document_id. If omitted, all INVESTIGATION MAIN_REPORT
-        passages are assessed.
+        Optional single MAIRA document_id.
+    document_ids:
+        Optional set of MAIRA document IDs. Use this for an investigator-selected
+        document scope. document_id and document_ids are mutually exclusive.
+        If both are omitted, all INVESTIGATION MAIN_REPORT passages are assessed.
 
     Returns
     -------
@@ -64,9 +72,22 @@ def run_query(
     query_spec_id = spec["query_spec_id"]
     relationship = spec["relationship"]
 
-    if relationship != "CONTRIBUTED_TO":
+    detector_by_relationship = {
+        "FOLLOWED_BY": detect_followed_by,
+        "CONTRIBUTED_TO": detect_contributed_to,
+    }
+
+    detector = detector_by_relationship.get(relationship)
+
+    if detector is None:
         raise NotImplementedError(
-            f"run_query currently supports CONTRIBUTED_TO only; got {relationship}"
+            "run_query currently supports FOLLOWED_BY and CONTRIBUTED_TO; "
+            f"got {relationship}"
+        )
+
+    if document_id is not None and document_ids is not None:
+        raise ValueError(
+            "Pass either document_id or document_ids, not both."
         )
 
     concepts = (
@@ -132,7 +153,21 @@ def run_query(
     )
 
     if document_id is not None:
-        passages = passages.filter(F.col("p.document_id") == document_id)
+        passages = passages.filter(
+            F.col("p.document_id") == document_id
+        )
+
+    if document_ids is not None:
+        scoped_ids = [
+            str(value)
+            for value in document_ids
+            if str(value).strip()
+        ]
+        if not scoped_ids:
+            return []
+        passages = passages.filter(
+            F.col("p.document_id").isin(scoped_ids)
+        )
 
     passages = passages.select(
         F.col("p.passage_id").alias("passage_id"),
@@ -148,12 +183,24 @@ def run_query(
     results: list[dict[str, Any]] = []
 
     for row in passages.collect():
-        assessment = detect_contributed_to(
+        detector_kwargs = {
+            "subject_terms": sorted(subject_terms),
+            "object_terms": sorted(object_terms),
+            "context_text": row["passage_text"],
+        }
+
+        if relationship == "FOLLOWED_BY":
+            detector_kwargs["context_terms"] = sorted(
+                context_terms
+            )
+        else:
+            detector_kwargs["context_terms"] = sorted(
+                context_terms
+            )
+
+        assessment = detector(
             row["passage_text"],
-            subject_terms=sorted(subject_terms),
-            object_terms=sorted(object_terms),
-            object_context_terms=sorted(context_terms),
-            context_text=row["passage_text"],
+            **detector_kwargs,
         )
 
         if assessment.relationship_assessment != "SUPPORTED_REQUESTED_RELATIONSHIP":
