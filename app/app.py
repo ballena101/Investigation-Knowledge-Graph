@@ -109,7 +109,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-classification-driven-catalogue-v7"
+APP_BUILD = "2026-09-22-question-separation-and-citations-v8"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -958,7 +958,7 @@ def load_source_documents():
 
 def create_analysis_from_documents(
     title,
-    objective,
+    description,
     selected_document_ids,
     language_mode,
     output_language,
@@ -978,19 +978,13 @@ def create_analysis_from_documents(
     retention_hours = content_retention_hours(
         information_class
     )
-    objective_hash = (
-        hashlib.sha256(
-            objective.encode("utf-8")
-        ).hexdigest()
-        if objective
-        else None
-    )
 
     query = """
     CREATE (a:AnalysisGroup {
         analysis_id: $analysis_id,
         analysis_title: $analysis_title,
-        analysis_objective: $analysis_objective,
+        analysis_description: $analysis_description,
+        analysis_objective: NULL,
         input_mode: 'DOCUMENTS',
         information_class: $information_class,
         language_mode: $language_mode,
@@ -1002,8 +996,8 @@ def create_analysis_from_documents(
         content_retention_hours: $content_retention_hours,
         content_expires_at: datetime() + duration({hours: $content_retention_hours}),
         content_purge_status: 'ACTIVE',
-        question_present: $question_present,
-        question_hash: $question_hash,
+        question_present: false,
+        question_hash: NULL,
         created_by: $created_by,
         created_at: datetime(),
         pipeline_version: $pipeline_version
@@ -1059,7 +1053,7 @@ def create_analysis_from_documents(
     params = {
         "analysis_id": analysis_id,
         "analysis_title": title,
-        "analysis_objective": objective or None,
+        "analysis_description": description or None,
         "information_class": information_class,
         "language_mode": language_mode,
         "output_language": output_language,
@@ -1067,8 +1061,6 @@ def create_analysis_from_documents(
         "model_selection": model_selection,
         "created_by": creator,
         "content_retention_hours": retention_hours,
-        "question_present": bool(objective),
-        "question_hash": objective_hash,
         "pipeline_version": PIPELINE_VERSION,
         "document_ids": selected_document_ids,
     }
@@ -1090,7 +1082,7 @@ def create_analysis_from_documents(
 
 def create_analysis_from_text(
     title,
-    objective,
+    description,
     direct_text,
     language_mode,
     output_language,
@@ -1110,13 +1102,6 @@ def create_analysis_from_text(
     retention_hours = content_retention_hours(
         information_class
     )
-    objective_hash = (
-        hashlib.sha256(
-            objective.encode("utf-8")
-        ).hexdigest()
-        if objective
-        else None
-    )
     text_sha256 = hashlib.sha256(
         direct_text.encode("utf-8")
     ).hexdigest()
@@ -1128,7 +1113,8 @@ def create_analysis_from_text(
     CREATE (a:AnalysisGroup {
         analysis_id: $analysis_id,
         analysis_title: $analysis_title,
-        analysis_objective: $analysis_objective,
+        analysis_description: $analysis_description,
+        analysis_objective: NULL,
         input_mode: 'DIRECT_TEXT',
         information_class: $information_class,
         language_mode: $language_mode,
@@ -1140,8 +1126,8 @@ def create_analysis_from_text(
         content_retention_hours: $content_retention_hours,
         content_expires_at: datetime() + duration({hours: $content_retention_hours}),
         content_purge_status: 'ACTIVE',
-        question_present: $question_present,
-        question_hash: $question_hash,
+        question_present: false,
+        question_hash: NULL,
         created_by: $created_by,
         created_at: datetime(),
         pipeline_version: $pipeline_version,
@@ -1165,7 +1151,7 @@ def create_analysis_from_text(
     params = {
         "analysis_id": analysis_id,
         "analysis_title": title,
-        "analysis_objective": objective or None,
+        "analysis_description": description or None,
         "information_class": information_class,
         "language_mode": language_mode,
         "output_language": output_language,
@@ -1173,8 +1159,6 @@ def create_analysis_from_text(
         "model_selection": model_selection,
         "created_by": creator,
         "content_retention_hours": retention_hours,
-        "question_present": bool(objective),
-        "question_hash": objective_hash,
         "pipeline_version": PIPELINE_VERSION,
         "source_id": source_id,
         "encrypted_text": encrypted_text,
@@ -1224,7 +1208,8 @@ def load_analysis_groups():
     RETURN
         a.analysis_id AS analysis_id,
         a.analysis_title AS analysis_title,
-        a.analysis_objective AS analysis_objective,
+        properties(a)["analysis_description"] AS analysis_description,
+        a.analysis_objective AS legacy_analysis_objective,
         properties(a)["input_mode"] AS input_mode,
         properties(a)["information_class"] AS information_class,
         properties(a)["retention_policy"] AS retention_policy,
@@ -1710,6 +1695,37 @@ def load_model_run_graph(
     }
 
 
+def render_visible_source_references(graph, *, empty_message=True):
+    """Show report/page references prominently for a completed graph."""
+
+    references = []
+    seen = set()
+
+    for item in (
+        list(graph.get("nodes") or [])
+        + list(graph.get("edges") or [])
+    ):
+        for reference in item.get("evidence_references") or []:
+            if reference not in seen:
+                seen.add(reference)
+                references.append(reference)
+
+    if references:
+        st.markdown("**Source pages**")
+        for reference in references:
+            st.write(f"• {reference}")
+        return True
+
+    if empty_message:
+        st.caption(
+            "No page-level references are stored for this analysis. "
+            "Analyses created before the page-reference update must be rerun "
+            "to generate document/page locations."
+        )
+
+    return False
+
+
 def render_model_run(
     analysis_id,
     model_run,
@@ -1850,6 +1866,11 @@ def render_model_run(
             for edge in graph["edges"]
         ],
     }
+
+    render_visible_source_references(
+        graph,
+        empty_message=True,
+    )
 
     if elements["nodes"]:
         streamlit_cytoscape(
@@ -2620,7 +2641,7 @@ analysis_edge_styles = [
         "Home",
         "News & Alerts",
         "Analyse Documents",
-        "Compare LLMs",
+        "Ask / Compare LLMs",
         "Review & Validate",
         "Findings & Knowledge",
         "Commodore Clipper example",
@@ -2667,14 +2688,15 @@ with tab_home:
         )
 
     with c3:
-        st.markdown("### Compare LLMs")
+        st.markdown("### Ask / Compare LLMs")
         st.success("Active PoC")
         st.write(
-            "Compare independent model answers against the same question and "
-            "evidence without having to use the graph."
+            "Ask questions about one processed case, one document or selected "
+            "documents. Compare model answers only when useful."
         )
         st.caption(
-            "Currently available for completed Class D dual-model analyses."
+            "Model comparison is already available; free-text scoped questioning "
+            "is the next backend integration slice."
         )
 
     c4, c5 = st.columns(2)
@@ -2765,9 +2787,9 @@ with tab_news:
 with tab_new_analysis:
     st.subheader("Analyse Documents")
     st.caption(
-        "Create and run a new evidence-grounded analysis from indexed documents "
-        "or direct text, then follow its processing status. Use Compare LLMs "
-        "afterwards only when you want to compare model outputs."
+        "Prepare and analyse a governed evidence set from indexed documents or "
+        "direct text. Questions are asked later in Ask / Compare LLMs so the "
+        "evidence structure does not depend on one initial question."
     )
 
     try:
@@ -2995,11 +3017,11 @@ with tab_new_analysis:
             placeholder="e.g. Engine-room fire evidence set",
         )
 
-        analysis_objective = st.text_area(
-            "Analysis objective or question",
+        analysis_description = st.text_area(
+            "Analysis description",
             placeholder=(
-                "Optional. State what you want the analysis to focus on. "
-                "This guides synthesis but does not change source evidence."
+                "Optional. Briefly describe the case or evidence set. "
+                "This is descriptive metadata only and does not steer extraction."
             ),
         )
 
@@ -3018,6 +3040,7 @@ with tab_new_analysis:
                 options=list(documents_by_id),
                 format_func=source_document_label,
                 max_selections=MAX_DOCUMENTS_PER_ANALYSIS,
+                filter_mode="contains",
                 help=(
                     "Class B lists MAIRA published investigation material. "
                     "Classes A, C and D list IKF-managed documents only."
@@ -3103,11 +3126,6 @@ with tab_new_analysis:
             errors.append("Enter an analysis title.")
 
         if information_class == "D":
-            if not analysis_objective.strip():
-                errors.append(
-                    "Enter the investigation question for the Class D comparison."
-                )
-
             needs_gpt20 = class_d_model_selection in {
                 "GPT20",
                 "BOTH",
@@ -3157,7 +3175,7 @@ with tab_new_analysis:
                 if input_mode == "Documents":
                     analysis_id, linked_count = create_analysis_from_documents(
                         title=analysis_title.strip(),
-                        objective=analysis_objective.strip(),
+                        description=analysis_description.strip(),
                         selected_document_ids=selected_document_ids,
                         language_mode=language_mode,
                         output_language=output_language,
@@ -3173,7 +3191,7 @@ with tab_new_analysis:
                 else:
                     analysis_id, source_id = create_analysis_from_text(
                         title=analysis_title.strip(),
-                        objective=analysis_objective.strip(),
+                        description=analysis_description.strip(),
                         direct_text=direct_text.strip(),
                         language_mode=language_mode,
                         output_language=output_language,
@@ -3281,16 +3299,16 @@ with tab_new_analysis:
 
 @st.fragment
 def render_compare_llms():
-    st.subheader("Compare LLMs")
+    st.subheader("Ask / Compare LLMs")
     st.caption(
-        "Choose an existing analysis and compare independent model outputs "
-        "against exactly the same question and evidence. This page does not "
-        "create an analysis and does not require the graph."
+        "Use an already processed evidence set. Ask about the whole case, one "
+        "document or selected documents; compare models only when needed."
     )
 
     st.info(
-        "Direct question-and-passage comparison will be added here after its "
-        "validated MAIRA benchmark route is connected to the App."
+        "The scoped free-text question runner is the next backend slice. "
+        "Current completed dual-model analyses remain available below for "
+        "comparison. Questions will not be stored on Analyse Documents."
     )
 
     if st.button(
