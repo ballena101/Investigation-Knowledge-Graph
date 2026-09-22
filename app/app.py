@@ -9091,24 +9091,56 @@ with tab_review:
                 "This relationship has not yet received a human review."
             )
 
-        generate_correction = st.button(
-            "Generate evidence-bounded assistant proposal",
-            key=(
-                "review_generate_relationship_correction_"
-                + selected_review_analysis_id
-                + "_"
-                + correction_edge_id
-            ),
-            disabled=(
-                not RELATIONSHIP_CORRECTION_JOB_ID
-            ),
+        correction_run_key = (
+            "relationship_correction_run_"
+            + selected_review_analysis_id
+            + "_"
+            + correction_edge_id
         )
+        correction_action, correction_refresh = (
+            st.columns(2)
+        )
+
+        with correction_action:
+            generate_correction = st.button(
+                "Generate evidence-bounded assistant proposal",
+                key=(
+                    "review_generate_relationship_correction_"
+                    + selected_review_analysis_id
+                    + "_"
+                    + correction_edge_id
+                ),
+                disabled=(
+                    not RELATIONSHIP_CORRECTION_JOB_ID
+                ),
+                use_container_width=True,
+            )
+
+        with correction_refresh:
+            refresh_correction = st.button(
+                "Refresh proposal status",
+                key=(
+                    "refresh_relationship_correction_"
+                    + selected_review_analysis_id
+                    + "_"
+                    + correction_edge_id
+                ),
+                disabled=(
+                    not RELATIONSHIP_CORRECTION_JOB_ID
+                ),
+                use_container_width=True,
+            )
 
         if not RELATIONSHIP_CORRECTION_JOB_ID:
             st.caption(
                 "The Relationship Correction Job is not attached to this "
                 "App deployment."
             )
+
+        if refresh_correction:
+            load_relationship_correction_proposals.clear()
+            load_latest_relationship_correction_reviews.clear()
+            st.rerun()
 
         if generate_correction:
             try:
@@ -9119,19 +9151,26 @@ with tab_review:
                         correction_edge_id,
                     )
                 )
+                st.session_state[
+                    correction_run_key
+                ] = correction_run_id
                 load_relationship_correction_proposals.clear()
                 st.success(
-                    "Assistant relationship check queued."
-                )
-                st.caption(
-                    "Databricks run: "
-                    + correction_run_id
+                    "Assistant relationship check queued. Use Refresh "
+                    "proposal status to update this section."
                 )
             except Exception as exc:
                 st.error(
                     "The relationship check could not be queued."
                 )
                 st.exception(exc)
+
+        render_async_job_status(
+            st.session_state.get(
+                correction_run_key
+            ),
+            "Relationship quality check",
+        )
 
         correction_proposals = (
             load_relationship_correction_proposals(
