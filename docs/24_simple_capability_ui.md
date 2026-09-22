@@ -221,3 +221,31 @@ The SHIELD section reuses the selected analysis/model and shows:
 
 If Gate 1 changes after proposal generation, the proposal is visibly marked
 STALE and Gate-2 review is disabled until proposals are regenerated.
+
+
+## Active Findings & Knowledge assistant
+
+Findings & Knowledge now contains two active investigator interactions.
+
+### Ask this knowledge
+
+A compact whole-case question box reuses the normal Ask backend and returns
+evidence-grounded answers with visible citations and source-page viewing.
+
+The detailed case/document/document-group scope selector remains in
+Ask / Compare LLMs rather than being duplicated here.
+
+### Check a relationship
+
+The user selects an existing semantic relationship from the graph and can:
+
+1. inspect its current human-review status;
+2. generate an evidence-bounded LLM proposal;
+3. read the proposal action and rationale with source references;
+4. explicitly approve, dismiss or apply a different human outcome.
+
+The interface labels unreviewed graph relationships as candidate knowledge and
+shows the current human review when one exists.
+
+The LLM does not edit the graph. Human approval creates governance/review
+metadata from which authoritative semantics are derived.
