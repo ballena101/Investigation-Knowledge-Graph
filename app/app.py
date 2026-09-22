@@ -1888,10 +1888,9 @@ def render_pipeline_status(
             ):
                 current_step = index
 
-    st.markdown("### Progress")
+    st.markdown("### Processing progress")
 
-    if status == "COMPLETED":
-        st.success("Result ready for review.")
+    progress_columns = st.columns(4)
 
     for index, step in enumerate(user_steps):
         if status == "FAILED" and index == current_step:
@@ -1907,11 +1906,26 @@ def render_pipeline_status(
             marker = "○"
             state_text = "Pending"
 
-        st.write(
-            f"{marker} **{step['label']}** — {state_text}"
+        with progress_columns[index]:
+            with st.container(border=True):
+                st.markdown(
+                    f"**{index + 1}. {step['label']}**"
+                )
+                st.write(
+                    marker + " " + state_text
+                )
+                if (
+                    index == current_step
+                    and status != "COMPLETED"
+                ):
+                    st.caption(
+                        step["description"]
+                    )
+
+    if status == "COMPLETED":
+        st.success(
+            "All four processing stages completed. Result ready for review."
         )
-        if index == current_step and status != "COMPLETED":
-            st.caption(step["description"])
 
     with st.expander("Technical details", expanded=False):
         st.write(
