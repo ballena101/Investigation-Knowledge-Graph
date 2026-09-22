@@ -1078,3 +1078,76 @@ reviewed SHIELD classification. The graph node and assistant proposal are never
 silently overwritten.
 
 See `docs/29_shield_two_gate_workflow.md`.
+
+
+## 2F. Findings and Knowledge assistant
+
+The Findings & Knowledge capability now reuses the governed QuestionRun / Ask
+backend rather than introducing another LLM stack.
+
+### Knowledge assistant
+
+For one completed AnalysisGroup, the investigator can ask a whole-case
+free-text question directly from Findings & Knowledge.
+
+The QuestionRun records:
+
+- `interaction_surface = KNOWLEDGE`;
+- the same information-class/model policy as Ask / Compare;
+- whole-case scope;
+- optional governed REFERENCE_CONTEXT;
+- the same passage/page citation and retrieval provenance.
+
+The answer therefore uses the same evidence-bounded controls as Ask / Compare,
+including MAIRA deterministic retrieval for large scopes and separate
+SOURCE_EVIDENCE / REFERENCE_CONTEXT citations.
+
+Detailed one-document / selected-document question scope remains in
+Ask / Compare LLMs to keep Findings & Knowledge simple.
+
+### Relationship correction proposals
+
+The investigator can select one evidence-derived graph relationship and request
+an LLM check.
+
+Notebook `49_propose_relationship_correction.py`:
+
+- reads only the selected relationship's cited analysis passages;
+- never modifies the graph edge;
+- may propose:
+  - `KEEP`;
+  - `CHANGE_RELATIONSHIP`;
+  - `REJECT_RELATIONSHIP`;
+  - `INSUFFICIENT_EVIDENCE`;
+- limits replacement relationships to the governed IKF relationship vocabulary;
+- preserves passage/page provenance;
+- binds the proposal to the latest human RelationshipReview that existed when
+  the proposal was generated.
+
+Notebook `50_create_relationship_correction_job.py` defines the dedicated
+one-task Lakeflow Job. The App resource is:
+
+`RELATIONSHIP_CORRECTION_JOB_ID <- relationship_correction_job`
+
+### Human authority
+
+An assistant proposal never becomes authoritative automatically.
+
+The user must explicitly choose:
+
+- approve assistant proposal;
+- dismiss assistant proposal;
+- apply a different human outcome.
+
+Approved/amended outcomes create a new append-only `RelationshipReview`.
+The original graph relationship is not overwritten.
+
+A proposal becomes stale when a newer RelationshipReview exists after its base
+review and must then be regenerated.
+
+Notebook `51_validate_relationship_correction_governance.py` validates that
+the graph edge remains unchanged and that any authoritative semantic change
+comes only through the append-only human RelationshipReview chain.
+
+Transient assistant rationale/evidence is removed by the normal analysis
+retention cleanup; compact human governance metadata remains.
