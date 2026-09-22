@@ -2110,6 +2110,9 @@ def load_reference_documents():
         d.reference_family AS reference_family,
         d.reference_code AS reference_code,
         d.reference_title AS reference_title,
+        d.source_authority AS source_authority,
+        d.canonical_url AS canonical_url,
+        d.retrieval_origin AS retrieval_origin,
         d.viewer_source_repository AS viewer_source_repository,
         d.viewer_source_path AS viewer_source_path,
         d.viewer_source_filename AS viewer_source_filename,
@@ -2470,6 +2473,28 @@ def render_question_answer(
             "The cited document is not available in the relevant governed source catalogue."
         )
         return
+
+    if layer == "REFERENCE_CONTEXT":
+        canonical_url = str(
+            source.get("canonical_url")
+            or ""
+        ).strip()
+        source_authority = str(
+            source.get("source_authority")
+            or ""
+        ).strip()
+
+        if source_authority:
+            st.caption(
+                "Authoritative source: "
+                + source_authority
+            )
+
+        if canonical_url:
+            st.link_button(
+                "Open authoritative source",
+                canonical_url,
+            )
 
     source_path = source.get(
         "viewer_source_path"
