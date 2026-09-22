@@ -4918,7 +4918,8 @@ else:
     tab_home,
     tab_news,
     tab_new_analysis,
-    tab_graph,
+    tab_findings,
+    tab_knowledge_graph,
     tab_analyses,
     tab_review,
     tab_about,
@@ -4927,7 +4928,8 @@ else:
         "Home",
         "News & Alerts",
         "Analyse Documents",
-        "Findings & Knowledge",
+        "Findings & Evidence",
+        "Knowledge Graph",
         "Ask / Compare LLMs",
         "Review & Validate",
         "Terms of reference",
@@ -4984,9 +4986,31 @@ with tab_home:
             "implemented in source, with document/page citations."
         )
 
-    c4, c5 = st.columns(2)
+    c4, c5, c6 = st.columns(3)
 
     with c4:
+        st.markdown("### Findings & Evidence")
+        st.success("Active PoC")
+        st.write(
+            "Browse extracted findings, relationships and cited source pages; "
+            "retrieve deterministic similar MAIRA cases."
+        )
+        st.caption(
+            "Read-only evidence exploration. Human decisions remain in Review & Validate."
+        )
+
+    with c5:
+        st.markdown("### Knowledge Graph")
+        st.success("Active PoC")
+        st.write(
+            "Explore the analytical graph by document, concept type, relationship "
+            "type and layout, and ask questions against the same governed scope."
+        )
+        st.caption(
+            "Diagram controls change the view only; graph knowledge changes require human review."
+        )
+
+    with c6:
         st.markdown("### Review & Validate")
         st.success("Active PoC")
         st.write(
@@ -4994,20 +5018,7 @@ with tab_home:
             "proposals, EMCIP mappings and SHIELD classifications."
         )
         st.caption(
-            "AI suggestions never become validated knowledge without a human "
-            "decision."
-        )
-
-    with c5:
-        st.markdown("### Findings & Knowledge")
-        st.success("Graph available")
-        st.write(
-            "Browse extracted findings and evidence, inspect the knowledge graph and "
-            "retrieve similar MAIRA cases."
-        )
-        st.caption(
-            "This page is read-only. Questions belong to Ask / Compare; human "
-            "decisions belong to Review & Validate."
+            "AI suggestions never become validated knowledge without a human decision."
         )
 
     st.divider()
@@ -7343,8 +7354,8 @@ def render_compare_llms():
 with tab_analyses:
     render_compare_llms()
 
-with tab_graph:
-    st.subheader("Findings & Knowledge")
+with tab_findings:
+    st.subheader("Findings & Evidence")
     st.caption(
         "Browse processed findings and their evidence. Open the graph when "
         "relationships help, and retrieve similar MAIRA cases. Questions are "
