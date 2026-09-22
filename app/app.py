@@ -23,6 +23,7 @@ GRAPH_VERSION = "CASE_GRAPH_V0.2"
 PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
 ANALYSIS_JOB_ID = os.getenv("ANALYSIS_JOB_ID")
 CLASS_D_ANALYSIS_JOB_ID = os.getenv("CLASS_D_ANALYSIS_JOB_ID")
+ASK_JOB_ID = os.getenv("ASK_JOB_ID")
 DIRECT_TEXT_ENCRYPTION_KEY = os.getenv("DIRECT_TEXT_ENCRYPTION_KEY")
 IKG_ADMIN_USERS = {
     item.strip().lower()
@@ -542,6 +543,212 @@ def encrypt_direct_text(value):
     ).encrypt(
         value.encode("utf-8")
     ).decode("utf-8")
+
+
+def decrypt_protected_text(value):
+    if not value:
+        return ""
+
+    if not DIRECT_TEXT_ENCRYPTION_KEY:
+        raise RuntimeError(
+            "DIRECT_TEXT_ENCRYPTION_KEY is not configured."
+        )
+
+    return Fernet(
+        DIRECT_TEXT_ENCRYPTION_KEY.encode("utf-8")
+    ).decrypt(
+        value.encode("utf-8")
+    ).decode("utf-8")
+
+
+def create_question_run(
+    *,
+    analysis,
+    question_text,
+    scope_mode,
+    scope_document_ids,
+    model_selection,
+):
+    if analysis.get("status") != "COMPLETED":
+        raise ValueError(
+            "Questions can currently be asked only against a completed analysis."
+        )
+
+    information_class = (
+        analysis.get("information_class")
+        or "B"
+    )
+    policy = resolve_model_policy(
+        information_class
+    )
+
+    if information_class == "D":
+        model_plan = []
+
+        if model_selection in {"GPT20", "BOTH"}:
+            if not CLASS_D_GPT20_ENDPOINT:
+                raise RuntimeError(
+                    "The dedicated GPT-OSS 20B endpoint is not configured."
+                )
+            model_plan.append(
+                ("GPT20", CLASS_D_GPT20_ENDPOINT)
+            )
+
+        if model_selection in {"LLAMA70", "BOTH"}:
+            if not CLASS_D_LLAMA70_ENDPOINT:
+                raise RuntimeError(
+                    "The dedicated Llama 3.3 70B endpoint is not configured."
+                )
+            model_plan.append(
+                ("LLAMA70", CLASS_D_LLAMA70_ENDPOINT)
+            )
+
+        if not model_plan:
+            raise ValueError(
+                "Select at least one approved Class D model."
+            )
+    else:
+        model_service = policy.get("model")
+        if not model_service:
+            raise RuntimeError(
+                "No approved default model is configured for this information class."
+            )
+        model_plan = [
+            ("DEFAULT", model_service)
+        ]
+        model_selection = "DEFAULT"
+
+    question_run_id = (
+        "question_" + uuid.uuid4().hex
+    )
+    question_hash = hashlib.sha256(
+        question_text.encode("utf-8")
+    ).hexdigest()
+
+    if information_class == "D":
+        question_plain = ""
+        question_encrypted = encrypt_direct_text(
+            question_text
+        )
+        encryption_scheme = "FERNET"
+    else:
+        question_plain = question_text
+        question_encrypted = ""
+        encryption_scheme = ""
+
+    reviewer = get_reviewer_identity()
+    creator = (
+        reviewer["email"]
+        if reviewer["email"] != "unknown"
+        else reviewer["username"]
+    )
+
+    model_keys = [
+        item[0]
+        for item in model_plan
+    ]
+    model_services = [
+        item[1]
+        for item in model_plan
+    ]
+
+    with get_driver().session() as session:
+        record = session.run(
+            """
+            MATCH (a:AnalysisGroup {
+                analysis_id: $analysis_id
+            })
+            WHERE a.status = 'COMPLETED'
+            CREATE (q:QuestionRun {
+                question_run_id: $question_run_id,
+                analysis_id: $analysis_id,
+                information_class: $information_class,
+                scope_mode: $scope_mode,
+                scope_document_ids: $scope_document_ids,
+                model_selection: $model_selection,
+                model_keys: $model_keys,
+                model_services: $model_services,
+                question_text: $question_text,
+                encrypted_question_text: $encrypted_question_text,
+                question_encryption_scheme: $question_encryption_scheme,
+                question_sha256: $question_sha256,
+                status: 'PENDING',
+                processing_stage: 'PENDING',
+                created_by: $created_by,
+                created_at: datetime(),
+                retention_policy: properties(a)["retention_policy"],
+                content_expires_at: properties(a)["content_expires_at"]
+            })
+            CREATE (a)-[:HAS_QUESTION_RUN]->(q)
+            RETURN q.question_run_id AS question_run_id
+            """,
+            analysis_id=analysis["analysis_id"],
+            question_run_id=question_run_id,
+            information_class=information_class,
+            scope_mode=scope_mode,
+            scope_document_ids=scope_document_ids,
+            model_selection=model_selection,
+            model_keys=model_keys,
+            model_services=model_services,
+            question_text=question_plain,
+            encrypted_question_text=question_encrypted,
+            question_encryption_scheme=encryption_scheme,
+            question_sha256=question_hash,
+            created_by=creator,
+        ).single()
+
+    if record is None:
+        raise RuntimeError(
+            "The QuestionRun could not be created. Confirm that the analysis is completed."
+        )
+
+    return question_run_id
+
+
+def trigger_question_job(question_run_id):
+    if not ASK_JOB_ID:
+        raise RuntimeError(
+            "No Ask Job is attached to the App. Create notebook 37's Job, "
+            "attach it with resource key 'ask_job', and redeploy."
+        )
+
+    response = get_workspace_client().api_client.do(
+        "POST",
+        "/api/2.2/jobs/run-now",
+        body={
+            "job_id": int(ASK_JOB_ID),
+            "job_parameters": {
+                "question_run_id": question_run_id,
+            },
+        },
+    )
+
+    run_id = response.get("run_id")
+    if not run_id:
+        raise RuntimeError(
+            "Databricks accepted the Ask Job but returned no run_id."
+        )
+
+    with get_driver().session() as session:
+        session.run(
+            """
+            MATCH (q:QuestionRun {
+                question_run_id: $question_run_id
+            })
+            SET
+                q.status = 'QUEUED',
+                q.processing_stage = 'JOB_QUEUED',
+                q.job_id = $job_id,
+                q.job_run_id = $job_run_id,
+                q.processing_error = NULL,
+                q.updated_at = datetime()
+            """,
+            question_run_id=question_run_id,
+            job_id=str(ASK_JOB_ID),
+            job_run_id=str(run_id),
+        ).consume()
+
+    return str(run_id)
 
 
 def trigger_class_d_analysis_job(
