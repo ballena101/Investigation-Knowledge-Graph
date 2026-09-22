@@ -213,7 +213,12 @@ SET
     d.file_modified_at = $file_modified_at,
     d.index_version = $index_version,
     d.indexed_at = datetime(),
-    d.catalogue_status = 'AVAILABLE'
+    d.catalogue_status = 'AVAILABLE',
+    d.source_managed_by = 'IKF',
+    d.source_repository = 'IKF',
+    d.viewer_source_repository = 'IKF',
+    d.viewer_source_path = $volume_path,
+    d.viewer_source_filename = $filename
 RETURN d.document_id AS document_id
 """
 
