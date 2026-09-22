@@ -7805,11 +7805,595 @@ with tab_mapping_review:
 
     st.divider()
     st.markdown("### SHIELD classification review")
-    st.info(
-        "Next: after a contributing factor has been human validated, "
-        "the LLM may suggest a SHIELD classification here. The suggestion "
-        "will require its own human validation before acceptance."
+    st.caption(
+        "Gate 1: the contributing factor relationship must already be human "
+        "validated as CONTRIBUTED_TO. Gate 2: the SHIELD suggestion requires "
+        "its own human validation. Assistant proposals never overwrite the graph."
     )
+
+    shield_analysis_id = mapping_analysis_id
+    shield_model_run_id = mapping_model_run_id
+
+    shield_eligible = (
+        load_shield_gate_eligible_factors(
+            shield_analysis_id,
+            shield_model_run_id,
+        )
+        if (
+            shield_analysis_id
+            and shield_model_run_id
+        )
+        else []
+    )
+
+    shield_gate_col, shield_job_col = st.columns(
+        [1, 1]
+    )
+    shield_gate_col.metric(
+        "Gate-1 eligible factors",
+        len(shield_eligible),
+    )
+
+    shield_documents = load_shield_documents()
+    shield_job_col.metric(
+        "SHIELD source documents",
+        len(shield_documents),
+    )
+
+    if not shield_documents:
+        st.warning(
+            "The persistent SHIELD corpus is not indexed yet. "
+            "Run notebook 45 during the consolidated Databricks setup."
+        )
+
+    shield_action_left, shield_action_right = st.columns(
+        [1, 1]
+    )
+
+    with shield_action_left:
+        generate_shield = st.button(
+            "Generate / refresh SHIELD proposals",
+            type="primary",
+            disabled=(
+                not shield_analysis_id
+                or not shield_model_run_id
+                or not shield_eligible
+                or not shield_documents
+                or not SHIELD_PROPOSAL_JOB_ID
+            ),
+            key="generate_shield_proposals",
+        )
+
+    with shield_action_right:
+        refresh_shield = st.button(
+            "Refresh SHIELD status",
+            disabled=(
+                not shield_analysis_id
+                or not shield_model_run_id
+            ),
+            key="refresh_shield_status",
+        )
+
+    if not SHIELD_PROPOSAL_JOB_ID:
+        st.caption(
+            "The SHIELD proposal Job is not attached to this App deployment "
+            "yet. Source code is ready; runtime setup uses resource key "
+            "shield_proposal_job."
+        )
+
+    if (
+        shield_analysis_id
+        and shield_model_run_id
+        and not shield_eligible
+    ):
+        st.info(
+            "No contributing factor currently passes Gate 1. "
+            "Validate a ContributingFactor — CONTRIBUTED_TO → target "
+            "relationship first."
+        )
+
+    if refresh_shield:
+        load_shield_gate_eligible_factors.clear()
+        load_shield_proposals.clear()
+        load_latest_shield_reviews.clear()
+        load_shield_documents.clear()
+        st.toast("SHIELD status refreshed")
+
+    if generate_shield:
+        try:
+            shield_job_run_id = trigger_shield_proposal_job(
+                shield_analysis_id,
+                shield_model_run_id,
+            )
+            load_shield_proposals.clear()
+            st.success(
+                "SHIELD proposal generation queued."
+            )
+            st.caption(
+                "Databricks run: "
+                + shield_job_run_id
+            )
+        except Exception as exc:
+            st.error(
+                "SHIELD proposal generation could not be queued."
+            )
+            st.exception(exc)
+
+    shield_proposals = (
+        load_shield_proposals(
+            shield_analysis_id,
+            shield_model_run_id,
+        )
+        if (
+            shield_analysis_id
+            and shield_model_run_id
+        )
+        else []
+    )
+
+    latest_shield_reviews = (
+        load_latest_shield_reviews(
+            shield_analysis_id,
+            shield_model_run_id,
+        )
+        if (
+            shield_analysis_id
+            and shield_model_run_id
+        )
+        else {}
+    )
+
+    s1, s2, s3 = st.columns(3)
+    s1.metric(
+        "SHIELD proposals",
+        len(shield_proposals),
+    )
+    s2.metric(
+        "Human reviewed",
+        len(latest_shield_reviews),
+    )
+    s3.metric(
+        "Remaining",
+        max(
+            0,
+            len(shield_proposals)
+            - len(latest_shield_reviews),
+        ),
+    )
+
+    if shield_proposals:
+        def shield_option_label(index):
+            proposal = shield_proposals[index]
+            latest_shield = latest_shield_reviews.get(
+                proposal["proposal_id"]
+            )
+
+            marker = ""
+            if latest_shield:
+                marker = {
+                    "VALIDATED": "✓ ",
+                    "REJECTED": "✕ ",
+                    "AMENDED": "✎ ",
+                }.get(
+                    latest_shield["decision"],
+                    "• ",
+                )
+
+            stale = (
+                " [STALE]"
+                if not proposal.get(
+                    "gate_is_current"
+                )
+                else ""
+            )
+
+            proposed = (
+                proposal.get(
+                    "proposed_shield_label"
+                )
+                or "NO_GROUNDED_PROPOSAL"
+            )
+
+            return (
+                marker
+                + proposal["factor_label"]
+                + " → "
+                + proposed
+                + stale
+            )
+
+        selected_shield_index = st.selectbox(
+            "SHIELD proposal",
+            options=list(
+                range(
+                    len(shield_proposals)
+                )
+            ),
+            format_func=shield_option_label,
+            key="shield_proposal_selector",
+        )
+
+        selected_shield = shield_proposals[
+            selected_shield_index
+        ]
+        latest_shield = latest_shield_reviews.get(
+            selected_shield[
+                "proposal_id"
+            ]
+        )
+
+        sh1, sh2 = st.columns(2)
+        with sh1:
+            st.markdown(
+                "**Human-validated contributing factor**"
+            )
+            st.write(
+                selected_shield[
+                    "factor_label"
+                ]
+            )
+            st.caption(
+                "Contributes to: "
+                + (
+                    selected_shield.get(
+                        "target_label"
+                    )
+                    or "—"
+                )
+            )
+            st.caption(
+                "Gate-1 review: "
+                + (
+                    selected_shield.get(
+                        "gate_review_id"
+                    )
+                    or "—"
+                )
+            )
+
+        with sh2:
+            st.markdown(
+                "**Assistant SHIELD proposal**"
+            )
+            if (
+                selected_shield.get(
+                    "assistant_status"
+                )
+                == "ASSISTANT_PROPOSED"
+            ):
+                proposed_parts = [
+                    selected_shield.get(
+                        "proposed_shield_path"
+                    ),
+                    selected_shield.get(
+                        "proposed_shield_label"
+                    ),
+                ]
+                proposed_text = " → ".join(
+                    part
+                    for part in proposed_parts
+                    if part
+                )
+                if selected_shield.get(
+                    "proposed_shield_code"
+                ):
+                    proposed_text += (
+                        " ["
+                        + selected_shield[
+                            "proposed_shield_code"
+                        ]
+                        + "]"
+                    )
+                st.info(
+                    proposed_text
+                    or "SHIELD proposal"
+                )
+            else:
+                st.warning(
+                    "NO_GROUNDED_PROPOSAL"
+                )
+
+            st.caption(
+                "Corpus snapshot: "
+                + (
+                    selected_shield.get(
+                        "shield_corpus_snapshot_id"
+                    )
+                    or "—"
+                )
+            )
+
+        if not selected_shield.get(
+            "gate_is_current"
+        ):
+            st.error(
+                "Gate 1 has changed since this SHIELD proposal was generated. "
+                "This proposal is stale and cannot be validated. Regenerate it."
+            )
+
+        if selected_shield.get(
+            "rationale"
+        ):
+            st.caption(
+                "Assistant rationale: "
+                + selected_shield[
+                    "rationale"
+                ]
+            )
+
+        st.markdown(
+            "**SHIELD taxonomy evidence**"
+        )
+        shield_refs = (
+            selected_shield.get(
+                "shield_references"
+            )
+            or []
+        )
+        for reference in shield_refs:
+            st.write(
+                "• " + reference
+            )
+
+        shield_locations = [
+            parsed
+            for parsed in (
+                parse_evidence_location(
+                    value
+                )
+                for value in (
+                    selected_shield.get(
+                        "shield_locations"
+                    )
+                    or []
+                )
+            )
+            if parsed is not None
+        ]
+
+        if shield_locations:
+            shield_source_by_id = {
+                item[
+                    "shield_document_id"
+                ]: item
+                for item in shield_documents
+            }
+
+            shield_location_index = st.selectbox(
+                "SHIELD source page",
+                options=list(
+                    range(
+                        len(
+                            shield_locations
+                        )
+                    )
+                ),
+                format_func=lambda index: format_evidence_location(
+                    shield_locations[
+                        index
+                    ],
+                    shield_source_by_id.get(
+                        shield_locations[
+                            index
+                        ][
+                            "document_id"
+                        ]
+                    ),
+                ),
+                key=(
+                    "shield_source_page_"
+                    + selected_shield[
+                        "proposal_id"
+                    ]
+                ),
+            )
+
+            shield_location = shield_locations[
+                shield_location_index
+            ]
+            shield_source = shield_source_by_id.get(
+                shield_location[
+                    "document_id"
+                ]
+            )
+
+            if shield_source:
+                shield_path = shield_source.get(
+                    "viewer_source_path"
+                )
+                shield_type = str(
+                    shield_source.get(
+                        "source_type"
+                    )
+                    or ""
+                ).upper()
+
+                if (
+                    shield_type == "PDF"
+                    and shield_path
+                ):
+                    try:
+                        shield_pdf = download_source_file_as_user(
+                            shield_path
+                        )
+                        shield_excerpt = pdf_page_range_bytes(
+                            shield_pdf,
+                            shield_location.get(
+                                "page_start"
+                            ),
+                            shield_location.get(
+                                "page_end"
+                            ),
+                        )
+                        st.pdf(
+                            shield_excerpt,
+                            height=620,
+                            key=(
+                                "shield_taxonomy_pdf_"
+                                + hashlib.sha256(
+                                    (
+                                        selected_shield[
+                                            "proposal_id"
+                                        ]
+                                        + "|"
+                                        + shield_path
+                                        + "|"
+                                        + str(
+                                            shield_location.get(
+                                                "page_start"
+                                            )
+                                        )
+                                    ).encode(
+                                        "utf-8"
+                                    )
+                                ).hexdigest()[:16]
+                            ),
+                        )
+                    except PermissionError as exc:
+                        st.warning(
+                            str(exc)
+                        )
+                    except Exception as exc:
+                        st.caption(
+                            "The SHIELD source page could not be rendered: "
+                            + str(exc)
+                        )
+
+        if latest_shield:
+            st.markdown(
+                "**Latest Gate-2 human review**"
+            )
+            st.write(
+                latest_shield[
+                    "decision"
+                ]
+                + " · "
+                + (
+                    latest_shield.get(
+                        "reviewed_at"
+                    )
+                    or "—"
+                )
+            )
+            if latest_shield.get(
+                "amended_shield_label"
+            ):
+                st.write(
+                    "Amended SHIELD:",
+                    latest_shield[
+                        "amended_shield_label"
+                    ],
+                )
+            if latest_shield.get(
+                "review_comment"
+            ):
+                st.write(
+                    "Comment:",
+                    latest_shield[
+                        "review_comment"
+                    ],
+                )
+
+        review_enabled = (
+            selected_shield.get(
+                "assistant_status"
+            )
+            == "ASSISTANT_PROPOSED"
+            and selected_shield.get(
+                "gate_is_current"
+            )
+        )
+
+        if not review_enabled:
+            st.caption(
+                "Gate-2 review is enabled only for a grounded, current SHIELD proposal."
+            )
+        else:
+            with st.form(
+                "shield_review_form_"
+                + selected_shield[
+                    "proposal_id"
+                ]
+            ):
+                shield_decision = st.radio(
+                    "SHIELD human decision",
+                    options=[
+                        "VALIDATED",
+                        "REJECTED",
+                        "AMENDED",
+                    ],
+                    horizontal=True,
+                )
+
+                amended_label = ""
+                amended_code = ""
+                amended_path = ""
+
+                if shield_decision == "AMENDED":
+                    amended_label = st.text_input(
+                        "Amended SHIELD label",
+                    )
+                    amended_code = st.text_input(
+                        "Amended SHIELD code (optional)",
+                    )
+                    amended_path = st.text_input(
+                        "Amended SHIELD path / hierarchy (optional)",
+                    )
+                    st.caption(
+                        "Use the SHIELD source page above when amending. "
+                        "The human amendment, not the assistant proposal, "
+                        "becomes the authoritative reviewed value."
+                    )
+
+                shield_comment = st.text_area(
+                    "SHIELD review comment",
+                    placeholder=(
+                        "Optional for validation; recommended for rejection "
+                        "or amendment."
+                    ),
+                )
+
+                shield_submitted = st.form_submit_button(
+                    "Save SHIELD review",
+                    type="primary",
+                    disabled=(
+                        shield_decision == "AMENDED"
+                        and not amended_label.strip()
+                    ),
+                )
+
+            if shield_submitted:
+                try:
+                    shield_review_id = save_shield_review(
+                        selected_shield,
+                        decision=shield_decision,
+                        amended_label=amended_label,
+                        amended_code=amended_code,
+                        amended_path=amended_path,
+                        comment=shield_comment.strip(),
+                    )
+                    load_latest_shield_reviews.clear()
+                    st.success(
+                        "SHIELD review saved: "
+                        + shield_decision
+                        + " — review ID "
+                        + shield_review_id
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    st.error(
+                        "The SHIELD review could not be saved."
+                    )
+                    st.exception(exc)
+    elif (
+        shield_analysis_id
+        and shield_model_run_id
+        and shield_eligible
+    ):
+        st.info(
+            "Gate-1 validated contributing factors are available, but no "
+            "SHIELD proposals have been generated yet."
+        )
 
 with tab_about:
     st.markdown(
