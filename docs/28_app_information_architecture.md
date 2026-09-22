@@ -363,3 +363,50 @@ Backup branch created before this slice:
 `backup/pre-graph-workspace-2026-09-22`
 
 Status: **code/documentation complete; runtime validation pending**.
+
+
+## Analysis summary versus Findings & Evidence
+
+Refined on 2026-09-22 to remove remaining duplication.
+
+### Analyse Documents — Analysis summary
+
+The Analyse Documents page is now the processing/overview surface.
+
+After the four processing stages, it shows only a compact summary of the active
+analysis:
+
+- Events count;
+- Contributing Factors count;
+- Findings count;
+- Safety Issues count;
+- Safety Recommendations count;
+- analytical relationship count;
+- graph concept count;
+- graph relationship count.
+
+It does not repeat the individual finding descriptions or page-level evidence.
+
+The previous Recent analyses list has been removed. Analysis switching is owned
+by the single shared **Active analysis** selector in the sidebar.
+
+### Findings & Evidence — detailed drill-down
+
+Findings & Evidence is the item-level inspection surface.
+
+It is where the investigator:
+
+- selects an Event, Finding, Contributing Factor, Safety Issue,
+  Recommendation or relationship;
+- reads the extracted description;
+- sees the supporting source reference;
+- opens the cited source page;
+- inspects technical evidence IDs when needed;
+- retrieves deterministic similar MAIRA cases.
+
+The distinction is therefore:
+
+- **Analyse Documents** = processing status + quantitative/structural overview;
+- **Findings & Evidence** = qualitative item-level content + provenance.
+
+This separation avoids showing the same extracted content twice.
