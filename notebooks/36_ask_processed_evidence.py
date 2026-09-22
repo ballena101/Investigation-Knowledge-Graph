@@ -56,6 +56,8 @@ MAX_SCOPE_PASSAGES = 80
 MAX_SCOPE_CHARS = 120000
 RETRIEVAL_MAX_PASSAGES = 40
 RETRIEVAL_MAX_CHARS = 60000
+REFERENCE_MAX_PASSAGES = 24
+REFERENCE_MAX_CHARS = 30000
 
 question_run_id = dbutils.widgets.get(
     "question_run_id"
@@ -179,6 +181,7 @@ with driver.session() as session:
             properties(a)["input_mode"] AS input_mode,
             q.scope_mode AS scope_mode,
             coalesce(q.scope_document_ids, []) AS scope_document_ids,
+            coalesce(q.reference_analysis_ids, []) AS reference_analysis_ids,
             q.model_keys AS model_keys,
             q.model_services AS model_services,
             q.question_text AS question_text,
@@ -206,6 +209,10 @@ scope_document_ids = list(
     question_run.get("scope_document_ids")
     or []
 )
+reference_analysis_ids = list(
+    question_run.get("reference_analysis_ids")
+    or []
+)
 model_keys = list(
     question_run.get("model_keys")
     or []
@@ -226,6 +233,97 @@ document_names = {
     for item in question_run.get("documents") or []
     if item.get("document_id")
 }
+
+reference_document_names = {}
+reference_analysis_titles = {}
+
+if reference_analysis_ids:
+    if len(set(reference_analysis_ids)) != len(reference_analysis_ids):
+        driver.close()
+        raise ValueError(
+            "Reference analysis IDs contain duplicates."
+        )
+
+    with driver.session() as session:
+        reference_records = [
+            record.data()
+            for record in session.run(
+                """
+                UNWIND $reference_analysis_ids AS reference_analysis_id
+                MATCH (r:AnalysisGroup {
+                    analysis_id: reference_analysis_id
+                })
+                OPTIONAL MATCH (r)-[:HAS_SOURCE]->(d:SourceDocument)
+                WITH r, collect({
+                    document_id: d.document_id,
+                    filename: d.filename
+                }) AS documents
+                RETURN
+                    r.analysis_id AS analysis_id,
+                    r.analysis_title AS analysis_title,
+                    r.status AS status,
+                    properties(r)["information_class"] AS information_class,
+                    documents
+                """,
+                reference_analysis_ids=reference_analysis_ids,
+            )
+        ]
+
+    reference_by_id = {
+        item["analysis_id"]: item
+        for item in reference_records
+    }
+
+    missing_reference_ids = sorted(
+        set(reference_analysis_ids)
+        - set(reference_by_id)
+    )
+
+    if missing_reference_ids:
+        driver.close()
+        raise ValueError(
+            "Reference analyses were not found: "
+            + ", ".join(missing_reference_ids)
+        )
+
+    invalid_reference_ids = []
+
+    for reference_analysis_id in reference_analysis_ids:
+        item = reference_by_id[
+            reference_analysis_id
+        ]
+
+        if (
+            item.get("status") != "COMPLETED"
+            or item.get("information_class") != "A"
+        ):
+            invalid_reference_ids.append(
+                reference_analysis_id
+            )
+            continue
+
+        reference_analysis_titles[
+            reference_analysis_id
+        ] = (
+            item.get("analysis_title")
+            or reference_analysis_id
+        )
+
+        for document in item.get("documents") or []:
+            if document.get("document_id"):
+                reference_document_names[
+                    document["document_id"]
+                ] = (
+                    document.get("filename")
+                    or document["document_id"]
+                )
+
+    if invalid_reference_ids:
+        driver.close()
+        raise ValueError(
+            "REFERENCE_CONTEXT must use completed Class-A analyses only: "
+            + ", ".join(invalid_reference_ids)
+        )
 
 # COMMAND ----------
 
@@ -268,6 +366,7 @@ if not question_text:
 print("Analysis:", analysis_id)
 print("Scope:", scope_mode)
 print("Scoped documents:", len(scope_document_ids))
+print("Reference analyses:", len(reference_analysis_ids))
 print("Models:", model_keys)
 
 # Exact governed-query recognition.
