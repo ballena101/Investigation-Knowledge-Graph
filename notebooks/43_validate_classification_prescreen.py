@@ -347,6 +347,135 @@ display(
 
 # COMMAND ----------
 
+# APP PREFLIGHT AUDIT VALIDATION
+#
+# Blocked UI submissions do not create an AnalysisGroup, so their compact
+# audit trail is validated separately. The audit node must never reproduce
+# matched/raw protected text.
+
+with driver.session() as session:
+    app_prescreen_attempts = [
+        record.data()
+        for record in session.run(
+            """
+            MATCH (e:ClassificationPrescreenAttempt)
+            RETURN
+                e.event_id AS event_id,
+                e.prescreen_version AS prescreen_version,
+                e.prescreen_layer AS prescreen_layer,
+                e.decision AS decision,
+                e.required_class AS required_class,
+                e.declared_class AS declared_class,
+                e.input_mode AS input_mode,
+                coalesce(e.rule_ids, []) AS rule_ids,
+                coalesce(e.document_ids, []) AS document_ids,
+                e.content_sha256 AS content_sha256,
+                keys(e) AS property_keys
+            ORDER BY e.created_at, e.event_id
+            """
+        )
+    ]
+
+audit_validation_rows = []
+
+for item in app_prescreen_attempts:
+    item_errors = []
+
+    if item.get("prescreen_layer") != "APP_PREFLIGHT":
+        item_errors.append(
+            "unexpected prescreen_layer"
+        )
+
+    if item.get("decision") != "BLOCKED_REQUIRES_CLASS_D":
+        item_errors.append(
+            "unexpected decision"
+        )
+
+    if item.get("required_class") != "D":
+        item_errors.append(
+            "blocked App preflight does not require Class D"
+        )
+
+    if item.get("declared_class") == "D":
+        item_errors.append(
+            "Class D must not be blocked/escalated by the App preflight"
+        )
+
+    if not item.get("rule_ids"):
+        item_errors.append(
+            "blocked App preflight has no rule IDs"
+        )
+
+    forbidden_property_names = {
+        "raw_text",
+        "matched_text",
+        "source_text",
+        "direct_text",
+        "matched_value",
+        "matched_phrase",
+    }
+
+    exposed_forbidden = sorted(
+        forbidden_property_names
+        & set(item.get("property_keys") or [])
+    )
+
+    if exposed_forbidden:
+        item_errors.append(
+            "audit node contains forbidden raw-text properties: "
+            + ", ".join(exposed_forbidden)
+        )
+
+    if (
+        item.get("input_mode") == "DIRECT_TEXT"
+        and not item.get("content_sha256")
+    ):
+        item_errors.append(
+            "blocked direct-text App preflight has no content SHA-256"
+        )
+
+    if (
+        item.get("input_mode") == "DOCUMENTS"
+        and item.get("content_sha256")
+    ):
+        item_errors.append(
+            "document metadata preflight unexpectedly stores a content hash"
+        )
+
+    audit_validation_rows.append(
+        {
+            "event_id": item.get("event_id"),
+            "declared_class": item.get("declared_class"),
+            "input_mode": item.get("input_mode"),
+            "rules": len(item.get("rule_ids") or []),
+            "documents": len(item.get("document_ids") or []),
+            "has_content_sha256": bool(
+                item.get("content_sha256")
+            ),
+            "errors": len(item_errors),
+            "error_detail": " | ".join(item_errors),
+        }
+    )
+
+    errors.extend(
+        f"{item.get('event_id')}: {value}"
+        for value in item_errors
+    )
+
+print(
+    "App preflight audit events:",
+    len(app_prescreen_attempts),
+)
+
+if audit_validation_rows:
+    display(
+        spark.createDataFrame(
+            audit_validation_rows
+        )
+    )
+
+# COMMAND ----------
+
 if errors:
     print("")
     print("VALIDATION ERRORS")
@@ -363,5 +492,9 @@ print(
     "PASS — INFORMATION-CLASS PRESCREEN FAILS CLOSED WITHOUT DOWNGRADING CLASS D"
 )
 print("analyses:", len(analyses))
+print(
+    "app_preflight_audit_events:",
+    len(app_prescreen_attempts),
+)
 
 driver.close()
