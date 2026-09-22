@@ -28,6 +28,9 @@ env:
   - name: SHIELD_PROPOSAL_JOB_ID
     valueFrom: shield_proposal_job
 
+  - name: RELATIONSHIP_CORRECTION_JOB_ID
+    valueFrom: relationship_correction_job
+
   - name: CLASS_D_GPT20_ENDPOINT
     valueFrom: class_d_gpt20_endpoint
 
