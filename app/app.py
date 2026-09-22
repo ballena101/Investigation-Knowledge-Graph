@@ -308,7 +308,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-compact-status-controls-v27"
+APP_BUILD = "2026-09-22-direct-reference-ask-v28"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -6746,8 +6746,310 @@ def render_compare_llms():
 
 
 
+@st.fragment
+def render_direct_reference_ask():
+    st.subheader("Direct reference documents")
+    st.caption(
+        "Ask a cited question directly against governed legal, IMO or technical "
+        "reference documents. This path does not create an analysis, findings, "
+        "contributing factors or a knowledge graph."
+    )
+
+    reference_documents = load_reference_documents()
+
+    if not reference_documents:
+        st.info(
+            "No governed reference documents are currently indexed."
+        )
+        return
+
+    reference_by_id = {
+        item["reference_document_id"]: item
+        for item in reference_documents
+    }
+
+    def reference_label(reference_document_id):
+        item = reference_by_id[
+            reference_document_id
+        ]
+        return (
+            str(
+                item.get("reference_code")
+                or item.get("reference_title")
+                or item.get("filename")
+                or reference_document_id
+            )
+            + (
+                " · "
+                + str(
+                    item.get(
+                        "source_authority"
+                    )
+                )
+                if item.get(
+                    "source_authority"
+                )
+                else ""
+            )
+        )
+
+    selected_reference_ids = st.multiselect(
+        "Reference documents",
+        options=list(
+            reference_by_id
+        ),
+        format_func=reference_label,
+        filter_mode="contains",
+        key="direct_reference_documents",
+        help=(
+            "Select only the legal, IMO or technical documents that should "
+            "be eligible to support the answer."
+        ),
+    )
+
+    st.caption(
+        "Direct Q&A uses deterministic passage retrieval from the selected "
+        "governed documents. It does not run the investigation-analysis pipeline."
+    )
+
+    with st.form(
+        "direct_reference_question_form",
+        clear_on_submit=False,
+    ):
+        direct_question_text = st.text_area(
+            "Question",
+            placeholder=(
+                "Example: What does Directive 2009/18/EC require regarding "
+                "the publication of investigation reports?"
+            ),
+            height=110,
+        )
+        direct_submit = st.form_submit_button(
+            "Ask",
+            type="primary",
+        )
+
+    if direct_submit:
+        direct_errors = []
+
+        if not selected_reference_ids:
+            direct_errors.append(
+                "Select at least one reference document."
+            )
+        if not direct_question_text.strip():
+            direct_errors.append(
+                "Enter a question."
+            )
+        if not ASK_JOB_ID:
+            direct_errors.append(
+                "The Ask Job is not attached to this App deployment."
+            )
+
+        if direct_errors:
+            for error in direct_errors:
+                st.error(
+                    error
+                )
+        else:
+            direct_question_run_id = None
+            try:
+                direct_question_run_id = (
+                    create_direct_reference_question_run(
+                        question_text=(
+                            direct_question_text.strip()
+                        ),
+                        reference_document_ids=(
+                            selected_reference_ids
+                        ),
+                    )
+                )
+
+                direct_job_run_id = (
+                    trigger_question_job(
+                        direct_question_run_id
+                    )
+                )
+
+                st.session_state[
+                    "direct_reference_job_run"
+                ] = direct_job_run_id
+
+                load_direct_reference_question_runs.clear()
+                load_question_model_runs.clear()
+
+                st.success(
+                    "Reference-document question queued."
+                )
+
+            except Exception as exc:
+                if direct_question_run_id:
+                    with get_driver().session() as session:
+                        session.run(
+                            """
+                            MATCH (q:QuestionRun {
+                                question_run_id: $question_run_id
+                            })
+                            SET
+                                q.status = 'FAILED',
+                                q.processing_stage = 'JOB_TRIGGER_FAILED',
+                                q.processing_error = $error_message,
+                                q.updated_at = datetime()
+                            """,
+                            question_run_id=(
+                                direct_question_run_id
+                            ),
+                            error_message=(
+                                f"{type(exc).__name__}: {exc}"
+                            ),
+                        ).consume()
+                st.error(
+                    "The reference-document question could not be queued."
+                )
+                st.exception(
+                    exc
+                )
+
+    status_left, status_right = st.columns(
+        [0.35, 2.65]
+    )
+    with status_left:
+        if st.button(
+            "↻",
+            key="refresh_direct_reference_question",
+            help="Refresh direct-document question status",
+            use_container_width=True,
+        ):
+            load_direct_reference_question_runs.clear()
+            load_question_model_runs.clear()
+            st.rerun()
+
+    with status_right:
+        render_async_job_status(
+            st.session_state.get(
+                "direct_reference_job_run"
+            ),
+            "Direct reference question",
+        )
+
+    direct_runs = (
+        load_direct_reference_question_runs()
+    )
+
+    if direct_runs:
+        st.markdown(
+            "### Question history"
+        )
+
+        direct_by_id = {
+            item["question_run_id"]: item
+            for item in direct_runs
+        }
+
+        selected_direct_id = st.selectbox(
+            "Reference question",
+            options=list(
+                direct_by_id
+            ),
+            format_func=lambda value: (
+                question_display_text(
+                    direct_by_id[
+                        value
+                    ]
+                )[:100]
+                + " · "
+                + str(
+                    direct_by_id[
+                        value
+                    ].get(
+                        "status"
+                    )
+                    or "UNKNOWN"
+                )
+            ),
+            key="direct_reference_question_history",
+        )
+
+        selected_direct = direct_by_id[
+            selected_direct_id
+        ]
+
+        selected_names = [
+            reference_label(
+                document_id
+            )
+            for document_id in (
+                selected_direct.get(
+                    "direct_reference_document_ids"
+                )
+                or []
+            )
+            if document_id in reference_by_id
+        ]
+
+        if selected_names:
+            st.caption(
+                "Document scope: "
+                + " · ".join(
+                    selected_names
+                )
+            )
+
+        direct_status = (
+            selected_direct.get(
+                "status"
+            )
+            or "UNKNOWN"
+        )
+
+        if direct_status == "COMPLETED":
+            answer_runs = (
+                load_question_model_runs(
+                    selected_direct_id
+                )
+            )
+            for answer_run in answer_runs:
+                render_question_answer(
+                    analysis_id=None,
+                    question_run=selected_direct,
+                    model_run=answer_run,
+                    render_key=(
+                        "direct_reference_"
+                        + str(
+                            answer_run.get(
+                                "model_key"
+                            )
+                            or "model"
+                        )
+                    ),
+                )
+        elif direct_status == "FAILED":
+            st.error(
+                selected_direct.get(
+                    "processing_error"
+                )
+                or "Direct reference question processing failed."
+            )
+        else:
+            st.info(
+                "The question is queued or running."
+            )
+
+
+
+
 with tab_analyses:
-    render_compare_llms()
+    case_question_tab, direct_reference_tab = st.tabs(
+        [
+            "Case / analysed evidence",
+            "Direct reference documents",
+        ]
+    )
+
+    with case_question_tab:
+        render_compare_llms()
+
+    with direct_reference_tab:
+        render_direct_reference_ask()
 
 with tab_findings:
     st.subheader("Findings & Evidence")
