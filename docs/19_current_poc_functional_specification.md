@@ -1151,3 +1151,66 @@ comes only through the append-only human RelationshipReview chain.
 
 Transient assistant rationale/evidence is removed by the normal analysis
 retention cleanup; compact human governance metadata remains.
+
+
+## 2G. Similar MAIRA investigation cases
+
+Findings & Knowledge now contains a deterministic similar-case capability over
+the MAIRA investigation repository.
+
+### Method
+
+Notebook `52_find_similar_maira_cases.py`:
+
+1. starts from one completed AnalysisGroup;
+2. derives bounded focus labels from graph concepts:
+   - Event;
+   - ContributingFactor;
+   - Finding;
+   - SafetyIssue;
+   - System;
+3. explicitly excludes Vessel / Actor / Claim identity labels from similarity
+   input;
+4. searches only MAIRA `INVESTIGATION / MAIN_REPORT` passages;
+5. excludes the current MAIRA report package(s);
+6. reuses MAIRA `DETERMINISTIC_FREE_TEXT_LEXICAL_V0.1`;
+7. aggregates matched passages deterministically by report package;
+8. persists up to five package candidates with:
+   - rank;
+   - matched terms;
+   - score metadata;
+   - supporting passage IDs;
+   - report/page references;
+   - machine-readable page locations;
+   - retrieval method and snapshot ID.
+
+No LLM, embedding or vector similarity model is used.
+
+The capability therefore explains *why* a candidate was retrieved instead of
+presenting an opaque similarity percentage.
+
+### App interaction
+
+The investigator can run **Find similar MAIRA cases** from Findings & Knowledge.
+
+Returned candidates show:
+- report title / vessel where available;
+- matched lexical terms;
+- matched report/page references;
+- direct cited-page PDF viewing subject to the investigator's Unity Catalog
+  permissions.
+
+The result is a retrieval candidate only. It does not assert that the two
+casualties share the same causes, conclusions or safety lessons.
+
+Notebook `53_create_similar_cases_job.py` creates the one-task Lakeflow Job.
+
+App resource:
+`SIMILAR_CASES_JOB_ID <- similar_cases_job`
+
+Notebook `54_validate_similar_maira_cases.py` verifies current-package
+exclusion, candidate ranks, MAIRA passage provenance and page-location
+traceability.
+
+Transient matched terms/passage/page details follow the normal analysis
+retention cleanup.
