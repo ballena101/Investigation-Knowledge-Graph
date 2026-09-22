@@ -125,6 +125,18 @@ and human-validated knowledge distinct.
   `AnalysisGroup`.
 - The App maps this technical failure to the user-facing Prepare evidence step.
 
+
+### Governed retrieval preflight started
+
+- Added notebook `34_validate_governed_maira_retrieval_preflight.py`.
+- The notebook is read-only and validates:
+  - governed query specification availability;
+  - governed concept rows/component roles;
+  - supported deterministic relationship type;
+  - operational `HUMAN_VALIDATED` terminology;
+  - MAIRA MAIN_REPORT corpus/passages.
+- This does not yet activate governed retrieval in the normal App workflow.
+
 ## 3. NEXT — current milestone
 
 ### Validate repaired MAIRA document run
@@ -138,9 +150,12 @@ and human-validated knowledge distinct.
 7. Confirm Evidence sheet opens the cited MAIRA PDF page.
 8. Run notebook 32 against that analysis ID and require:
    `PASS — NORMAL APP ANALYSIS PRESERVES MAIRA_IKF_PASSAGE_V0.1`.
+9. Run notebook 34 with the governed query used for the next retrieval test
+   (Q003 is the current default) and require:
+   `PASS — GOVERNED MAIRA RETRIEVAL DATA PREFLIGHT`.
 
-This validation is the gate before enabling governed MAIRA retrieval in the
-normal App workflow.
+These validations are the gate before activating governed MAIRA retrieval in
+the normal App workflow.
 
 ## 4. PENDING — planned implementation sequence
 
