@@ -27,6 +27,7 @@ ANALYSIS_JOB_ID = os.getenv("ANALYSIS_JOB_ID")
 CLASS_D_ANALYSIS_JOB_ID = os.getenv("CLASS_D_ANALYSIS_JOB_ID")
 ASK_JOB_ID = os.getenv("ASK_JOB_ID")
 EMCIP_MAPPING_JOB_ID = os.getenv("EMCIP_MAPPING_JOB_ID")
+SHIELD_PROPOSAL_JOB_ID = os.getenv("SHIELD_PROPOSAL_JOB_ID")
 DIRECT_TEXT_ENCRYPTION_KEY = os.getenv("DIRECT_TEXT_ENCRYPTION_KEY")
 IKG_ADMIN_USERS = {
     item.strip().lower()
@@ -301,7 +302,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-class-d-prescreen-audit-v17"
+APP_BUILD = "2026-09-22-shield-two-gate-v18"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -3043,6 +3044,408 @@ def load_latest_relationship_reviews(analysis_id):
             )
         }
 
+
+
+def trigger_shield_proposal_job(
+    analysis_id,
+    model_run_id,
+):
+    if not SHIELD_PROPOSAL_JOB_ID:
+        raise RuntimeError(
+            "No SHIELD proposal Job is attached to the App. "
+            "Create notebook 47's Job, attach it with resource key "
+            "'shield_proposal_job', and redeploy."
+        )
+
+    response = get_workspace_client().api_client.do(
+        "POST",
+        "/api/2.2/jobs/run-now",
+        body={
+            "job_id": int(
+                SHIELD_PROPOSAL_JOB_ID
+            ),
+            "job_parameters": {
+                "analysis_id": analysis_id,
+                "model_run_id": model_run_id,
+            },
+        },
+    )
+
+    run_id = response.get("run_id")
+    if not run_id:
+        raise RuntimeError(
+            "Databricks accepted the SHIELD proposal Job but returned no run_id."
+        )
+
+    with get_driver().session() as session:
+        session.run(
+            """
+            MATCH (a:AnalysisGroup {
+                analysis_id: $analysis_id
+            })
+            SET
+                a.shield_proposal_status = 'QUEUED',
+                a.shield_proposal_model_run_id = $model_run_id,
+                a.shield_proposal_job_run_id = $job_run_id,
+                a.shield_proposal_error = NULL,
+                a.shield_proposal_updated_at = datetime()
+            """,
+            analysis_id=analysis_id,
+            model_run_id=model_run_id,
+            job_run_id=str(run_id),
+        ).consume()
+
+    return str(run_id)
+
+
+@st.cache_data(ttl=30)
+def load_shield_gate_eligible_factors(
+    analysis_id,
+    model_run_id,
+):
+    query = """
+    MATCH (a:AnalysisGroup {
+        analysis_id: $analysis_id
+    })-[:HAS_RELATIONSHIP_REVIEW]->(
+        review:RelationshipReview {
+            model_run_id: $model_run_id
+        }
+    )
+    WITH review
+    ORDER BY review.reviewed_at DESC
+    WITH
+        review.edge_id AS edge_id,
+        collect(review)[0] AS latest
+    MATCH (source:KGNode {
+        analysis_id: $analysis_id,
+        model_run_id: $model_run_id,
+        node_id: latest.source_node_id
+    })
+    MATCH (target:KGNode {
+        analysis_id: $analysis_id,
+        model_run_id: $model_run_id,
+        node_id: latest.target_node_id
+    })
+    WHERE
+        source.node_kind = 'ContributingFactor'
+        AND (
+            (
+                latest.human_review_decision = 'VALIDATED'
+                AND latest.original_relationship = 'CONTRIBUTED_TO'
+            )
+            OR
+            (
+                latest.human_review_decision = 'AMENDED'
+                AND latest.amended_relationship = 'CONTRIBUTED_TO'
+            )
+        )
+    RETURN
+        latest.review_id AS gate_review_id,
+        latest.edge_id AS edge_id,
+        source.node_id AS factor_node_id,
+        source.label AS factor_label,
+        target.node_id AS target_node_id,
+        target.label AS target_label
+    ORDER BY source.label, target.label
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(
+                query,
+                analysis_id=analysis_id,
+                model_run_id=model_run_id,
+            )
+        ]
+
+
+@st.cache_data(ttl=30)
+def load_shield_proposals(
+    analysis_id,
+    model_run_id,
+):
+    query = """
+    MATCH (a:AnalysisGroup {
+        analysis_id: $analysis_id
+    })-[:HAS_SHIELD_PROPOSAL]->(
+        p:ShieldProposal {
+            model_run_id: $model_run_id
+        }
+    )-[:CLASSIFIES_FACTOR]->(n:KGNode)
+    MATCH (p)-[:GATED_BY_REVIEW]->(gate:RelationshipReview)
+    OPTIONAL MATCH (latest:RelationshipReview {
+        analysis_id: $analysis_id,
+        model_run_id: $model_run_id,
+        edge_id: p.edge_id
+    })
+    WITH a, p, n, gate, latest
+    ORDER BY latest.reviewed_at DESC
+    WITH
+        a, p, n, gate,
+        head(collect(latest)) AS newest_gate_review
+    RETURN
+        p.proposal_id AS proposal_id,
+        p.analysis_id AS analysis_id,
+        p.model_run_id AS model_run_id,
+        p.factor_node_id AS factor_node_id,
+        p.factor_label AS factor_label,
+        p.target_node_id AS target_node_id,
+        p.target_label AS target_label,
+        p.edge_id AS edge_id,
+        p.gate_relationship_review_id AS gate_review_id,
+        p.gate_human_decision AS gate_human_decision,
+        p.assistant_status AS assistant_status,
+        p.proposed_shield_label AS proposed_shield_label,
+        p.proposed_shield_code AS proposed_shield_code,
+        p.proposed_shield_path AS proposed_shield_path,
+        p.rationale AS rationale,
+        coalesce(p.shield_passage_ids, []) AS shield_passage_ids,
+        coalesce(p.shield_references, []) AS shield_references,
+        coalesce(p.shield_locations, []) AS shield_locations,
+        p.shield_corpus_snapshot_id AS shield_corpus_snapshot_id,
+        p.retrieval_method AS retrieval_method,
+        p.proposal_version AS proposal_version,
+        p.model_service AS model_service,
+        CASE
+            WHEN newest_gate_review IS NULL
+            THEN false
+            ELSE newest_gate_review.review_id = gate.review_id
+        END AS gate_is_current,
+        CASE
+            WHEN newest_gate_review IS NULL
+            THEN NULL
+            ELSE newest_gate_review.review_id
+        END AS current_gate_review_id,
+        toString(p.updated_at) AS updated_at
+    ORDER BY p.factor_label, p.target_label
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(
+                query,
+                analysis_id=analysis_id,
+                model_run_id=model_run_id,
+            )
+        ]
+
+
+@st.cache_data(ttl=30)
+def load_latest_shield_reviews(
+    analysis_id,
+    model_run_id,
+):
+    query = """
+    MATCH (review:ShieldReview {
+        analysis_id: $analysis_id,
+        model_run_id: $model_run_id
+    })
+    WITH review
+    ORDER BY review.reviewed_at DESC
+    WITH
+        review.proposal_id AS proposal_id,
+        collect(review)[0] AS latest
+    RETURN
+        proposal_id,
+        latest.review_id AS review_id,
+        latest.human_review_decision AS decision,
+        latest.human_review_status AS status,
+        latest.amended_shield_label AS amended_shield_label,
+        latest.amended_shield_code AS amended_shield_code,
+        latest.amended_shield_path AS amended_shield_path,
+        latest.reviewer_email AS reviewer_email,
+        latest.reviewer_username AS reviewer_username,
+        latest.review_comment AS review_comment,
+        toString(latest.reviewed_at) AS reviewed_at
+    """
+
+    with get_driver().session() as session:
+        return {
+            record["proposal_id"]: record.data()
+            for record in session.run(
+                query,
+                analysis_id=analysis_id,
+                model_run_id=model_run_id,
+            )
+        }
+
+
+@st.cache_data(ttl=60)
+def load_shield_documents():
+    query = """
+    MATCH (d:ShieldDocument)
+    WHERE coalesce(
+        d.catalogue_status,
+        'AVAILABLE'
+    ) = 'AVAILABLE'
+    RETURN
+        d.shield_document_id AS shield_document_id,
+        d.filename AS filename,
+        d.source_type AS source_type,
+        d.viewer_source_repository AS viewer_source_repository,
+        d.viewer_source_path AS viewer_source_path,
+        d.viewer_source_filename AS viewer_source_filename,
+        d.corpus_snapshot_id AS corpus_snapshot_id
+    ORDER BY d.filename
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(query)
+        ]
+
+
+def save_shield_review(
+    proposal,
+    *,
+    decision,
+    amended_label,
+    amended_code,
+    amended_path,
+    comment,
+):
+    if not proposal.get("gate_is_current"):
+        raise ValueError(
+            "The Gate-1 relationship review has changed. "
+            "Regenerate SHIELD proposals before reviewing this item."
+        )
+
+    if proposal.get("assistant_status") != "ASSISTANT_PROPOSED":
+        raise ValueError(
+            "Only a grounded assistant SHIELD proposal can enter Gate 2 review."
+        )
+
+    if decision == "AMENDED" and not str(
+        amended_label or ""
+    ).strip():
+        raise ValueError(
+            "Enter an amended SHIELD label."
+        )
+
+    reviewer = get_reviewer_identity()
+    status_by_decision = {
+        "VALIDATED": "HUMAN_VALIDATED",
+        "REJECTED": "HUMAN_REJECTED",
+        "AMENDED": "HUMAN_AMENDED",
+    }
+
+    review_id = (
+        "shield_review_"
+        + uuid.uuid4().hex
+    )
+
+    with get_driver().session() as session:
+        record = session.run(
+            """
+            MATCH (a:AnalysisGroup {
+                analysis_id: $analysis_id
+            })
+            MATCH (p:ShieldProposal {
+                proposal_id: $proposal_id,
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id
+            })-[:CLASSIFIES_FACTOR]->(
+                n:KGNode {
+                    node_id: $factor_node_id,
+                    analysis_id: $analysis_id,
+                    model_run_id: $model_run_id
+                }
+            )
+            MATCH (p)-[:GATED_BY_REVIEW]->(
+                gate:RelationshipReview {
+                    review_id: $gate_review_id
+                }
+            )
+            CREATE (review:ShieldReview {
+                review_id: $review_id,
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id,
+                proposal_id: $proposal_id,
+                factor_node_id: $factor_node_id,
+                factor_label: $factor_label,
+                gate_relationship_review_id: $gate_review_id,
+                assistant_status: $assistant_status,
+                original_shield_label: $original_shield_label,
+                original_shield_code: $original_shield_code,
+                original_shield_path: $original_shield_path,
+                shield_corpus_snapshot_id: $shield_corpus_snapshot_id,
+                human_review_decision: $human_review_decision,
+                human_review_status: $human_review_status,
+                amended_shield_label: $amended_shield_label,
+                amended_shield_code: $amended_shield_code,
+                amended_shield_path: $amended_shield_path,
+                reviewer_email: $reviewer_email,
+                reviewer_user_id: $reviewer_user_id,
+                reviewer_username: $reviewer_username,
+                reviewed_at: datetime(),
+                review_comment: $review_comment
+            })
+            CREATE (a)-[:HAS_SHIELD_REVIEW]->(review)
+            CREATE (review)-[:REVIEWS_SHIELD_PROPOSAL]->(p)
+            CREATE (review)-[:REVIEWS_SHIELD_OF]->(n)
+            CREATE (review)-[:REVIEW_GATE]->(gate)
+            RETURN review.review_id AS review_id
+            """,
+            review_id=review_id,
+            analysis_id=proposal["analysis_id"],
+            model_run_id=proposal["model_run_id"],
+            proposal_id=proposal["proposal_id"],
+            factor_node_id=proposal["factor_node_id"],
+            factor_label=proposal["factor_label"],
+            gate_review_id=proposal["gate_review_id"],
+            assistant_status=proposal["assistant_status"],
+            original_shield_label=proposal.get(
+                "proposed_shield_label"
+            ),
+            original_shield_code=proposal.get(
+                "proposed_shield_code"
+            ),
+            original_shield_path=proposal.get(
+                "proposed_shield_path"
+            ),
+            shield_corpus_snapshot_id=proposal.get(
+                "shield_corpus_snapshot_id"
+            ),
+            human_review_decision=decision,
+            human_review_status=status_by_decision[
+                decision
+            ],
+            amended_shield_label=(
+                amended_label.strip()
+                if decision == "AMENDED"
+                else None
+            ),
+            amended_shield_code=(
+                amended_code.strip()
+                if (
+                    decision == "AMENDED"
+                    and amended_code
+                )
+                else None
+            ),
+            amended_shield_path=(
+                amended_path.strip()
+                if (
+                    decision == "AMENDED"
+                    and amended_path
+                )
+                else None
+            ),
+            reviewer_email=reviewer["email"],
+            reviewer_user_id=reviewer["user_id"],
+            reviewer_username=reviewer["username"],
+            review_comment=comment or None,
+        ).single()
+
+    if record is None:
+        raise RuntimeError(
+            "SHIELD human review was not persisted."
+        )
+
+    return record["review_id"]
 
 
 def trigger_emcip_mapping_job(
