@@ -40,6 +40,8 @@ CLASS_D_LLAMA70_ENDPOINT = (
     or os.getenv("CLASS_D_OLLAMA_LLAMA70_URL")
 )
 
+NEWS_DASHBOARD_URL = os.getenv("NEWS_DASHBOARD_URL")
+
 CLASS_D_MODEL_OPTIONS = {
     "GPT-OSS 20B": "GPT20",
     "Llama 3.3 70B": "LLAMA70",
@@ -2337,10 +2339,6 @@ with tab_news:
             NEWS_DASHBOARD_URL,
             type="primary",
             use_container_width=True,
-        )
-        st.caption(
-            "The dashboard opens in Databricks and uses your existing "
-            "dashboard and data permissions."
         )
     else:
         st.write(
