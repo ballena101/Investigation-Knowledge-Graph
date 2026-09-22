@@ -110,7 +110,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-large-scope-retrieval-v11"
+APP_BUILD = "2026-09-22-generic-relationship-review-v12"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -2536,6 +2536,9 @@ def save_relationship_review(
     review_id = str(uuid.uuid4())
 
     query = """
+    MATCH (a:AnalysisGroup {
+        analysis_id: $analysis_id
+    })
     MATCH (source:KGNode {
         analysis_id: $analysis_id,
         node_id: $source_node_id
@@ -2563,6 +2566,7 @@ def save_relationship_review(
         reviewed_at: datetime(),
         review_comment: $review_comment
     })
+    CREATE (a)-[:HAS_RELATIONSHIP_REVIEW]->(review)
     CREATE (review)-[:REVIEWS_SOURCE]->(source)
     CREATE (review)-[:REVIEWS_TARGET]->(target)
     RETURN review.review_id AS review_id
@@ -2723,17 +2727,15 @@ def load_latest_mapping_reviews():
 try:
     rows = load_graph()
     emcip_mapping_nodes = load_emcip_mappings()
-except Exception as exc:
-    st.error("Could not connect to the Neo4j knowledge graph.")
-    st.exception(exc)
-    st.stop()
+except Exception:
+    # Legacy Commodore Clipper material is a reference/demo only.
+    # It must never block the generic AnalysisGroup workflow.
+    rows = []
+    emcip_mapping_nodes = []
 
 if not rows:
-    st.warning(
-        "The Neo4j connection succeeded, but no relationships "
-        "were found for the Commodore Clipper case."
-    )
-    st.stop()
+    rows = []
+    emcip_mapping_nodes = []
 
 
 def mappings_to_text(mappings):
@@ -5386,12 +5388,19 @@ with tab_review:
             "target_id": edge["target_id"],
             "target_name": edge["target_label"],
             "evidence_status": edge.get("evidence_class") or "ASSISTANT_CANDIDATE",
+            "passage_ids": edge.get("passage_ids") or [],
+            "evidence_references": edge.get("evidence_references") or [],
+            "evidence_locations": edge.get("evidence_locations") or [],
             "evidence_anchor": ", ".join(edge.get("passage_ids") or []),
             "evidence": (
-                "Supporting passage IDs: "
-                + ", ".join(edge.get("passage_ids") or [])
-                if edge.get("passage_ids")
-                else "No supporting passage ID was published for this relationship."
+                " · ".join(edge.get("evidence_references") or [])
+                if edge.get("evidence_references")
+                else (
+                    "Supporting passage IDs: "
+                    + ", ".join(edge.get("passage_ids") or [])
+                    if edge.get("passage_ids")
+                    else "No supporting passage ID was published for this relationship."
+                )
             ),
         }
         for edge in selected_review_graph["edges"]
@@ -5461,16 +5470,19 @@ with tab_review:
             "target_id": "",
             "target_name": "—",
             "evidence_status": "—",
+            "passage_ids": [],
+            "evidence_references": [],
+            "evidence_locations": [],
             "evidence_anchor": "",
             "evidence": "No relationship selected.",
         }
     )
     latest = latest_reviews.get(selected["edge_id"])
 
-    if not selected:
+    if selected_index is None:
         st.info(
-            "The selected analysis has no published relationships available "
-            "for review yet."
+            "The selected analysis has no published non-structural "
+            "relationships available for review yet."
         )
 
     left, centre, right = st.columns([1, 0.7, 1])
@@ -5492,10 +5504,170 @@ with tab_review:
         st.write(selected["evidence_anchor"])
 
     st.markdown("**Supporting evidence**")
-    st.info(
-        selected["evidence"]
-        or "No evidence text is currently available for this relationship."
+
+    evidence_left, evidence_right = st.columns(
+        [1.0, 1.2]
     )
+
+    with evidence_left:
+        references = (
+            selected.get("evidence_references")
+            or []
+        )
+
+        if references:
+            for reference in references:
+                st.write(f"• {reference}")
+        else:
+            st.info(
+                selected["evidence"]
+                or "No page-level source reference is available for this relationship."
+            )
+
+        passage_ids = (
+            selected.get("passage_ids")
+            or []
+        )
+        if passage_ids:
+            with st.expander(
+                "Technical evidence IDs",
+                expanded=False,
+            ):
+                for passage_id in passage_ids:
+                    st.code(
+                        passage_id,
+                        language=None,
+                    )
+
+    with evidence_right:
+        review_locations = [
+            parsed
+            for parsed in (
+                parse_evidence_location(value)
+                for value in (
+                    selected.get(
+                        "evidence_locations"
+                    )
+                    or []
+                )
+            )
+            if parsed is not None
+        ]
+
+        if (
+            selected_review_analysis_id
+            and review_locations
+        ):
+            review_sources = load_analysis_sources(
+                selected_review_analysis_id
+            )
+            review_source_by_id = {
+                source["document_id"]: source
+                for source in review_sources
+            }
+
+            review_location_index = st.selectbox(
+                "Evidence page",
+                options=list(
+                    range(
+                        len(review_locations)
+                    )
+                ),
+                format_func=lambda index: format_evidence_location(
+                    review_locations[index],
+                    review_source_by_id.get(
+                        review_locations[index][
+                            "document_id"
+                        ]
+                    ),
+                ),
+                key=(
+                    "relationship_review_page_"
+                    + selected["edge_id"]
+                ),
+                disabled=review_controls_disabled,
+            )
+
+            review_location = review_locations[
+                review_location_index
+            ]
+            review_source = review_source_by_id.get(
+                review_location[
+                    "document_id"
+                ]
+            )
+
+            if review_source:
+                review_path = review_source.get(
+                    "viewer_source_path"
+                )
+                review_type = str(
+                    review_source.get(
+                        "source_type"
+                    )
+                    or ""
+                ).upper()
+
+                if (
+                    review_type == "PDF"
+                    and review_path
+                ):
+                    try:
+                        review_pdf = download_source_file_as_user(
+                            review_path
+                        )
+                        review_excerpt = pdf_page_range_bytes(
+                            review_pdf,
+                            review_location.get(
+                                "page_start"
+                            ),
+                            review_location.get(
+                                "page_end"
+                            ),
+                        )
+                        st.pdf(
+                            review_excerpt,
+                            height=620,
+                            key=(
+                                "relationship_review_pdf_"
+                                + hashlib.sha256(
+                                    (
+                                        selected["edge_id"]
+                                        + "|"
+                                        + review_path
+                                        + "|"
+                                        + str(
+                                            review_location.get(
+                                                "page_start"
+                                            )
+                                        )
+                                    ).encode(
+                                        "utf-8"
+                                    )
+                                ).hexdigest()[:16]
+                            ),
+                        )
+                    except PermissionError as exc:
+                        st.warning(str(exc))
+                    except Exception as exc:
+                        st.caption(
+                            "The cited source page could not be rendered: "
+                            + str(exc)
+                        )
+                else:
+                    st.caption(
+                        "A page citation exists, but this source is not "
+                        "available as an embedded PDF."
+                    )
+            else:
+                st.caption(
+                    "The cited document is not linked to the selected analysis."
+                )
+        elif selected_index is not None:
+            st.caption(
+                "No page-level evidence location is stored for this "
+                "relationship. Older analyses may require rerunning."
+            )
 
     if latest:
         st.markdown("**Latest human review**")
@@ -5533,6 +5705,7 @@ with tab_review:
                 "CONTRIBUTED_TO",
                 "AFFECTED",
                 "FOLLOWED_BY",
+                "SUPPORTS",
             ],
             key="relationship_amended_value",
         )
