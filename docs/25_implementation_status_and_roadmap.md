@@ -282,3 +282,42 @@ library.
 
 Status: **code complete; runtime validation intentionally deferred** to avoid an
 additional App deployment/run before the next planned validation session.
+
+
+### Question-independent analysis UX
+
+Implemented in code:
+- removed the free-text analytical question from Analyse Documents;
+- replaced it with optional descriptive metadata;
+- document extraction/graph resolution no longer uses an analysis objective;
+- renamed Compare LLMs to Ask / Compare LLMs;
+- existing model comparison remains visible;
+- scoped free-text question execution is the next backend slice.
+
+### Page-citation visibility
+
+Implemented in code:
+- completed model-run panels now show a visible Source pages block;
+- normal completed analyses show aggregated report/page references from their
+  graph evidence;
+- Findings & Knowledge retains item-level source/page references and PDF
+  evidence viewing;
+- older analyses without persisted citation metadata explicitly explain that a
+  rerun is required.
+
+### Source viewer validation gap
+
+The PDF-viewer implementation is present in code and uses:
+- Databricks user authorization;
+- Files API `files` scope;
+- MAIRA or IKF governed source paths;
+- Streamlit `st.pdf`;
+- PyMuPDF cited-page extraction.
+
+However, source rendering has **not yet been runtime-validated after the latest
+deployment changes**. Existing/older analyses do not contain the new
+`evidence_locations` metadata, so they cannot demonstrate the page-linked
+viewer without a fresh citation-enabled run.
+
+Status: code complete; runtime validation deferred to the next consolidated
+Databricks test session.
