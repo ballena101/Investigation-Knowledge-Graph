@@ -708,3 +708,48 @@ evidence identity or graph semantics.
 
 Analyses completed before this output contract was introduced do not contain
 the new answer/page-reference metadata unless they are deliberately rerun.
+
+
+### Authorised embedded source-document viewer
+
+The Evidence sheet now has an operational PDF-viewer design and implementation
+for new analyses.
+
+Source repositories explicitly supported:
+
+- IKF input/investigation source volume:
+  `/Volumes/bdw_analysis_prod/kg_poc/investigation_sources`;
+- MAIRA canonical source-document volume:
+  `/Volumes/bdw_analysis_prod/maira/source_documents`.
+
+When notebook 15 routes a document through MAIRA canonical evidence, it records
+the canonical MAIRA `file_path` as the viewer source. It does not require an
+IKF duplicate of the PDF. Documents using the temporary IKF fallback retain
+their IKF source path.
+
+Notebook 16 persists a machine-readable evidence location alongside each
+human-readable source reference:
+
+`document_id|page_start|page_end`
+
+The same location metadata is persisted for the explicit answer to the
+analysis question/objective.
+
+The App:
+1. resolves the selected evidence item to its source document and page range;
+2. accepts paths only below the two approved Unity Catalog volume roots above;
+3. uses Databricks Apps user authorization and the existing `files` scope;
+4. reads the PDF through the Databricks Files API on behalf of the logged-in
+   investigator;
+5. renders only the cited page range as the primary evidence view;
+6. offers the complete source PDF in a collapsed full-report viewer;
+7. does not reveal or bypass a document when the current user lacks Unity
+   Catalog permission.
+
+This intentionally uses user authorization rather than granting the App service
+principal blanket source-volume access, preserving individual Unity Catalog
+permissions for IKF and MAIRA documents.
+
+The embedded PDF capability uses Streamlit's PDF component and PyMuPDF only to
+construct the cited-page subset in App memory. Source documents are not copied
+into Neo4j and are not persisted by the viewer.
