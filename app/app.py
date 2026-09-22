@@ -308,7 +308,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-graph-workspace-v23"
+APP_BUILD = "2026-09-22-summary-evidence-separation-v24"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
