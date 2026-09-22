@@ -927,3 +927,56 @@ persisted MAIRA governed query specification:
 
 There is deliberately no fuzzy or LLM-generated mapping from arbitrary free text
 to a governed query specification at this stage.
+
+
+## 2F. Large-scope deterministic free-text retrieval
+
+Arbitrary free-text questions no longer fail solely because the selected
+evidence scope exceeds the temporary all-passages limit.
+
+Retrieval decision:
+
+```text
+exact persisted governed MAIRA question
+    → GOVERNED_RELATIONSHIP_EVIDENCE
+
+ordinary small evidence scope
+    → SCOPED_ALL_PASSAGES
+
+ordinary large evidence scope
+    → DETERMINISTIC_FREE_TEXT_LEXICAL_V0.1
+```
+
+The large-scope method is owned by MAIRA and exposed through:
+
+`maira.retrieval.retrieve_free_text`
+
+It:
+- uses deterministic lexical ranking only;
+- does not use an LLM for query rewriting;
+- does not use embeddings;
+- does not assign EMCIP concepts through fuzzy semantics;
+- selects whole passages rather than silently truncating passage text.
+
+For Class B, IKF may supply expansions only from:
+- `terminology_normalisations.review_status = HUMAN_VALIDATED`;
+- the corresponding governed EMCIP controlled value.
+
+The expansion is bidirectional only for that explicitly validated mapping.
+Classes A/C/D use the same deterministic retrieval algorithm over their already
+processed IKF passages without EMCIP expansion.
+
+Every model-answering QuestionRun now persists a retrieval snapshot containing:
+- retrieval method/version;
+- analysis ID;
+- question SHA-256;
+- evidence scope;
+- governed query identifiers where applicable;
+- exact selected passage IDs.
+
+The snapshot ID is a deterministic SHA-256-derived identifier. This allows a
+future benchmark to reproduce the exact evidence denominator supplied to the
+model.
+
+If deterministic lexical retrieval finds no matching passage, the system
+returns a deterministic insufficient-evidence result and does not call the LLM.
