@@ -89,7 +89,7 @@ CANDIDATE_REL_TABLE = (
 )
 SUMMARY_TABLE = "bdw_analysis_prod.kg_poc.analysis_summary"
 
-ANALYSIS_VERSION = "GROUP_ANALYSIS_LLM_V0.2"
+ANALYSIS_VERSION = "GROUP_ANALYSIS_LLM_V0.3"
 PRIVACY_OUTPUT_MODE = "DE_IDENTIFIED_BY_DEFAULT"
 MAX_PASSAGES = 500
 MAX_BATCH_CHARS = 14000
@@ -113,6 +113,7 @@ ALLOWED_RELATIONSHIPS = {
     "RESULTED_IN",
     "AFFECTED",
     "SUPPORTS",
+    "INVOLVED_IN",
 }
 
 ALLOWED_EVIDENCE_CLASSES = {
@@ -1433,8 +1434,124 @@ for relationship in resolution.get(
                 passage_ids
             ),
             "evidence_class": evidence_class,
+            "edge_class": "REPORT_DERIVED",
         }
     )
+
+# Deterministic subject-vessel completion.
+#
+# The LLM is allowed to extract Vessel nodes, but a source that explicitly
+# refers to one generic subject vessel ("the vessel" / "the ship") should not
+# produce an event-only graph merely because the model omitted the vessel
+# entity. This rule adds no vessel attributes and no causal semantics.
+passage_text_by_id = {
+    row["passage_id"]: (row["passage_text"] or "")
+    for row in passage_rows
+}
+
+generic_vessel_passage_ids = {
+    passage_id
+    for passage_id, passage_text in passage_text_by_id.items()
+    if re.search(
+        r"\b(?:the|this)\s+(?:vessel|ship)\b",
+        passage_text,
+        flags=re.IGNORECASE,
+    )
+    and not re.search(
+        r"\b(?:another|other)\s+(?:vessel|ship)\b|\bvessels\b|\bships\b",
+        passage_text,
+        flags=re.IGNORECASE,
+    )
+}
+
+vessel_nodes = [
+    node
+    for node in resolved_nodes
+    if node["kind"] == "Vessel"
+]
+
+subject_vessel_node = None
+
+if generic_vessel_passage_ids and not vessel_nodes:
+    vessel_raw_id = (
+        f"{analysis_id}|{model_run_key}|Vessel|subject vessel"
+    )
+    vessel_node_id = (
+        "analysis_node_"
+        + hashlib.sha256(
+            vessel_raw_id.encode("utf-8")
+        ).hexdigest()[:24]
+    )
+    subject_vessel_node = {
+        "resolution_id": "__det_subject_vessel__",
+        "node_id": vessel_node_id,
+        "kind": "Vessel",
+        "label": "Subject vessel",
+        "description": (
+            "Vessel explicitly referenced in the source evidence; "
+            "no additional vessel identity or characteristics inferred."
+        ),
+        "member_candidate_ids": [],
+        "passage_ids": sorted(generic_vessel_passage_ids),
+    }
+    resolved_nodes.append(subject_vessel_node)
+
+elif len(vessel_nodes) == 1:
+    subject_vessel_node = vessel_nodes[0]
+
+if subject_vessel_node is not None:
+    existing_structural_keys = {
+        (
+            rel["source_node_id"],
+            rel["relationship"],
+            rel["target_node_id"],
+        )
+        for rel in resolved_relationships
+    }
+
+    for event_node in [
+        node
+        for node in resolved_nodes
+        if node["kind"] == "Event"
+    ]:
+        supporting_passages = sorted(
+            set(event_node.get("passage_ids") or [])
+            & generic_vessel_passage_ids
+        )
+
+        if not supporting_passages:
+            continue
+
+        structural_key = (
+            subject_vessel_node["node_id"],
+            "INVOLVED_IN",
+            event_node["node_id"],
+        )
+
+        if structural_key in existing_structural_keys:
+            continue
+
+        edge_raw = (
+            f"{analysis_id}|{subject_vessel_node['node_id']}|"
+            f"INVOLVED_IN|{event_node['node_id']}"
+        )
+        resolved_relationships.append(
+            {
+                "edge_id": (
+                    "analysis_edge_"
+                    + hashlib.sha256(
+                        edge_raw.encode("utf-8")
+                    ).hexdigest()[:24]
+                ),
+                "source_node_id": subject_vessel_node["node_id"],
+                "relationship": "INVOLVED_IN",
+                "target_node_id": event_node["node_id"],
+                "support_ids": [],
+                "passage_ids": supporting_passages,
+                "evidence_class": "DIRECT",
+                "edge_class": "STRUCTURAL",
+            }
+        )
 
 print("Resolved nodes:", len(resolved_nodes))
 print(
@@ -1714,7 +1831,7 @@ try:
             }})
             CREATE (source)-[r:{rel_type} {{
                 edge_id: $edge_id,
-                edge_class: 'REPORT_DERIVED',
+                edge_class: $edge_class,
                 evidence_status: 'ASSISTANT_CANDIDATE',
                 evidence_class: $evidence_class,
                 evidence_passage_ids: $passage_ids,
@@ -1741,6 +1858,10 @@ try:
                 evidence_class=relationship[
                     "evidence_class"
                 ],
+                edge_class=relationship.get(
+                    "edge_class",
+                    "REPORT_DERIVED",
+                ),
                 passage_ids=relationship[
                     "passage_ids"
                 ],
