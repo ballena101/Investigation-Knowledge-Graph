@@ -357,3 +357,60 @@ viewer without a fresh citation-enabled run.
 
 Status: code complete; runtime validation deferred to the next consolidated
 Databricks test session.
+
+
+### Scoped Ask / Compare backend
+
+Implemented in code:
+- added `QuestionRun` as a separate interaction from AnalysisGroup creation;
+- scope can be whole case, one document or selected documents;
+- questions do not rebuild or modify the graph;
+- added dedicated one-task Lakeflow Job definition:
+  `Investigation KG - Ask Processed Evidence`;
+- added notebook `36_ask_processed_evidence.py`;
+- added notebook `37_create_ask_processed_evidence_job.py`;
+- App resource binding is `ASK_JOB_ID <- ask_job`;
+- A/B/C use their class-approved default model;
+- D supports GPT-OSS 20B / Llama 3.3 70B / Both;
+- Class-D question text is encrypted before persistence;
+- answers preserve passage IDs, report/page references and viewer locations;
+- cited PDF pages can be rendered directly in Ask results;
+- oversized scopes fail closed with `GOVERNED_RETRIEVAL_REQUIRED` rather than
+  being silently truncated;
+- QuestionRun/QuestionModelRun content is included in retention cleanup.
+
+Status: **code complete; runtime validation deferred**.
+
+### Exact governed MAIRA query integration
+
+Implemented in code:
+- Class-B free-text questions are normalised conservatively;
+- only an exact match to one persisted MAIRA `user_query` activates governed
+  query execution;
+- no fuzzy/LLM semantic mapping is performed;
+- the IKF wrapper now supports both MAIRA `FOLLOWED_BY` and
+  `CONTRIBUTED_TO` deterministic detectors;
+- governed retrieval can be restricted to selected document IDs;
+- positive governed evidence narrows the LLM evidence set to the supported
+  passages;
+- zero governed support returns a deterministic insufficient-evidence result
+  without calling the LLM;
+- Ask results expose `retrieval_mode`, governed query ID and provenance.
+
+Status: **code complete; runtime validation deferred**.
+
+### Ask validation
+
+Added read-only notebook:
+`38_validate_scoped_ask_run.py`.
+
+It validates:
+- QuestionRun → AnalysisGroup linkage;
+- scope-document validity;
+- answer passage IDs remain inside the selected scope;
+- citation page locations are backed by scoped passages;
+- governed query metadata resolves to a persisted MAIRA query specification;
+- deterministic no-support runs do not also contain model-generated answers.
+
+Required success marker:
+`PASS — SCOPED ASK / COMPARE RUN IS EVIDENCE-BOUNDED`.
