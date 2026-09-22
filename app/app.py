@@ -4564,208 +4564,6 @@ def load_latest_mapping_reviews():
         }
 
 
-try:
-    rows = load_graph()
-    emcip_mapping_nodes = load_emcip_mappings()
-except Exception:
-    # Legacy Commodore Clipper material is a reference/demo only.
-    # It must never block the generic AnalysisGroup workflow.
-    rows = []
-    emcip_mapping_nodes = []
-
-if not rows:
-    rows = []
-    emcip_mapping_nodes = []
-
-
-def mappings_to_text(mappings):
-    if not mappings:
-        return "No validated EMCIP mapping"
-    return " | ".join(mappings)
-
-
-nodes = {}
-edges = []
-
-for row in rows:
-    nodes[row["source_id"]] = {
-        "data": {
-            "id": row["source_id"],
-            "label": row["source_kind"],
-            "name": row["source_name"],
-            "node_kind": row["source_kind"],
-            "proposed_emcip_entity": row["source_emcip_entity"] or "—",
-            "mapping_disposition": row["source_mapping_disposition"] or "—",
-            "emcip_mappings": mappings_to_text(row["source_emcip_mappings"]),
-        }
-    }
-
-    nodes[row["target_id"]] = {
-        "data": {
-            "id": row["target_id"],
-            "label": row["target_kind"],
-            "name": row["target_name"],
-            "node_kind": row["target_kind"],
-            "proposed_emcip_entity": row["target_emcip_entity"] or "—",
-            "mapping_disposition": row["target_mapping_disposition"] or "—",
-            "emcip_mappings": mappings_to_text(row["target_emcip_mappings"]),
-        }
-    }
-
-    edges.append({
-        "data": {
-            "id": row["edge_id"],
-            "label": row["relationship"],
-            "source": row["source_id"],
-            "target": row["target_id"],
-            "relationship": row["relationship"],
-            "edge_class": row["edge_class"] or "—",
-            "evidence_status": row["evidence_status"] or "—",
-            "evidence_anchor": row["evidence_anchor"] or "—",
-            "evidence": row["evidence"] or (
-                "Structural relationship; no report evidence required."
-            ),
-        }
-    })
-
-elements = {
-    "nodes": list(nodes.values()),
-    "edges": edges,
-}
-
-
-mapping_rows_by_key = {}
-
-for node in emcip_mapping_nodes:
-    for original_mapping in node.get("emcip_mappings") or []:
-        original_mapping = original_mapping.strip()
-        if not original_mapping:
-            continue
-
-        key = mapping_key(node["node_id"], original_mapping)
-        mapping_rows_by_key[key] = {
-            "mapping_key": key,
-            "node_id": node["node_id"],
-            "node_label": node["node_label"],
-            "node_kind": node["node_kind"],
-            "proposed_emcip_entity": node["proposed_emcip_entity"] or "—",
-            "mapping_disposition": node["mapping_disposition"] or "—",
-            "original_mapping": original_mapping,
-        }
-
-mapping_rows = sorted(
-    mapping_rows_by_key.values(),
-    key=lambda item: (
-        item["node_label"],
-        item["original_mapping"],
-    ),
-)
-
-
-validated_edges = sum(
-    1 for edge in edges
-    if edge["data"]["evidence_status"] == "ASSISTANT_VALIDATED"
-)
-
-node_styles = [
-    NodeStyle(
-        label="Occurrence",
-        caption="name",
-        custom_styles={
-            "background-color": "#2563EB",
-            "border-color": "#1E3A8A",
-            "color": "#FFFFFF",
-            "shape": "round-rectangle",
-            "width": 120,
-            "height": 70,
-            "text-wrap": "wrap",
-            "text-max-width": 150,
-            "font-size": 11,
-            "border-width": 2,
-        },
-    ),
-    NodeStyle(
-        label="Vessel",
-        caption="name",
-        custom_styles={
-            "background-color": "#CFFAFE",
-            "border-color": "#0E7490",
-            "color": "#0F172A",
-            "shape": "round-rectangle",
-            "width": 135,
-            "height": 76,
-            "text-wrap": "wrap",
-            "text-max-width": 175,
-            "font-size": 12,
-            "font-weight": "bold",
-            "border-width": 2,
-        },
-    ),
-    NodeStyle(
-        label="Event",
-        caption="name",
-        custom_styles={
-            "background-color": "#F59E0B",
-            "border-color": "#92400E",
-            "color": "#111827",
-            "shape": "ellipse",
-            "width": 110,
-            "height": 110,
-            "text-wrap": "wrap",
-            "text-max-width": 150,
-            "font-size": 11,
-            "border-width": 2,
-        },
-    ),
-    NodeStyle(
-        label="ContributingFactor",
-        caption="name",
-        custom_styles={
-            "background-color": "#EF4444",
-            "border-color": "#7F1D1D",
-            "color": "#FFFFFF",
-            "shape": "diamond",
-            "width": 115,
-            "height": 115,
-            "text-wrap": "wrap",
-            "text-max-width": 150,
-            "font-size": 11,
-            "border-width": 2,
-        },
-    ),
-]
-
-edge_styles = [
-    EdgeStyle(
-        label="RESULTED_IN",
-        caption="label",
-        directed=True,
-        curve_style="bezier",
-        custom_styles={"line-color": "#DC2626", "target-arrow-color": "#DC2626"},
-    ),
-    EdgeStyle(
-        label="AFFECTED",
-        caption="label",
-        directed=True,
-        curve_style="bezier",
-        custom_styles={"line-color": "#7C3AED", "target-arrow-color": "#7C3AED"},
-    ),
-    EdgeStyle(
-        label="CONTRIBUTED_TO",
-        caption="label",
-        directed=True,
-        curve_style="bezier",
-        custom_styles={"line-color": "#EA580C", "target-arrow-color": "#EA580C"},
-    ),
-    EdgeStyle(
-        label="HAS_VESSEL",
-        caption="label",
-        directed=True,
-        curve_style="bezier",
-        custom_styles={"line-color": "#64748B", "target-arrow-color": "#64748B"},
-    ),
-]
-
 analysis_node_styles = [
     NodeStyle(
         label="Event",
@@ -4967,7 +4765,6 @@ analysis_edge_styles = [
     tab_analyses,
     tab_review,
     tab_graph,
-    tab_example,
     tab_about,
 ) = st.tabs(
     [
@@ -4977,7 +4774,6 @@ analysis_edge_styles = [
         "Ask / Compare LLMs",
         "Review & Validate",
         "Findings & Knowledge",
-        "Commodore Clipper example",
         "Terms of reference",
     ]
 )
@@ -5012,12 +4808,12 @@ with tab_home:
         st.markdown("### Analyse Documents")
         st.success("Active PoC")
         st.write(
-            "Start and follow an evidence-grounded analysis of investigation "
-            "documents or protected direct text."
+            "Create an evidence-grounded analysis and inspect the structured outputs: "
+            "events, contributing factors, findings, safety issues and recommendations."
         )
         st.caption(
-            "Current focus: integrate the validated MAIRA governed-retrieval "
-            "and dual-model review path into this App workflow."
+            "Analysis is question-independent. Class B uses MAIRA investigation "
+            "material; other classes use the governed IKF source routes."
         )
 
     with c3:
@@ -5038,8 +4834,8 @@ with tab_home:
         st.markdown("### Review & Validate")
         st.success("Active PoC")
         st.write(
-            "Review relationships and EMCIP mappings. SHIELD suggestions will "
-            "also appear here after contributing factors are validated."
+            "Make human decisions on relationships, optional assistant correction "
+            "proposals, EMCIP mappings and SHIELD classifications."
         )
         st.caption(
             "AI suggestions never become validated knowledge without a human "
@@ -5050,12 +4846,12 @@ with tab_home:
         st.markdown("### Findings & Knowledge")
         st.success("Graph available")
         st.write(
-            "Search findings, ask the LLM about processed knowledge and open "
-            "the relationship graph only when it helps."
+            "Browse extracted findings and evidence, inspect the knowledge graph and "
+            "retrieve similar MAIRA cases."
         )
         st.caption(
-            "Cited knowledge questions, human-governed relationship checks "
-            "and deterministic similar-case retrieval are implemented in source."
+            "This page is read-only. Questions belong to Ask / Compare; human "
+            "decisions belong to Review & Validate."
         )
 
     st.divider()
@@ -5248,8 +5044,8 @@ with tab_new_analysis:
             ),
             horizontal=True,
             help=(
-                "Run GPT-OSS 20B, Ollama Llama 3.3 70B, or both against the same "
-                "evidence and question. Both produces side-by-side results."
+                "Run GPT-OSS 20B, Llama 3.3 70B, or both against the same "
+                "prepared evidence set. Both produces side-by-side analytical outputs."
             ),
         )
         class_d_model_selection = (
@@ -5510,7 +5306,7 @@ with tab_new_analysis:
                 and input_mode == "Documents"
             )
         ):
-            if input_mode == "DIRECT_TEXT":
+            if input_mode == "Direct text":
                 prescreen_rule_ids = app_protected_prescreen(
                     text=direct_text,
                 )
@@ -6848,9 +6644,9 @@ with tab_analyses:
 with tab_graph:
     st.subheader("Findings & Knowledge")
     st.caption(
-        "Search and ask about processed findings. Open the graph when the "
-        "relationships are useful; it is a view of the knowledge, not a "
-        "mandatory workflow step."
+        "Browse processed findings and their evidence. Open the graph when "
+        "relationships help, and retrieve similar MAIRA cases. Questions are "
+        "asked in Ask / Compare LLMs; validation decisions are made in Review & Validate."
     )
 
     st.markdown("### Existing analysis")
@@ -6883,267 +6679,12 @@ with tab_graph:
             knowledge_analysis_id
         ]
 
-        st.markdown("### Ask this knowledge")
-        st.caption(
-            "Ask about the processed case with the same evidence and citation "
-            "controls used by Ask / Compare. Detailed document-scope controls "
-            "remain available in Ask / Compare LLMs."
+        st.info(
+            "Free-text questions and model comparison are handled in "
+            "Ask / Compare LLMs. This page is intentionally read-only: "
+            "browse the extracted knowledge, inspect its evidence, view the "
+            "graph and retrieve similar MAIRA cases."
         )
-
-        if knowledge_meta.get("status") != "COMPLETED":
-            st.info(
-                "The knowledge assistant becomes available after this analysis "
-                "has completed."
-            )
-        else:
-            knowledge_class = (
-                knowledge_meta.get(
-                    "information_class"
-                )
-                or "B"
-            )
-
-            if knowledge_class == "D":
-                knowledge_model_label = st.radio(
-                    "Knowledge assistant model",
-                    options=list(
-                        CLASS_D_MODEL_OPTIONS
-                    ),
-                    horizontal=True,
-                    key=(
-                        "knowledge_model_"
-                        + knowledge_analysis_id
-                    ),
-                )
-                knowledge_model_selection = (
-                    CLASS_D_MODEL_OPTIONS[
-                        knowledge_model_label
-                    ]
-                )
-            else:
-                knowledge_model_selection = "DEFAULT"
-
-            knowledge_reference_context = st.checkbox(
-                "Include governed reference context",
-                value=False,
-                key=(
-                    "knowledge_reference_context_"
-                    + knowledge_analysis_id
-                ),
-                help=(
-                    "Reference context is retrieved separately from the case "
-                    "evidence and cannot prove that a case fact occurred."
-                ),
-            )
-
-            with st.form(
-                "knowledge_question_form_"
-                + knowledge_analysis_id,
-                clear_on_submit=False,
-            ):
-                knowledge_question = st.text_area(
-                    "Question",
-                    placeholder=(
-                        "Example: Which events preceded the fire, and what "
-                        "evidence supports them?"
-                    ),
-                    height=110,
-                )
-                knowledge_submit = st.form_submit_button(
-                    "Ask knowledge assistant",
-                    type="primary",
-                )
-
-            if knowledge_submit:
-                knowledge_errors = []
-
-                if not knowledge_question.strip():
-                    knowledge_errors.append(
-                        "Enter a question."
-                    )
-
-                if not ASK_JOB_ID:
-                    knowledge_errors.append(
-                        "The Ask Job is not attached to this App deployment."
-                    )
-
-                if (
-                    knowledge_class == "D"
-                    and knowledge_model_selection
-                    in {"LLAMA70", "BOTH"}
-                    and get_llama_daily_usage()
-                    >= LLAMA_DAILY_QUESTION_LIMIT
-                ):
-                    knowledge_errors.append(
-                        "The daily Llama 3.3 70B question limit has been reached."
-                    )
-
-                if knowledge_errors:
-                    for error in knowledge_errors:
-                        st.error(error)
-                else:
-                    knowledge_question_run_id = None
-                    try:
-                        knowledge_question_run_id = create_question_run(
-                            analysis=knowledge_meta,
-                            question_text=knowledge_question.strip(),
-                            scope_mode="WHOLE_CASE",
-                            scope_document_ids=[],
-                            model_selection=knowledge_model_selection,
-                            include_reference_context=knowledge_reference_context,
-                            interaction_surface="KNOWLEDGE",
-                        )
-
-                        if (
-                            knowledge_class == "D"
-                            and knowledge_model_selection
-                            in {"LLAMA70", "BOTH"}
-                        ):
-                            consumed = consume_llama_daily_usage()
-                            if consumed is None:
-                                raise RuntimeError(
-                                    "The Llama daily quota could not be reserved."
-                                )
-
-                        knowledge_job_run_id = trigger_question_job(
-                            knowledge_question_run_id
-                        )
-
-                        load_question_runs.clear()
-                        load_question_model_runs.clear()
-
-                        st.success(
-                            "Knowledge question queued."
-                        )
-                        st.caption(
-                            f"Question run: {knowledge_question_run_id} · "
-                            f"Databricks run: {knowledge_job_run_id}"
-                        )
-                    except Exception as exc:
-                        if knowledge_question_run_id:
-                            with get_driver().session() as session:
-                                session.run(
-                                    """
-                                    MATCH (q:QuestionRun {
-                                        question_run_id: $question_run_id
-                                    })
-                                    SET
-                                        q.status = 'FAILED',
-                                        q.processing_stage = 'JOB_TRIGGER_FAILED',
-                                        q.processing_error = $error_message,
-                                        q.updated_at = datetime()
-                                    """,
-                                    question_run_id=knowledge_question_run_id,
-                                    error_message=(
-                                        f"{type(exc).__name__}: {exc}"
-                                    ),
-                                ).consume()
-                        st.error(
-                            "The knowledge question could not be queued."
-                        )
-                        st.exception(exc)
-
-            knowledge_question_runs = [
-                item
-                for item in load_question_runs(
-                    knowledge_analysis_id
-                )
-                if (
-                    item.get(
-                        "interaction_surface"
-                    )
-                    == "KNOWLEDGE"
-                )
-            ]
-
-            if knowledge_question_runs:
-                latest_knowledge_question = (
-                    knowledge_question_runs[0]
-                )
-
-                st.markdown("### Latest knowledge answer")
-                st.markdown("**Question**")
-                st.write(
-                    question_display_text(
-                        latest_knowledge_question
-                    )
-                )
-                st.caption(
-                    "Status: "
-                    + (
-                        latest_knowledge_question.get(
-                            "status"
-                        )
-                        or "UNKNOWN"
-                    )
-                )
-
-                if (
-                    latest_knowledge_question.get(
-                        "status"
-                    )
-                    == "COMPLETED"
-                ):
-                    knowledge_answer_runs = (
-                        load_question_model_runs(
-                            latest_knowledge_question[
-                                "question_run_id"
-                            ]
-                        )
-                    )
-
-                    if len(
-                        knowledge_answer_runs
-                    ) == 1:
-                        render_question_answer(
-                            analysis_id=knowledge_analysis_id,
-                            question_run=latest_knowledge_question,
-                            model_run=knowledge_answer_runs[0],
-                            render_key=(
-                                "knowledge_"
-                                + knowledge_answer_runs[0][
-                                    "model_key"
-                                ]
-                            ),
-                        )
-                    elif knowledge_answer_runs:
-                        answer_columns = st.columns(
-                            len(
-                                knowledge_answer_runs
-                            )
-                        )
-                        for answer_column, answer_run in zip(
-                            answer_columns,
-                            knowledge_answer_runs,
-                        ):
-                            with answer_column:
-                                render_question_answer(
-                                    analysis_id=knowledge_analysis_id,
-                                    question_run=latest_knowledge_question,
-                                    model_run=answer_run,
-                                    render_key=(
-                                        "knowledge_"
-                                        + answer_run[
-                                            "model_key"
-                                        ]
-                                    ),
-                                )
-                elif (
-                    latest_knowledge_question.get(
-                        "status"
-                    )
-                    == "FAILED"
-                ):
-                    st.error(
-                        latest_knowledge_question.get(
-                            "processing_error"
-                        )
-                        or "Knowledge question failed."
-                    )
-                else:
-                    st.info(
-                        "The knowledge question is queued or running."
-                    )
 
         knowledge_elements = {
             "nodes": [
@@ -7189,8 +6730,8 @@ with tab_graph:
             st.markdown("### Evidence sheet")
             st.caption(
                 "Select a finding, event, concept or relationship to inspect "
-                "its evidence and source page. Answers asked later in "
-                "Ask / Compare LLMs will use the same citation/viewer pattern."
+                "its evidence and source page. This page does not change "
+                "the graph or create model answers."
             )
 
             evidence_items = []
@@ -7426,355 +6967,10 @@ with tab_graph:
                                 )
                                 st.caption(str(exc))
 
-            st.markdown("### Check a relationship")
-            st.caption(
-                "Ask the LLM to review one existing relationship against only "
-                "its cited source evidence. The LLM creates a proposal; it "
-                "never edits the graph."
+            st.info(
+                "Relationship validation and optional assistant correction "
+                "checks are handled in Review & Validate."
             )
-
-            semantic_edges = [
-                edge
-                for edge in knowledge_graph["edges"]
-                if (
-                    edge.get("edge_class")
-                    != "STRUCTURAL"
-                    and edge.get(
-                        "model_run_id"
-                    )
-                )
-            ]
-
-            if not semantic_edges:
-                st.info(
-                    "No evidence-derived relationship is available for "
-                    "assistant checking."
-                )
-            else:
-                correction_edge_by_id = {
-                    edge["edge_id"]: edge
-                    for edge in semantic_edges
-                }
-
-                correction_edge_id = st.selectbox(
-                    "Relationship",
-                    options=list(
-                        correction_edge_by_id
-                    ),
-                    format_func=lambda value: (
-                        correction_edge_by_id[value][
-                            "source_label"
-                        ]
-                        + " — "
-                        + correction_edge_by_id[value][
-                            "relationship"
-                        ]
-                        + " → "
-                        + correction_edge_by_id[value][
-                            "target_label"
-                        ]
-                    ),
-                    key=(
-                        "knowledge_correction_edge_"
-                        + knowledge_analysis_id
-                    ),
-                )
-
-                correction_edge = (
-                    correction_edge_by_id[
-                        correction_edge_id
-                    ]
-                )
-                correction_model_run_id = (
-                    correction_edge[
-                        "model_run_id"
-                    ]
-                )
-
-                latest_human_reviews = (
-                    load_latest_relationship_reviews(
-                        knowledge_analysis_id
-                    )
-                )
-                current_human_review = (
-                    latest_human_reviews.get(
-                        correction_edge_id
-                    )
-                )
-
-                if current_human_review:
-                    final_relationship = (
-                        current_human_review.get(
-                            "amended_relationship"
-                        )
-                        if current_human_review.get(
-                            "decision"
-                        )
-                        == "AMENDED"
-                        else correction_edge[
-                            "relationship"
-                        ]
-                    )
-                    st.caption(
-                        "Current human review: "
-                        + (
-                            current_human_review.get(
-                                "status"
-                            )
-                            or current_human_review.get(
-                                "decision"
-                            )
-                            or "reviewed"
-                        )
-                        + (
-                            " · effective relationship: "
-                            + str(final_relationship)
-                            if final_relationship
-                            else ""
-                        )
-                    )
-                else:
-                    st.caption(
-                        "Current knowledge status: candidate relationship — "
-                        "not yet human validated."
-                    )
-
-                if st.button(
-                    "Generate evidence-bounded correction proposal",
-                    key=(
-                        "generate_relationship_correction_"
-                        + knowledge_analysis_id
-                        + "_"
-                        + correction_edge_id
-                    ),
-                    disabled=(
-                        not RELATIONSHIP_CORRECTION_JOB_ID
-                    ),
-                ):
-                    try:
-                        correction_run_id = (
-                            trigger_relationship_correction_job(
-                                knowledge_analysis_id,
-                                correction_model_run_id,
-                                correction_edge_id,
-                            )
-                        )
-                        load_relationship_correction_proposals.clear()
-                        st.success(
-                            "Relationship check queued."
-                        )
-                        st.caption(
-                            "Databricks run: "
-                            + correction_run_id
-                        )
-                    except Exception as exc:
-                        st.error(
-                            "The relationship check could not be queued."
-                        )
-                        st.exception(exc)
-
-                if not RELATIONSHIP_CORRECTION_JOB_ID:
-                    st.caption(
-                        "Relationship-correction Job is not attached to this "
-                        "App deployment yet."
-                    )
-
-                correction_proposals = (
-                    load_relationship_correction_proposals(
-                        knowledge_analysis_id,
-                        correction_model_run_id,
-                        correction_edge_id,
-                    )
-                )
-
-                if correction_proposals:
-                    proposal = correction_proposals[0]
-
-                    st.markdown("**Assistant proposal**")
-                    st.write(
-                        "Action: "
-                        + (
-                            proposal.get(
-                                "action"
-                            )
-                            or "—"
-                        )
-                    )
-
-                    if proposal.get(
-                        "proposed_relationship"
-                    ):
-                        st.write(
-                            "Proposed relationship: "
-                            + proposal[
-                                "proposed_relationship"
-                            ]
-                        )
-
-                    st.write(
-                        proposal.get(
-                            "rationale"
-                        )
-                        or "No rationale was returned."
-                    )
-
-                    for reference in (
-                        proposal.get(
-                            "evidence_references"
-                        )
-                        or []
-                    ):
-                        st.write(
-                            f"• {reference}"
-                        )
-
-                    if not proposal.get(
-                        "base_review_is_current"
-                    ):
-                        st.warning(
-                            "This proposal is stale because the relationship "
-                            "has a newer human review. Generate a new proposal."
-                        )
-
-                    correction_reviews = (
-                        load_latest_relationship_correction_reviews(
-                            knowledge_analysis_id,
-                            correction_model_run_id,
-                        )
-                    )
-                    latest_correction_review = (
-                        correction_reviews.get(
-                            proposal[
-                                "proposal_id"
-                            ]
-                        )
-                    )
-
-                    if latest_correction_review:
-                        st.success(
-                            "Latest human decision: "
-                            + (
-                                latest_correction_review.get(
-                                    "decision"
-                                )
-                                or "—"
-                            )
-                        )
-                        if latest_correction_review.get(
-                            "applied_relationship_decision"
-                        ):
-                            st.caption(
-                                "Authoritative relationship review: "
-                                + latest_correction_review[
-                                    "applied_relationship_decision"
-                                ]
-                                + (
-                                    " · "
-                                    + latest_correction_review[
-                                        "applied_relationship"
-                                    ]
-                                    if latest_correction_review.get(
-                                        "applied_relationship"
-                                    )
-                                    else ""
-                                )
-                            )
-
-                    if (
-                        proposal.get(
-                            "assistant_status"
-                        )
-                        == "ASSISTANT_PROPOSED"
-                        and proposal.get(
-                            "base_review_is_current"
-                        )
-                    ):
-                        with st.form(
-                            "relationship_correction_review_"
-                            + proposal[
-                                "proposal_id"
-                            ]
-                        ):
-                            correction_decision = st.radio(
-                                "Human decision",
-                                options=[
-                                    "APPROVED",
-                                    "DISMISSED",
-                                    "APPLIED_WITH_AMENDMENT",
-                                ],
-                                format_func=lambda value: {
-                                    "APPROVED":
-                                        "Approve assistant proposal",
-                                    "DISMISSED":
-                                        "Dismiss assistant proposal",
-                                    "APPLIED_WITH_AMENDMENT":
-                                        "Apply a different human outcome",
-                                }[value],
-                            )
-
-                            amended_outcome = None
-
-                            if (
-                                correction_decision
-                                == "APPLIED_WITH_AMENDMENT"
-                            ):
-                                amended_outcome = st.selectbox(
-                                    "Final human outcome",
-                                    options=[
-                                        "KEEP_CURRENT",
-                                        "REJECT_RELATIONSHIP",
-                                        "FOLLOWED_BY",
-                                        "CONTRIBUTED_TO",
-                                        "RESULTED_IN",
-                                        "AFFECTED",
-                                        "SUPPORTS",
-                                    ],
-                                )
-
-                            correction_comment = st.text_area(
-                                "Review comment",
-                                height=80,
-                            )
-
-                            correction_submit = (
-                                st.form_submit_button(
-                                    "Save human decision",
-                                    type="primary",
-                                )
-                            )
-
-                        if correction_submit:
-                            try:
-                                correction_result = (
-                                    save_relationship_correction_review(
-                                        proposal,
-                                        decision=correction_decision,
-                                        amended_outcome=amended_outcome,
-                                        comment=correction_comment,
-                                    )
-                                )
-                                load_relationship_correction_proposals.clear()
-                                load_latest_relationship_correction_reviews.clear()
-                                st.success(
-                                    "Human relationship-correction decision "
-                                    "saved. The graph edge itself was not "
-                                    "overwritten."
-                                )
-                                if correction_result.get(
-                                    "relationship_review_id"
-                                ):
-                                    st.caption(
-                                        "Authoritative review ID: "
-                                        + correction_result[
-                                            "relationship_review_id"
-                                        ]
-                                    )
-                            except Exception as exc:
-                                st.error(
-                                    "The human correction decision could not "
-                                    "be saved."
-                                )
-                                st.exception(exc)
 
             with st.expander("View graph", expanded=False):
                 st.caption(
@@ -8073,118 +7269,6 @@ with tab_graph:
             "External/news similarity remains separate from validated "
             "investigation knowledge and is handled in the News/dashboard "
             "workstream."
-        )
-
-with tab_example:
-    st.subheader("Commodore Clipper — complete worked example")
-    st.caption(
-        "One reference sheet showing how the different capabilities work "
-        "together. It is an example, not the data source for the operational pages."
-    )
-
-    e1, e2, e3, e4 = st.columns(4)
-    e1.metric("Case", "Commodore Clipper")
-    e2.metric("Date", "16 June 2010")
-    e3.metric("Source", "Published report")
-    e4.metric("Review status", "Reference case")
-
-    st.markdown("### 1. Document analysis")
-    st.write(
-        "The published investigation material has been structured into "
-        "evidence-grounded concepts, events, contributing factors and relationships."
-    )
-
-    st.markdown("### 2. LLM comparison")
-    st.info(
-        "The graph/evidence methodology is available for this reference case. "
-        "A current dual-model result is not claimed unless both model runs were "
-        "executed against the same frozen evidence snapshot."
-    )
-
-    st.markdown("### 3. Review & validation")
-    st.write(
-        f"{validated_edges} of {len(edges)} displayed relationships carry the "
-        "reference assistant-validation status. Human review remains separately recorded."
-    )
-
-    st.markdown("### 4. EMCIP and SHIELD")
-    taxonomy_left, taxonomy_right = st.columns(2)
-    with taxonomy_left:
-        st.markdown("**EMCIP mappings**")
-        st.write(
-            f"{len(mapping_rows_by_key)} reference mapping candidate(s) are "
-            "available in the Clipper demonstrator with their mapping disposition."
-        )
-    with taxonomy_right:
-        st.markdown("**SHIELD classification**")
-        st.info(
-            "No SHIELD classification is asserted in this example build. A future "
-            "LLM suggestion may be made only after the contributing factor is "
-            "human validated and will then require separate human validation."
-        )
-
-    st.markdown("### 5. Similar cases and external signals")
-    example_case_left, example_case_right = st.columns(2)
-    with example_case_left:
-        st.markdown("**MAIRA repository**")
-        st.info(
-            "Similar-report retrieval is not connected in this build; no similar "
-            "MAIRA cases are asserted here."
-        )
-    with example_case_right:
-        st.markdown("**News & alerts**")
-        st.info(
-            "No related news alerts have been identified by the App because the "
-            "news-table search is not connected in this build."
-        )
-
-    st.markdown("### 6. Findings and knowledge graph")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Nodes", len(nodes))
-    c2.metric("Relationships", len(edges))
-    c3.metric("Evidence-validated", validated_edges)
-
-    st.markdown("#### Interactive knowledge graph")
-    st.caption(
-        "Select a node or relationship to inspect its properties, "
-        "EMCIP mapping and supporting evidence."
-    )
-    st.caption(
-        "Colour key — occurrence: blue · vessel: teal · event: amber · "
-        "contributing factor: red. Relationship colours also distinguish "
-        "result, contribution, effect and structural links."
-    )
-
-    streamlit_cytoscape(
-        elements=elements,
-        layout="fcose",
-        node_styles=node_styles,
-        edge_styles=edge_styles,
-        height=700,
-        key="commodore_clipper_graph",
-    )
-
-    with st.expander("Review a graph relationship with the LLM — preview"):
-        st.write(
-            "Select a relationship, ask the LLM to check it against the source "
-            "evidence, and inspect the proposed change before deciding."
-        )
-        st.text_area(
-            "What should the LLM review?",
-            placeholder=(
-                "Example: Check whether this should be FOLLOWED_BY rather than CAUSED_BY."
-            ),
-            disabled=True,
-            key="graph_llm_review_preview",
-        )
-        st.button(
-            "Review selected relationship — coming soon",
-            disabled=True,
-            key="graph_llm_review_button_preview",
-        )
-        st.caption(
-            "The LLM will create a proposal with evidence. It will not directly "
-            "change the validated graph; a human must approve or reject it."
         )
 
 with tab_review:
