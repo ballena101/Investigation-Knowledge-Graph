@@ -203,3 +203,21 @@ The answer surface keeps the two citation groups visually distinct:
 
 Reference context may explain framework, methodology or technical background
 but is never presented as proof that a case fact occurred.
+
+
+## SHIELD in Review & Validate
+
+The SHIELD section reuses the selected analysis/model and shows:
+
+- number of Gate-1 eligible contributing factors;
+- persistent SHIELD source availability;
+- Generate / refresh SHIELD proposals;
+- human-validated factor and target;
+- assistant SHIELD proposal;
+- SHIELD corpus snapshot;
+- cited SHIELD taxonomy page;
+- latest Gate-2 human review;
+- VALIDATED / REJECTED / AMENDED controls.
+
+If Gate 1 changes after proposal generation, the proposal is visibly marked
+STALE and Gate-2 review is disabled until proposals are regenerated.
