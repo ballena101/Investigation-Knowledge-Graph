@@ -95,3 +95,5 @@ a safety classification.
   safeguards and SHIELD sequencing.
 
 - [25 — Implementation status and roadmap](25_implementation_status_and_roadmap.md) — current operational DONE / NEXT / PENDING tracker.
+
+- [26 — Generic EMCIP mapping review](26_generic_emcip_mapping_review.md) — MAIRA-registry shortlist, LLM proposal, human validation and provenance controls.
