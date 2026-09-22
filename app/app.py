@@ -4,7 +4,6 @@ import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import streamlit as st
-import streamlit.components.v1 as components
 from cryptography.fernet import Fernet
 from databricks.sdk import WorkspaceClient
 from neo4j import GraphDatabase
@@ -32,7 +31,6 @@ CLASS_D_CONTENT_RETENTION_HOURS = 24
 OTHER_CONTENT_RETENTION_HOURS = 72
 LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "5"))
 QUOTA_TIMEZONE = "Europe/Lisbon"
-NEWS_DASHBOARD_EMBED_URL = os.getenv("NEWS_DASHBOARD_EMBED_URL", "").strip()
 
 PUBLIC_MODEL_SERVICE = "system.ai.meta-llama-3-3-70b-instruct"
 INTERNAL_MODEL_SERVICE = "system.ai.gpt-oss-120b"
@@ -94,7 +92,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-news-dashboard-embed-v1"
+APP_BUILD = "2026-09-22-simple-capability-navigation-v2"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -1601,6 +1599,7 @@ def get_reviewer_identity():
 
 def save_relationship_review(
     edge,
+    analysis_id: str,
     decision: str,
     amended_relationship: str | None,
     comment: str,
@@ -1616,12 +1615,17 @@ def save_relationship_review(
     review_id = str(uuid.uuid4())
 
     query = """
-    MATCH (source:KGNode {node_id: $source_node_id})
-    MATCH (target:KGNode {node_id: $target_node_id})
+    MATCH (source:KGNode {
+        analysis_id: $analysis_id,
+        node_id: $source_node_id
+    })
+    MATCH (target:KGNode {
+        analysis_id: $analysis_id,
+        node_id: $target_node_id
+    })
     CREATE (review:RelationshipReview {
         review_id: $review_id,
-        case_id: $case_id,
-        graph_version: $graph_version,
+        analysis_id: $analysis_id,
         edge_id: $edge_id,
         source_node_id: $source_node_id,
         source_label: $source_label,
@@ -1645,8 +1649,7 @@ def save_relationship_review(
 
     params = {
         "review_id": review_id,
-        "case_id": CASE_ID,
-        "graph_version": GRAPH_VERSION,
+        "analysis_id": analysis_id,
         "edge_id": edge["edge_id"],
         "source_node_id": edge["source_id"],
         "source_label": edge["source_name"],
@@ -1669,9 +1672,9 @@ def save_relationship_review(
     return record["review_id"] if record else review_id
 
 
-def load_latest_relationship_reviews():
+def load_latest_relationship_reviews(analysis_id):
     query = """
-    MATCH (review:RelationshipReview {case_id: $case_id})
+    MATCH (review:RelationshipReview {analysis_id: $analysis_id})
     WITH review
     ORDER BY review.reviewed_at DESC
     WITH review.edge_id AS edge_id, collect(review)[0] AS latest
@@ -1690,7 +1693,10 @@ def load_latest_relationship_reviews():
     with get_driver().session() as session:
         return {
             record["edge_id"]: record.data()
-            for record in session.run(query, case_id=CASE_ID)
+            for record in session.run(
+                query,
+                analysis_id=analysis_id,
+            )
         }
 
 
@@ -1903,6 +1909,9 @@ node_styles = [
         label="Occurrence",
         caption="name",
         custom_styles={
+            "background-color": "#2563EB",
+            "border-color": "#1E3A8A",
+            "color": "#FFFFFF",
             "shape": "round-rectangle",
             "width": 120,
             "height": 70,
@@ -1916,6 +1925,9 @@ node_styles = [
         label="Vessel",
         caption="name",
         custom_styles={
+            "background-color": "#0891B2",
+            "border-color": "#164E63",
+            "color": "#FFFFFF",
             "shape": "round-rectangle",
             "width": 110,
             "height": 70,
@@ -1929,6 +1941,9 @@ node_styles = [
         label="Event",
         caption="name",
         custom_styles={
+            "background-color": "#F59E0B",
+            "border-color": "#92400E",
+            "color": "#111827",
             "shape": "ellipse",
             "width": 110,
             "height": 110,
@@ -1942,6 +1957,9 @@ node_styles = [
         label="ContributingFactor",
         caption="name",
         custom_styles={
+            "background-color": "#EF4444",
+            "border-color": "#7F1D1D",
+            "color": "#FFFFFF",
             "shape": "diamond",
             "width": 115,
             "height": 115,
@@ -1959,24 +1977,28 @@ edge_styles = [
         caption="label",
         directed=True,
         curve_style="bezier",
+        custom_styles={"line-color": "#DC2626", "target-arrow-color": "#DC2626"},
     ),
     EdgeStyle(
         label="AFFECTED",
         caption="label",
         directed=True,
         curve_style="bezier",
+        custom_styles={"line-color": "#7C3AED", "target-arrow-color": "#7C3AED"},
     ),
     EdgeStyle(
         label="CONTRIBUTED_TO",
         caption="label",
         directed=True,
         curve_style="bezier",
+        custom_styles={"line-color": "#EA580C", "target-arrow-color": "#EA580C"},
     ),
     EdgeStyle(
         label="HAS_VESSEL",
         caption="label",
         directed=True,
         curve_style="bezier",
+        custom_styles={"line-color": "#64748B", "target-arrow-color": "#64748B"},
     ),
 ]
 
@@ -1985,6 +2007,9 @@ analysis_node_styles = [
         label="Event",
         caption="name",
         custom_styles={
+            "background-color": "#F59E0B",
+            "border-color": "#92400E",
+            "color": "#111827",
             "shape": "ellipse",
             "width": 110,
             "height": 110,
@@ -1998,6 +2023,9 @@ analysis_node_styles = [
         label="ContributingFactor",
         caption="name",
         custom_styles={
+            "background-color": "#EF4444",
+            "border-color": "#7F1D1D",
+            "color": "#FFFFFF",
             "shape": "diamond",
             "width": 115,
             "height": 115,
@@ -2011,6 +2039,9 @@ analysis_node_styles = [
         label="Finding",
         caption="name",
         custom_styles={
+            "background-color": "#2563EB",
+            "border-color": "#1E3A8A",
+            "color": "#FFFFFF",
             "shape": "round-rectangle",
             "width": 125,
             "height": 80,
@@ -2024,6 +2055,9 @@ analysis_node_styles = [
         label="SafetyIssue",
         caption="name",
         custom_styles={
+            "background-color": "#7C3AED",
+            "border-color": "#4C1D95",
+            "color": "#FFFFFF",
             "shape": "hexagon",
             "width": 120,
             "height": 105,
@@ -2037,6 +2071,9 @@ analysis_node_styles = [
         label="Recommendation",
         caption="name",
         custom_styles={
+            "background-color": "#16A34A",
+            "border-color": "#14532D",
+            "color": "#FFFFFF",
             "shape": "round-rectangle",
             "width": 130,
             "height": 85,
@@ -2050,6 +2087,9 @@ analysis_node_styles = [
         label="Actor",
         caption="name",
         custom_styles={
+            "background-color": "#DB2777",
+            "border-color": "#831843",
+            "color": "#FFFFFF",
             "shape": "ellipse",
             "width": 100,
             "height": 100,
@@ -2063,6 +2103,9 @@ analysis_node_styles = [
         label="Vessel",
         caption="name",
         custom_styles={
+            "background-color": "#0891B2",
+            "border-color": "#164E63",
+            "color": "#FFFFFF",
             "shape": "round-rectangle",
             "width": 110,
             "height": 70,
@@ -2076,6 +2119,9 @@ analysis_node_styles = [
         label="System",
         caption="name",
         custom_styles={
+            "background-color": "#475569",
+            "border-color": "#0F172A",
+            "color": "#FFFFFF",
             "shape": "rectangle",
             "width": 110,
             "height": 75,
@@ -2089,6 +2135,9 @@ analysis_node_styles = [
         label="Claim",
         caption="name",
         custom_styles={
+            "background-color": "#A16207",
+            "border-color": "#713F12",
+            "color": "#FFFFFF",
             "shape": "round-rectangle",
             "width": 125,
             "height": 80,
@@ -2106,30 +2155,35 @@ analysis_edge_styles = [
         caption="label",
         directed=True,
         curve_style="bezier",
+        custom_styles={"line-color": "#DC2626", "target-arrow-color": "#DC2626"},
     ),
     EdgeStyle(
         label="CONTRIBUTED_TO",
         caption="label",
         directed=True,
         curve_style="bezier",
+        custom_styles={"line-color": "#EA580C", "target-arrow-color": "#EA580C"},
     ),
     EdgeStyle(
         label="AFFECTED",
         caption="label",
         directed=True,
         curve_style="bezier",
+        custom_styles={"line-color": "#7C3AED", "target-arrow-color": "#7C3AED"},
     ),
     EdgeStyle(
         label="FOLLOWED_BY",
         caption="label",
         directed=True,
         curve_style="bezier",
+        custom_styles={"line-color": "#2563EB", "target-arrow-color": "#2563EB"},
     ),
     EdgeStyle(
         label="SUPPORTS",
         caption="label",
         directed=True,
         curve_style="bezier",
+        custom_styles={"line-color": "#16A34A", "target-arrow-color": "#16A34A"},
     ),
 ]
 
@@ -2141,6 +2195,7 @@ analysis_edge_styles = [
     tab_analyses,
     tab_review,
     tab_graph,
+    tab_example,
     tab_about,
 ) = st.tabs(
     [
@@ -2150,6 +2205,7 @@ analysis_edge_styles = [
         "Compare LLMs",
         "Review & Validate",
         "Findings & Knowledge",
+        "Commodore Clipper example",
         "Terms of reference",
     ]
 )
@@ -2258,53 +2314,38 @@ with tab_home:
 with tab_news:
     st.subheader("News & Alerts")
     st.caption(
-        "Existing Databricks AI/BI dashboard for maritime-safety news and "
-        "country-level alerts."
+        "A simple entry point for the existing country news dashboard. "
+        "The dashboard and governed read-only news view will be connected here."
     )
 
-    if NEWS_DASHBOARD_EMBED_URL:
-        n1, n2, n3 = st.columns(3)
-        n1.metric("Country dashboard", "Connected")
-        n2.metric("News table access", "Read-only")
-        n3.metric("LLM questions", "Next step")
+    n1, n2, n3 = st.columns(3)
+    n1.metric("Country dashboard", "To connect")
+    n2.metric("News table access", "Read-only")
+    n3.metric("LLM questions", "Preview")
 
-        st.info(
-            "News is treated as external, unvalidated information. It is not "
-            "mixed silently with validated investigation findings."
-        )
+    st.info(
+        "News is treated as external, unvalidated information. It will not be "
+        "mixed silently with validated investigation findings."
+    )
 
-        components.iframe(
-            NEWS_DASHBOARD_EMBED_URL,
-            height=850,
-            scrolling=True,
-        )
-        st.caption(
-            "Dashboard access follows Databricks dashboard sharing and data "
-            "permissions."
-        )
-    else:
-        n1, n2, n3 = st.columns(3)
-        n1.metric("Country dashboard", "Ready to connect")
-        n2.metric("News table access", "Read-only")
-        n3.metric("LLM questions", "Later")
-
-        st.info(
-            "The App is ready to display the dashboard. Configure the published "
-            "Databricks dashboard embed URL in NEWS_DASHBOARD_EMBED_URL."
-        )
-        st.write(
-            "In the dashboard: Share → Embed dashboard → copy the generated "
-            "embed URL. The LLM connection to the governed news tables remains "
-            "a separate later capability."
-        )
+    news_question = st.text_input(
+        "Ask about the news",
+        placeholder="Example: What relevant ferry alerts were reported this week?",
+        disabled=True,
+        key="news_question_preview",
+    )
+    st.button(
+        "Ask the news assistant — coming soon",
+        disabled=True,
+        key="news_assistant_preview",
+    )
 
 with tab_new_analysis:
     st.subheader("Analyse Documents")
     st.caption(
-        "Start an evidence-grounded analysis from indexed documents or text "
-        "you provide directly. The knowledge graph is produced underneath, "
-        "but you do not need to open it to analyse a document. The information "
-        "class controls the permitted model path."
+        "Create and run a new evidence-grounded analysis from indexed documents "
+        "or direct text, then follow its processing status. Use Compare LLMs "
+        "afterwards only when you want to compare model outputs."
     )
 
     try:
@@ -2748,9 +2789,9 @@ with tab_new_analysis:
 with tab_analyses:
     st.subheader("Compare LLMs")
     st.caption(
-        "Select an analysis to inspect its status and results. Completed Class D "
-        "runs using both models are shown side by side against the same evidence. "
-        "A graph is not required for model comparison."
+        "Choose an existing analysis and compare independent model outputs "
+        "against exactly the same question and evidence. This page does not "
+        "create an analysis and does not require the graph."
     )
 
     st.info(
@@ -3339,21 +3380,156 @@ with tab_graph:
         "will distinguish candidate relationships from human-validated knowledge."
     )
 
-    st.divider()
-    st.markdown("### Commodore Clipper reference demonstrator")
+    st.markdown("### Existing analysis")
+    try:
+        knowledge_analyses = load_analysis_groups()
+    except Exception as exc:
+        knowledge_analyses = []
+        st.error("Existing analyses could not be loaded.")
+        st.exception(exc)
+
+    if knowledge_analyses:
+        knowledge_by_id = {
+            item["analysis_id"]: item
+            for item in knowledge_analyses
+        }
+        knowledge_analysis_id = st.selectbox(
+            "Analysis to explore",
+            options=list(knowledge_by_id),
+            format_func=lambda value: (
+                f"{knowledge_by_id[value]['analysis_title']} · "
+                f"{knowledge_by_id[value]['status']}"
+            ),
+            key="knowledge_analysis_selector",
+        )
+        knowledge_graph = load_analysis_graph(
+            knowledge_analysis_id
+        )
+        knowledge_elements = {
+            "nodes": [
+                {
+                    "data": {
+                        "id": node["node_id"],
+                        "label": node["node_kind"],
+                        "name": node["label"],
+                        "description": node.get("description") or "",
+                        "passage_ids": node.get("passage_ids") or [],
+                    }
+                }
+                for node in knowledge_graph["nodes"]
+            ],
+            "edges": [
+                {
+                    "data": {
+                        "id": edge["edge_id"],
+                        "label": edge["relationship"],
+                        "source": edge["source_id"],
+                        "target": edge["target_id"],
+                        "relationship": edge["relationship"],
+                        "passage_ids": edge.get("passage_ids") or [],
+                    }
+                }
+                for edge in knowledge_graph["edges"]
+            ],
+        }
+
+        if knowledge_elements["nodes"]:
+            with st.expander("View graph", expanded=False):
+                st.caption(
+                    "Colour key — event: amber · contributing factor: red · "
+                    "finding: blue · safety issue: purple · recommendation: "
+                    "green · actor: pink · vessel: teal · system: slate."
+                )
+                streamlit_cytoscape(
+                    elements=knowledge_elements,
+                    layout="fcose",
+                    node_styles=analysis_node_styles,
+                    edge_styles=analysis_edge_styles,
+                    height=700,
+                    key="knowledge_analysis_graph_" + knowledge_analysis_id,
+                )
+        else:
+            st.info("This analysis does not yet contain a published graph.")
+    else:
+        st.info("No existing analyses are available yet.")
+
+    st.markdown("### Similar cases")
+    similar_left, similar_right = st.columns(2)
+    with similar_left:
+        st.markdown("**MAIRA investigation reports**")
+        st.info(
+            "Coming soon: retrieve similar cases from the MAIRA PDF repository "
+            "and list each report with a short evidence-grounded description."
+        )
+    with similar_right:
+        st.markdown("**News & alerts**")
+        st.info(
+            "Coming soon: identify potentially related news alerts and clearly "
+            "report when no related alerts are found."
+        )
+
+with tab_example:
+    st.subheader("Commodore Clipper — complete worked example")
     st.caption(
-        "The existing controlled case remains available while the generic "
-        "document-group workflow is being implemented."
+        "One reference sheet showing how the different capabilities work "
+        "together. It is an example, not the data source for the operational pages."
     )
+
+    e1, e2, e3, e4 = st.columns(4)
+    e1.metric("Case", "Commodore Clipper")
+    e2.metric("Date", "16 June 2010")
+    e3.metric("Source", "Published report")
+    e4.metric("Review status", "Reference case")
+
+    st.markdown("### 1. Document analysis")
+    st.write(
+        "The published investigation material has been structured into "
+        "evidence-grounded concepts, events, contributing factors and relationships."
+    )
+
+    st.markdown("### 2. LLM comparison")
+    st.info(
+        "The graph/evidence methodology is available for this reference case. "
+        "A current dual-model result is not claimed unless both model runs were "
+        "executed against the same frozen evidence snapshot."
+    )
+
+    st.markdown("### 3. Review & validation")
+    st.write(
+        f"{validated_edges} of {len(edges)} displayed relationships carry the "
+        "reference assistant-validation status. Human review remains separately recorded."
+    )
+
+    st.markdown("### 4. Similar cases and external signals")
+    example_case_left, example_case_right = st.columns(2)
+    with example_case_left:
+        st.markdown("**MAIRA repository**")
+        st.info(
+            "Similar-report retrieval is not connected in this build; no similar "
+            "MAIRA cases are asserted here."
+        )
+    with example_case_right:
+        st.markdown("**News & alerts**")
+        st.info(
+            "No related news alerts have been identified by the App because the "
+            "news-table search is not connected in this build."
+        )
+
+    st.markdown("### 5. Findings and knowledge graph")
     c1, c2, c3 = st.columns(3)
     c1.metric("Nodes", len(nodes))
     c2.metric("Relationships", len(edges))
     c3.metric("Evidence-validated", validated_edges)
 
-    st.subheader("Interactive knowledge graph")
+    st.markdown("#### Interactive knowledge graph")
     st.caption(
         "Select a node or relationship to inspect its properties, "
         "EMCIP mapping and supporting evidence."
+    )
+    st.caption(
+        "Colour key — occurrence: blue · vessel: teal · event: amber · "
+        "contributing factor: red. Relationship colours also distinguish "
+        "result, contribution, effect and structural links."
     )
 
     streamlit_cytoscape(
@@ -3390,19 +3566,72 @@ with tab_graph:
 
 with tab_review:
     st.subheader("Review & Validate")
+    st.caption(
+        "Select an existing analysis. This operational review page does not "
+        "use the Commodore Clipper example as its underlying dataset."
+    )
+
+    try:
+        review_analyses = load_analysis_groups()
+    except Exception as exc:
+        review_analyses = []
+        st.error("Existing analyses could not be loaded for review.")
+        st.exception(exc)
+
+    review_by_id = {
+        item["analysis_id"]: item
+        for item in review_analyses
+    }
+    selected_review_analysis_id = st.selectbox(
+        "Analysis to review",
+        options=list(review_by_id),
+        format_func=lambda value: (
+            f"{review_by_id[value]['analysis_title']} · "
+            f"{review_by_id[value]['status']}"
+        ),
+        key="review_analysis_selector",
+        disabled=not review_by_id,
+    ) if review_by_id else None
+
     st.markdown("### Relationship review")
     st.caption(
         "Human review is stored as a separate append-only review record. "
         "The original graph relationship and assistant review are not overwritten."
     )
 
+    selected_review_graph = (
+        load_analysis_graph(selected_review_analysis_id)
+        if selected_review_analysis_id
+        else {"nodes": [], "edges": []}
+    )
     reviewable_rows = [
-        row for row in rows
-        if row["relationship"] != "HAS_VESSEL"
+        {
+            "edge_id": edge["edge_id"],
+            "source_id": edge["source_id"],
+            "source_name": edge["source_label"],
+            "relationship": edge["relationship"],
+            "target_id": edge["target_id"],
+            "target_name": edge["target_label"],
+            "evidence_status": edge.get("evidence_class") or "ASSISTANT_CANDIDATE",
+            "evidence_anchor": ", ".join(edge.get("passage_ids") or []),
+            "evidence": (
+                "Supporting passage IDs: "
+                + ", ".join(edge.get("passage_ids") or [])
+                if edge.get("passage_ids")
+                else "No supporting passage ID was published for this relationship."
+            ),
+        }
+        for edge in selected_review_graph["edges"]
     ]
 
     try:
-        latest_reviews = load_latest_relationship_reviews()
+        latest_reviews = (
+            load_latest_relationship_reviews(
+                selected_review_analysis_id
+            )
+            if selected_review_analysis_id
+            else {}
+        )
     except Exception as exc:
         latest_reviews = {}
         st.warning(
@@ -3443,10 +3672,32 @@ with tab_review:
         "Relationship",
         options=list(range(len(reviewable_rows))),
         format_func=edge_option_label,
-    )
+        disabled=not reviewable_rows,
+    ) if reviewable_rows else None
 
-    selected = reviewable_rows[selected_index]
+    review_controls_disabled = selected_index is None
+    selected = (
+        reviewable_rows[selected_index]
+        if selected_index is not None
+        else {
+            "edge_id": "",
+            "source_id": "",
+            "source_name": "—",
+            "relationship": "—",
+            "target_id": "",
+            "target_name": "—",
+            "evidence_status": "—",
+            "evidence_anchor": "",
+            "evidence": "No relationship selected.",
+        }
+    )
     latest = latest_reviews.get(selected["edge_id"])
+
+    if not selected:
+        st.info(
+            "The selected analysis has no published relationships available "
+            "for review yet."
+        )
 
     left, centre, right = st.columns([1, 0.7, 1])
     with left:
@@ -3532,10 +3783,12 @@ with tab_review:
     if st.button(
         "Save human review",
         type="primary",
+        disabled=review_controls_disabled,
     ):
         try:
             review_id = save_relationship_review(
                 selected,
+                analysis_id=selected_review_analysis_id,
                 decision=decision,
                 amended_relationship=amended_relationship,
                 comment=comment.strip(),
@@ -3556,20 +3809,12 @@ with tab_mapping_review:
     st.divider()
     st.markdown("### EMCIP mapping review")
     st.caption(
-        "Review the analytical mapping between a case concept and an EMCIP "
-        "taxonomy value. Human review is appended separately; the original "
-        "assistant mapping is not overwritten."
+        "EMCIP mappings will be loaded for the same selected analysis above. "
+        "The Commodore Clipper reference mappings are not used here."
     )
 
-    try:
-        latest_mapping_reviews = load_latest_mapping_reviews()
-    except Exception as exc:
-        latest_mapping_reviews = {}
-        st.warning(
-            "The graph is readable, but existing EMCIP mapping-review "
-            "records could not be loaded."
-        )
-        st.exception(exc)
+    mapping_rows = []
+    latest_mapping_reviews = {}
 
     reviewed_mapping_keys = set(latest_mapping_reviews)
 
@@ -3582,7 +3827,10 @@ with tab_mapping_review:
     )
 
     if not mapping_rows:
-        st.info("No validated EMCIP mappings are available for review.")
+        st.info(
+            "No EMCIP mapping candidates are currently published for this "
+            "analysis. The analysis-specific EMCIP mapping contract is pending."
+        )
     else:
         def mapping_option_label(index):
             mapping = mapping_rows[index]
