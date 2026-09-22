@@ -112,7 +112,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-generic-emcip-review-v14"
+APP_BUILD = "2026-09-22-reference-context-v15"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -569,6 +569,7 @@ def create_question_run(
     question_text,
     scope_mode,
     scope_document_ids,
+    reference_analysis_ids,
     model_selection,
 ):
     if analysis.get("status") != "COMPLETED":
@@ -667,6 +668,7 @@ def create_question_run(
                 information_class: $information_class,
                 scope_mode: $scope_mode,
                 scope_document_ids: $scope_document_ids,
+                reference_analysis_ids: $reference_analysis_ids,
                 model_selection: $model_selection,
                 model_keys: $model_keys,
                 model_services: $model_services,
@@ -689,6 +691,7 @@ def create_question_run(
             information_class=information_class,
             scope_mode=scope_mode,
             scope_document_ids=scope_document_ids,
+            reference_analysis_ids=reference_analysis_ids,
             model_selection=model_selection,
             model_keys=model_keys,
             model_services=model_services,
@@ -1848,6 +1851,7 @@ def load_question_runs(analysis_id):
         q.information_class AS information_class,
         q.scope_mode AS scope_mode,
         coalesce(q.scope_document_ids, []) AS scope_document_ids,
+        coalesce(q.reference_analysis_ids, []) AS reference_analysis_ids,
         q.model_selection AS model_selection,
         coalesce(q.model_keys, []) AS model_keys,
         q.question_text AS question_text,
@@ -4309,6 +4313,57 @@ def render_compare_llms():
                 else:
                     scope_document_ids = []
 
+            reference_analysis_ids = []
+
+            reference_candidates = [
+                item
+                for item in analysis_groups
+                if (
+                    item.get("status") == "COMPLETED"
+                    and (
+                        item.get("information_class")
+                        or "B"
+                    )
+                    == "A"
+                    and item["analysis_id"]
+                    != selected_analysis_id
+                )
+            ]
+
+            if reference_candidates:
+                with st.expander(
+                    "Reference context (optional)",
+                    expanded=False,
+                ):
+                    st.caption(
+                        "Use completed Class-A IKF technical/legal analyses as "
+                        "REFERENCE_CONTEXT. They can explain framework or "
+                        "methodology but cannot prove that a case fact occurred."
+                    )
+
+                    reference_by_id = {
+                        item["analysis_id"]: item
+                        for item in reference_candidates
+                    }
+
+                    reference_analysis_ids = st.multiselect(
+                        "Reference analyses",
+                        options=list(
+                            reference_by_id
+                        ),
+                        format_func=lambda value: (
+                            reference_by_id[value][
+                                "analysis_title"
+                            ]
+                            + " · Class A"
+                        ),
+                        max_selections=3,
+                        key=(
+                            "ask_reference_context_"
+                            + selected_analysis_id
+                        ),
+                    )
+
             if class_for_ask == "D":
                 ask_model_label = st.radio(
                     "Model mode",
@@ -4424,6 +4479,7 @@ def render_compare_llms():
                             question_text=ask_question_text.strip(),
                             scope_mode=scope_mode,
                             scope_document_ids=scope_document_ids,
+                            reference_analysis_ids=reference_analysis_ids,
                             model_selection=ask_model_selection,
                         )
 
@@ -4536,6 +4592,23 @@ def render_compare_llms():
                         or "UNKNOWN"
                     )
                 )
+
+                selected_reference_ids = (
+                    selected_question.get(
+                        "reference_analysis_ids"
+                    )
+                    or []
+                )
+                if selected_reference_ids:
+                    st.caption(
+                        "Reference context analyses: "
+                        + str(
+                            len(
+                                selected_reference_ids
+                            )
+                        )
+                        + " · kept separate from case evidence"
+                    )
 
                 retrieval_mode = (
                     selected_question.get(
