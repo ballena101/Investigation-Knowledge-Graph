@@ -584,3 +584,26 @@ Implemented in source:
   deployment/validation checklist.
 
 Status: **code/documentation complete; execution pending**.
+
+
+### Authoritative REFERENCE_CONTEXT runtime validation — PASS
+
+Validated in Databricks on 2026-09-22:
+
+- registry version: `IKF_REFERENCE_SOURCE_REGISTRY_V0.1`;
+- authoritative URL sources: **4**;
+- manual governed sources: **0**;
+- indexed documents: **4**;
+- indexed passages: **81**;
+- snapshot root:
+  `/Volumes/bdw_analysis_prod/kg_poc/reference_context/_snapshots`;
+- source layer: `REFERENCE_CONTEXT`;
+- required marker observed:
+  `PASS — IKF AUTHORITATIVE REFERENCE_CONTEXT CORPUS INDEXED`.
+
+Initial governed sources are the current consolidated Directive 2009/18/EC,
+Directive (EU) 2024/3017, IMO MSC.255(84), and IMO A.1075(28). Authoritative
+URLs remain provenance while captured snapshots are used for deterministic,
+page-level retrieval and rendering.
+
+Status: **runtime validated**.
