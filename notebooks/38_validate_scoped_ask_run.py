@@ -83,6 +83,10 @@ with driver.session() as session:
             coalesce(q.scope_document_ids, []) AS scope_document_ids,
             q.status AS status,
             q.retrieval_mode AS retrieval_mode,
+            q.retrieval_snapshot_id AS retrieval_snapshot_id,
+            coalesce(q.retrieval_passage_ids, []) AS retrieval_passage_ids,
+            coalesce(q.retrieval_candidate_count, 0) AS retrieval_candidate_count,
+            coalesce(q.retrieval_selected_count, 0) AS retrieval_selected_count,
             q.governed_query_id AS governed_query_id,
             q.governed_query_spec_id AS governed_query_spec_id,
             q.governed_relationship AS governed_relationship,
@@ -219,6 +223,31 @@ print("Question model runs:", len(model_runs))
 validation_rows = []
 errors = []
 
+retrieval_passage_ids = set(
+    question.get("retrieval_passage_ids")
+    or []
+)
+
+if (
+    question.get("status") == "COMPLETED"
+    and not question.get("retrieval_snapshot_id")
+):
+    errors.append(
+        "Completed QuestionRun has no retrieval_snapshot_id."
+    )
+
+if retrieval_passage_ids:
+    out_of_scope_retrieval = sorted(
+        passage_id
+        for passage_id in retrieval_passage_ids
+        if passage_id not in scoped_passage_by_id
+    )
+    if out_of_scope_retrieval:
+        errors.append(
+            "Retrieval snapshot contains passages outside the selected scope: "
+            + str(out_of_scope_retrieval)
+        )
+
 for model_run in model_runs:
     invalid_passage_ids = sorted(
         {
@@ -235,6 +264,26 @@ for model_run in model_runs:
         errors.append(
             f"{model_run['model_key']}: answer references passages "
             f"outside the selected scope: {invalid_passage_ids}"
+        )
+
+    outside_retrieval = sorted(
+        {
+            passage_id
+            for passage_id in (
+                model_run.get("passage_ids")
+                or []
+            )
+            if (
+                retrieval_passage_ids
+                and passage_id not in retrieval_passage_ids
+            )
+        }
+    )
+
+    if outside_retrieval:
+        errors.append(
+            f"{model_run['model_key']}: answer references passages "
+            f"outside the retrieval snapshot: {outside_retrieval}"
         )
 
     location_errors = []
@@ -326,6 +375,28 @@ if validation_rows:
     )
 
 # COMMAND ----------
+
+retrieval_mode = question.get(
+    "retrieval_mode"
+)
+
+if retrieval_mode == "DETERMINISTIC_FREE_TEXT_LEXICAL_V0.1":
+    if not question.get("retrieval_snapshot_id"):
+        errors.append(
+            "Deterministic lexical retrieval has no retrieval snapshot."
+        )
+
+    selected_count = int(
+        question.get("retrieval_selected_count")
+        or 0
+    )
+
+    if retrieval_passage_ids and selected_count != len(
+        retrieval_passage_ids
+    ):
+        errors.append(
+            "retrieval_selected_count does not match retrieval_passage_ids."
+        )
 
 governed_query_id = question.get(
     "governed_query_id"
