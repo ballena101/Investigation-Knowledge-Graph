@@ -142,35 +142,29 @@ and human-validated knowledge distinct.
 
 ## 3. NEXT — current milestone
 
-### Development — similar MAIRA investigation cases
+### Production-readiness and consolidated validation
 
-Add a simple, evidence-traceable similar-case capability in Findings & Knowledge.
+The substantive PoC capabilities in this workstream are now implemented in
+source. The next milestone is to validate them together in one controlled
+Databricks session rather than continuing to add unvalidated layers.
 
-Target behaviour:
+Prepare one release-preflight validator that checks:
 
-1. start from one completed AnalysisGroup;
-2. derive deterministic search terms from the processed case knowledge/evidence;
-3. search MAIRA MAIN_REPORT passages only;
-4. exclude the current source report/package;
-5. rank candidate report packages deterministically;
-6. show a short "why this matched" explanation using matched terms and cited
-   report/page evidence;
-7. never label a case "similar" merely because an LLM says so;
-8. preserve the retrieval method/version and selected passage IDs.
+- required Git-backed Lakeflow Jobs exist;
+- required App resources are attached;
+- Databricks Apps user scopes remain correct;
+- required MAIRA / IKF Delta tables are present;
+- governed source volumes/folders are available;
+- Neo4j is reachable;
+- no source-layer boundary has been collapsed;
+- accumulated validation notebooks can be run in the required order.
 
-Keep this first slice simple:
-- no embeddings;
-- no opaque vector similarity score;
-- no cross-case causal inference;
-- no automatic graph merging.
+Then perform one consolidated deployment/run when the user chooses to spend the
+Databricks runtime cost.
 
-News/external-signal integration remains outside this conversation and is not
-part of this milestone.
+### Consolidated runtime validation sequence
 
-### Consolidated runtime validation
-
-The next single deployment/test session should include the already accumulated
-resources and validators:
+The eventual test session should include:
 
 - notebook 32 — MAIRA passage contract;
 - notebook 35 — source viewer/page ranges;
@@ -181,21 +175,33 @@ resources and validators:
 - notebook 47 — SHIELD proposal Job;
 - notebook 48 — SHIELD two-gate validation;
 - notebook 50 — relationship-correction Job;
-- notebook 51 — relationship-correction governance validation.
+- notebook 51 — relationship-correction governance;
+- notebook 53 — Similar MAIRA Cases Job;
+- notebook 54 — similar-case deterministic provenance.
 
-Relationship-correction App resource:
-- key: `relationship_correction_job`;
-- permission: `Can manage run`.
+Expected App Job resources after setup:
+
+- `analysis_job`;
+- `class_d_analysis_job`;
+- `ask_job`;
+- `emcip_mapping_job`;
+- `shield_proposal_job`;
+- `relationship_correction_job`;
+- `similar_cases_job`.
+
+News/dashboard integration remains outside this conversation.
 
 ## 4. PENDING — planned implementation sequence
 
-### P1 — similar MAIRA cases
+### P1 — consolidated production-readiness validation
 
-- deterministic candidate retrieval over MAIRA MAIN_REPORT passages;
-- package-level ranking;
-- visible matched terms and report/page evidence;
-- current case excluded;
-- retrieval provenance retained.
+- one source-level release/preflight validator;
+- one consolidated Databricks deployment/test session;
+- reproducible benchmark/retrieval snapshots;
+- permissions/scopes validation;
+- retention validation;
+- rollback/deployment notes;
+- final update of the capability matrix from code-complete to runtime-validated.
 
 ### P2 — external signals / News
 
@@ -203,14 +209,6 @@ Relationship-correction App resource:
 - This work remains in the separate News/dashboard conversation unless
   explicitly brought back here.
 - Do not mix news with validated investigation findings.
-
-### P3 — production-readiness validation
-
-- Reproducible benchmarks.
-- Versioned prompts/models/retrieval snapshots.
-- Precision/recall against canonical semantic gold.
-- Privacy and quotation/contract compliance measured separately.
-- Permissions, retention, logging and rollback checks.
 
 ## 5. Deferred UI improvements
 
