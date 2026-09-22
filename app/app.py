@@ -110,7 +110,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-generic-relationship-review-v12"
+APP_BUILD = "2026-09-22-model-scoped-human-review-v13"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -2153,7 +2153,10 @@ def load_model_run_graph(
         r.edge_id AS edge_id,
         type(r) AS relationship,
         source.node_id AS source_id,
+        source.label AS source_label,
         target.node_id AS target_id,
+        target.label AS target_label,
+        source.model_run_id AS model_run_id,
         properties(r)["evidence_class"] AS evidence_class,
         coalesce(properties(r)["edge_class"], "REPORT_DERIVED") AS edge_class,
         coalesce(properties(r)["evidence_passage_ids"], []) AS passage_ids,
@@ -2409,6 +2412,7 @@ def load_analysis_graph(analysis_id):
         source.label AS source_label,
         target.node_id AS target_id,
         target.label AS target_label,
+        source.model_run_id AS model_run_id,
         properties(r)["evidence_class"] AS evidence_class,
         coalesce(properties(r)["edge_class"], "REPORT_DERIVED") AS edge_class,
         coalesce(properties(r)["evidence_passage_ids"], []) AS passage_ids,
@@ -2541,15 +2545,18 @@ def save_relationship_review(
     })
     MATCH (source:KGNode {
         analysis_id: $analysis_id,
+        model_run_id: $model_run_id,
         node_id: $source_node_id
     })
     MATCH (target:KGNode {
         analysis_id: $analysis_id,
+        model_run_id: $model_run_id,
         node_id: $target_node_id
     })
     CREATE (review:RelationshipReview {
         review_id: $review_id,
         analysis_id: $analysis_id,
+        model_run_id: $model_run_id,
         edge_id: $edge_id,
         source_node_id: $source_node_id,
         source_label: $source_label,
@@ -2575,6 +2582,7 @@ def save_relationship_review(
     params = {
         "review_id": review_id,
         "analysis_id": analysis_id,
+        "model_run_id": edge["model_run_id"],
         "edge_id": edge["edge_id"],
         "source_node_id": edge["source_id"],
         "source_label": edge["source_name"],
@@ -2605,6 +2613,7 @@ def load_latest_relationship_reviews(analysis_id):
     WITH review.edge_id AS edge_id, collect(review)[0] AS latest
     RETURN
         edge_id,
+        latest.model_run_id AS model_run_id,
         latest.review_id AS review_id,
         latest.human_review_decision AS decision,
         latest.human_review_status AS status,
@@ -5347,7 +5356,11 @@ with tab_review:
     )
 
     try:
-        review_analyses = load_analysis_groups()
+        review_analyses = [
+            item
+            for item in load_analysis_groups()
+            if item.get("status") == "COMPLETED"
+        ]
     except Exception as exc:
         review_analyses = []
         st.error("Existing analyses could not be loaded for review.")
@@ -5374,14 +5387,76 @@ with tab_review:
         "The original graph relationship and assistant review are not overwritten."
     )
 
-    selected_review_graph = (
-        load_analysis_graph(selected_review_analysis_id)
-        if selected_review_analysis_id
-        else {"nodes": [], "edges": []}
-    )
+    selected_review_graph = {
+        "nodes": [],
+        "edges": [],
+    }
+    selected_review_model_run_id = None
+
+    if selected_review_analysis_id:
+        review_analysis = review_by_id[
+            selected_review_analysis_id
+        ]
+        review_model_runs = load_model_runs(
+            selected_review_analysis_id
+        )
+
+        if len(review_model_runs) > 1:
+            review_model_run_by_id = {
+                item["model_run_id"]: item
+                for item in review_model_runs
+                if item.get("status") == "COMPLETED"
+            }
+
+            if review_model_run_by_id:
+                selected_review_model_run_id = st.selectbox(
+                    "Model output to review",
+                    options=list(
+                        review_model_run_by_id
+                    ),
+                    format_func=lambda value: (
+                        review_model_run_by_id[value].get(
+                            "model_label"
+                        )
+                        or review_model_run_by_id[value].get(
+                            "model_key"
+                        )
+                        or value
+                    ),
+                    key="review_model_run_selector",
+                )
+                selected_review_graph = load_model_run_graph(
+                    selected_review_analysis_id,
+                    selected_review_model_run_id,
+                )
+        elif len(review_model_runs) == 1:
+            selected_review_model_run_id = (
+                review_model_runs[0][
+                    "model_run_id"
+                ]
+            )
+            selected_review_graph = load_model_run_graph(
+                selected_review_analysis_id,
+                selected_review_model_run_id,
+            )
+        else:
+            selected_review_graph = load_analysis_graph(
+                selected_review_analysis_id
+            )
+
     reviewable_rows = [
         {
             "edge_id": edge["edge_id"],
+            "model_run_id": (
+                edge.get("model_run_id")
+                or selected_review_model_run_id
+                or (
+                    selected_review_analysis_id
+                    + "__primary"
+                    if selected_review_analysis_id
+                    else ""
+                )
+            ),
             "source_id": edge["source_id"],
             "source_name": edge["source_label"],
             "relationship": edge["relationship"],
@@ -5464,6 +5539,7 @@ with tab_review:
         if selected_index is not None
         else {
             "edge_id": "",
+            "model_run_id": "",
             "source_id": "",
             "source_name": "—",
             "relationship": "—",
@@ -5498,6 +5574,13 @@ with tab_review:
 
     st.markdown("**Assistant review status**")
     st.write(selected["evidence_status"] or "—")
+
+    if selected.get("model_run_id"):
+        st.markdown("**Model provenance**")
+        st.code(
+            selected["model_run_id"],
+            language=None,
+        )
 
     if selected["evidence_anchor"]:
         st.markdown("**Evidence anchor**")
