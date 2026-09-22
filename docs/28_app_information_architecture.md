@@ -149,3 +149,108 @@ continued.
    - contains SHIELD review.
 6. The Commodore Clipper demonstrator is absent from the primary operational
    tab bar.
+
+
+## Case-centric GUI refinement
+
+Implemented in source on 2026-09-22 after the first simplified-capability
+deployment was reviewed.
+
+### Shared active analysis
+
+The App now has one **Active analysis** selector in the sidebar.
+
+That analysis is reused by:
+
+- Analyse Documents results;
+- Findings & Knowledge;
+- Ask / Compare LLMs;
+- Review & Validate;
+- EMCIP and SHIELD review.
+
+A compact persistent header shows the active analysis title/ID, information
+class, source count and processing status.
+
+When a new analysis is created it is queued to become the active analysis on
+the next rerun. This avoids illegal mutation of an already-instantiated
+Streamlit widget state in the same execution.
+
+### Analyse Documents results
+
+Completed analyses now expose a compact results dashboard with counts for:
+
+- Events;
+- Contributing Factors;
+- Findings;
+- Safety Issues;
+- Safety Recommendations.
+
+A horizontal result filter allows the investigator to focus on one category or
+on analytical relationships.
+
+Result cards place the description and investigation-evidence references side
+by side.
+
+State wording is explicit:
+
+- ordinary extracted items are labelled **AI identified / candidate**;
+- a Contributing Factor is shown as human validated only when its current
+  human relationship review confirms a `CONTRIBUTED_TO` relationship.
+
+This prevents model extraction from being visually confused with validated
+knowledge.
+
+### Ask scope
+
+The evidence-scope control remains explicit because it changes the retrieval
+boundary.
+
+When the user chooses:
+
+- **One document** → the next control is labelled
+  **Use this document for the question**;
+- **Selected documents** → the next control is labelled
+  **Use these documents for the question**.
+
+The page displays a **Question scope** summary immediately before the question
+form, including whether legal/IMO/technical reference material is included.
+
+The default remains the entire prepared case/analysis.
+
+Technical model-route details are collapsed for normal A/B/C use. Class-D model
+choice remains visible because it is an operational processing decision.
+
+### Reduced technical clutter
+
+The global model-routing/Article-9 matrix is now collapsed by default.
+
+Analyse Documents hides endpoint/service details under **Technical processing
+details**.
+
+Review & Validate hides model-run IDs and evidence anchors under
+**Technical provenance**.
+
+The normal investigator view therefore prioritises the case, extracted
+knowledge, evidence and human decisions.
+
+### Review queue
+
+Review & Validate is explicitly ordered as:
+
+1. Relationship review;
+2. EMCIP mapping review;
+3. SHIELD classification review.
+
+The optional assistant relationship check sits with relationship governance,
+not with Findings & Knowledge.
+
+Existing counters show reviewable/proposed, human-reviewed and remaining work.
+
+### Safety / rollback
+
+Backup branch before this case-centric GUI refinement:
+
+`backup/pre-case-centric-gui-2026-09-22`
+
+The changes remain **runtime-validation pending** until the updated Databricks
+App is redeployed and checked.
