@@ -4858,27 +4858,15 @@ with tab_home:
     st.markdown("### Current validation milestone")
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("Real MAIRA benchmark", "Persisted")
-    m2.metric("Independent Delta verification", "Passed")
-    m3.metric("Canonical gold matching", "Passed")
+    m1.metric("Release preflight", "PASS")
+    m2.metric("SHIELD corpus", "Indexed")
+    m3.metric("Reference context", "4 sources / 81 passages")
 
     st.caption(
-        "The first real frozen-snapshot MAIRA dual-model benchmark has been "
-        "executed, human-reviewed, persisted and independently reproduced from "
-        "Delta. Relationship accuracy and quotation/contract compliance are "
-        "kept as separate validation dimensions."
+        "Environment/setup validation is complete with zero warnings and zero "
+        "errors. Functional validation now proceeds capability by capability, "
+        "starting with a fresh Class-B MAIRA analysis and source-page rendering."
     )
-
-    with st.expander("Technical benchmark reference", expanded=False):
-        st.code(
-            "maira_benchmark_9e059930506d33295105addcd06e821d",
-            language=None,
-        )
-        st.write(
-            "Canonical relationship denominator: distinct semantic "
-            "relationships, not the number of supporting passage-level "
-            "evidence assessments."
-        )
 
 with tab_news:
     st.subheader("News & Alerts")
@@ -5460,8 +5448,8 @@ with tab_new_analysis:
                     f"Databricks Job run ID: {run_id}"
                 )
                 st.info(
-                    "Stay in the App and open Analyses to follow every "
-                    "processing stage through to the completed graph."
+                    "Stay in Analyse Documents and use Refresh analysis results to "
+                    "follow processing through to the structured outputs."
                 )
 
             except Exception as exc:
@@ -7567,8 +7555,8 @@ with tab_graph:
 with tab_review:
     st.subheader("Review & Validate")
     st.caption(
-        "Select an existing analysis. This operational review page does not "
-        "use the Commodore Clipper example as its underlying dataset."
+        "Select a completed analysis and make human governance decisions on "
+        "its evidence-derived relationships and taxonomy proposals."
     )
 
     try:
@@ -9644,52 +9632,50 @@ with tab_about:
         f"""
 ### Current Proof of Concept
 
-The current IKG PoC is the **Class D dual-model investigation-analysis
-workflow**.
+IKF separates the investigator workflow into four distinct operational
+capabilities:
 
-The investigator can:
+1. **Analyse Documents** — prepare governed evidence and inspect structured
+   analytical outputs without requiring an initial question.
+2. **Ask / Compare LLMs** — pose free-text questions against a completed
+   evidence set, optionally compare approved model routes, and retain citations.
+3. **Findings & Knowledge** — read-only exploration of extracted knowledge,
+   evidence, the graph and deterministic similar-case retrieval.
+4. **Review & Validate** — human governance of relationships, assistant
+   correction proposals, EMCIP mappings and SHIELD classifications.
 
-- select governed documents or provide encrypted direct text;
-- prepare a question-independent evidence/knowledge base;
-- ask scoped free-text questions later through Ask / Compare LLMs;
-- choose GPT-OSS 20B, Llama 3.3 70B, or both for Class D;
-- inspect independent evidence-grounded outputs with page citations;
-- compare models when useful;
-- human-review relationships and EMCIP mappings;
-- apply the two-gate human-controlled SHIELD workflow;
-- inspect privacy-validation results and generated knowledge graphs.
+News & Alerts remains a separate external-signal capability and is not silently
+mixed with validated investigation knowledge.
 
-Ollama Llama 3.3 70B is limited to
+### Source ownership
+
+- Class B published investigation material is sourced from MAIRA.
+- Classes A/C/D use the governed IKF-managed source routes.
+- REFERENCE_CONTEXT is a separate legal/IMO/technical layer and cannot prove a
+  case fact.
+- SHIELD remains a separate persistent taxonomy corpus.
+
+### Human governance
+
+Assistant outputs are proposals. Human relationship, EMCIP and SHIELD review
+records remain append-only and authoritative according to their governed
+workflow. Assistant correction checks never overwrite graph edges.
+
+### Class D
+
+Class D may use GPT-OSS 20B, Llama 3.3 70B, or both against the same prepared
+evidence set. Llama 3.3 70B is limited to
 **{LLAMA_DAILY_QUESTION_LIMIT} questions per user per day** in the PoC.
 
 ### Validation status
 
-The model-validation framework covers:
+The consolidated release preflight has passed with zero warnings and zero
+errors. SHIELD and authoritative REFERENCE_CONTEXT corpora are indexed.
+Functional runtime validation proceeds capability by capability.
 
-- evidence grounding;
-- relationship correctness;
-- causal overreach;
-- graph completeness;
-- privacy leakage;
-- stability;
-- human review acceptance/amendment.
-
-The **Commodore Clipper 2010** graph is retained as a controlled reference and
-benchmark candidate. It validates the graph/evidence methodology; it does not
-by itself validate GPT-OSS 20B or Ollama Llama 3.3 70B.
-
-### Human-feedback learning loop
-
-Human-validated graph relationships can feed future model assistance as:
-
-1. evaluation ground truth;
-2. retrieval context;
-3. few-shot examples;
-4. versioned active-learning feedback;
-5. potentially future fine-tuning data, subject to governance.
-
-The same case must not be used simultaneously as both a training/example case
-and an independent validation case for the same model/version.
+The Commodore Clipper material remains a validation/reference asset in the
+project data and documentation; it is no longer presented as a primary
+operational App capability.
 
 ### Compliance and privacy
 
@@ -9701,16 +9687,6 @@ de-identified output by default and a privacy-validation gate.
 This PoC is design-aligned / conditionally aligned and does not constitute a
 legal certification of compliance.
 
-### Reference demonstrator
-
-**Reference case:** Commodore Clipper  
-**Occurrence:** Fire on the main vehicle deck  
-**Date:** 16 June 2010  
-**Reference graph version:** {GRAPH_VERSION}
-
-The reference graph remains available in the other App tabs for methodology,
-relationship-review and EMCIP-mapping demonstrations.
-
 ### Documentation
 
 Key project documents:
@@ -9720,5 +9696,7 @@ Key project documents:
 - `docs/15_data_protection_confidentiality.md`
 - `docs/17_class_d_dual_model_poc.md`
 - `docs/18_model_validation_and_feedback.md`
+- `docs/25_implementation_status_and_roadmap.md`
+- `docs/26_consolidated_runtime_validation.md`
         """
     )
