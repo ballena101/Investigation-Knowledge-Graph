@@ -408,3 +408,23 @@ It validates:
 
 Required success marker:
 `PASS — SCOPED ASK / COMPARE RUN IS EVIDENCE-BOUNDED`.
+
+
+### Large-scope deterministic free-text retrieval
+
+Implemented in code:
+- MAIRA now owns reusable
+  `DETERMINISTIC_FREE_TEXT_LEXICAL_V0.1`;
+- IKF uses it automatically when an ordinary free-text evidence scope exceeds
+  the all-passages limit;
+- Class-B expansions use only `HUMAN_VALIDATED` terminology mapped to governed
+  EMCIP values;
+- A/C/D use raw deterministic query terms only;
+- no embeddings or LLM query rewriting are introduced;
+- whole passages are selected under controlled passage/character budgets;
+- zero lexical matches return a deterministic insufficient-evidence result;
+- every answering run persists a deterministic retrieval snapshot;
+- notebook 38 now verifies that answer passage IDs remain inside both the user
+  scope and the retrieval snapshot.
+
+Status: **code complete; runtime validation deferred**.
