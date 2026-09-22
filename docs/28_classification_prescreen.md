@@ -162,3 +162,46 @@ Required success marker:
 
 Implemented in source; runtime validation is deferred to the next consolidated
 Databricks test session.
+
+
+## App preflight audit
+
+A blocked App submission may occur before an AnalysisGroup exists. To preserve
+an audit trail without persisting protected content, the App creates a compact
+`ClassificationPrescreenAttempt` node only when the early preflight blocks a
+non-D submission.
+
+Stored fields are limited to:
+
+- event ID;
+- App pre-screen rule version;
+- layer = `APP_PREFLIGHT`;
+- decision = `BLOCKED_REQUIRES_CLASS_D`;
+- declared class and required class;
+- input mode;
+- triggered rule IDs;
+- selected document IDs for document-mode input;
+- SHA-256 only for blocked direct text;
+- user identity and timestamp.
+
+The audit node must not contain matched text, raw text, source passages or the
+matched phrase.
+
+Notebook 43 validates these privacy constraints in addition to the backend
+routing invariants.
+
+## App visibility
+
+The App's Technical details section displays the authoritative backend
+classification pre-screen status, rule version, triggered rule IDs and any
+required processing class.
+
+This visibility is diagnostic/audit information. It does not silently change
+the investigator's declared classification.
+
+## Rule/test consistency
+
+The canonical V0.1 rules intentionally do not escalate a generic public email
+address by itself because that would create excessive false positives in public
+technical material. The synthetic test suite has been aligned to this governed
+rule.
