@@ -7268,35 +7268,68 @@ with tab_findings:
             and knowledge_meta.get("status")
             == "COMPLETED"
         ):
-            if st.button(
-                "Find similar MAIRA cases",
-                key=(
-                    "find_similar_cases_"
-                    + knowledge_analysis_id
-                ),
-                disabled=(
-                    not SIMILAR_CASES_JOB_ID
-                ),
-            ):
+            similar_run_key = (
+                "similar_cases_run_"
+                + knowledge_analysis_id
+            )
+            similar_action, similar_refresh = (
+                st.columns(2)
+            )
+
+            with similar_action:
+                find_similar = st.button(
+                    "Find similar MAIRA cases",
+                    key=(
+                        "find_similar_cases_"
+                        + knowledge_analysis_id
+                    ),
+                    disabled=(
+                        not SIMILAR_CASES_JOB_ID
+                    ),
+                    use_container_width=True,
+                )
+
+            with similar_refresh:
+                refresh_similar = st.button(
+                    "Refresh similar-case status",
+                    key=(
+                        "refresh_similar_cases_"
+                        + knowledge_analysis_id
+                    ),
+                    use_container_width=True,
+                )
+
+            if refresh_similar:
+                load_similar_case_candidates.clear()
+                st.rerun()
+
+            if find_similar:
                 try:
                     similar_job_run_id = (
                         trigger_similar_cases_job(
                             knowledge_analysis_id
                         )
                     )
+                    st.session_state[
+                        similar_run_key
+                    ] = similar_job_run_id
                     load_similar_case_candidates.clear()
                     st.success(
-                        "Similar-case retrieval queued."
-                    )
-                    st.caption(
-                        "Databricks run: "
-                        + similar_job_run_id
+                        "Similar-case retrieval queued. Use Refresh "
+                        "similar-case status to update the results."
                     )
                 except Exception as exc:
                     st.error(
                         "Similar-case retrieval could not be queued."
                     )
                     st.exception(exc)
+
+            render_async_job_status(
+                st.session_state.get(
+                    similar_run_key
+                ),
+                "Similar-case retrieval",
+            )
 
             if not SIMILAR_CASES_JOB_ID:
                 st.caption(
