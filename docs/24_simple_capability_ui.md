@@ -182,3 +182,24 @@ labelled when activated.
 
 The existing analysis/model outputs remain available below the Ask interaction,
 but asking a question never rebuilds the graph.
+
+
+## Reference context
+
+Ask / Compare LLMs has an optional:
+
+`Include legal / IMO / technical reference context`
+
+control.
+
+When enabled, the App retrieves relevant passages from the dedicated governed
+IKF reference corpus. The user does not need to create or select another
+analysis merely to provide Directive/IMO/technical background.
+
+The answer surface keeps the two citation groups visually distinct:
+
+- **Case evidence — SOURCE_EVIDENCE**
+- **Reference context — REFERENCE_CONTEXT**
+
+Reference context may explain framework, methodology or technical background
+but is never presented as proof that a case fact occurred.
