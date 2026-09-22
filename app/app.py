@@ -92,7 +92,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-simple-capability-navigation-v2"
+APP_BUILD = "2026-09-22-analysis-driven-capabilities-v3"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -3500,7 +3500,23 @@ with tab_example:
         "reference assistant-validation status. Human review remains separately recorded."
     )
 
-    st.markdown("### 4. Similar cases and external signals")
+    st.markdown("### 4. EMCIP and SHIELD")
+    taxonomy_left, taxonomy_right = st.columns(2)
+    with taxonomy_left:
+        st.markdown("**EMCIP mappings**")
+        st.write(
+            f"{len(mapping_rows_by_key)} reference mapping candidate(s) are "
+            "available in the Clipper demonstrator with their mapping disposition."
+        )
+    with taxonomy_right:
+        st.markdown("**SHIELD classification**")
+        st.info(
+            "No SHIELD classification is asserted in this example build. A future "
+            "LLM suggestion may be made only after the contributing factor is "
+            "human validated and will then require separate human validation."
+        )
+
+    st.markdown("### 5. Similar cases and external signals")
     example_case_left, example_case_right = st.columns(2)
     with example_case_left:
         st.markdown("**MAIRA repository**")
@@ -3515,7 +3531,7 @@ with tab_example:
             "news-table search is not connected in this build."
         )
 
-    st.markdown("### 5. Findings and knowledge graph")
+    st.markdown("### 6. Findings and knowledge graph")
     c1, c2, c3 = st.columns(3)
     c1.metric("Nodes", len(nodes))
     c2.metric("Relationships", len(edges))
