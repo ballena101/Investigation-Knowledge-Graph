@@ -89,7 +89,7 @@ CANDIDATE_REL_TABLE = (
 )
 SUMMARY_TABLE = "bdw_analysis_prod.kg_poc.analysis_summary"
 
-ANALYSIS_VERSION = "GROUP_ANALYSIS_LLM_V0.4"
+ANALYSIS_VERSION = "GROUP_ANALYSIS_LLM_V0.5"
 PRIVACY_OUTPUT_MODE = "DE_IDENTIFIED_BY_DEFAULT"
 MAX_PASSAGES = 500
 MAX_BATCH_CHARS = 14000
@@ -386,6 +386,58 @@ if len(passage_rows) > MAX_PASSAGES:
     )
 
 print("Evidence passages:", len(passage_rows))
+
+def format_page_reference(page_start, page_end):
+    if page_start is None:
+        return "page unknown"
+    if page_end is None or page_end == page_start:
+        return f"p. {page_start}"
+    return f"pp. {page_start}–{page_end}"
+
+
+passage_reference_by_id = {
+    row["passage_id"]: {
+        "passage_id": row["passage_id"],
+        "document_id": row["document_id"],
+        "document_name": (
+            document_names.get(row["document_id"])
+            or "Direct text"
+        ),
+        "page_start": row["page_start"],
+        "page_end": row["page_end"],
+        "page_reference": format_page_reference(
+            row["page_start"],
+            row["page_end"],
+        ),
+    }
+    for row in passage_rows
+}
+
+
+def evidence_references(passage_ids):
+    refs = []
+    seen = set()
+
+    for passage_id in passage_ids or []:
+        ref = passage_reference_by_id.get(passage_id)
+        if ref is None:
+            continue
+
+        key = (
+            ref["document_id"],
+            ref["page_start"],
+            ref["page_end"],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+
+        refs.append(
+            f"{ref['document_name']} · {ref['page_reference']}"
+        )
+
+    return refs
+
 
 # COMMAND ----------
 
@@ -1117,7 +1169,9 @@ Your job is to:
 1. merge candidates that clearly refer to the same real concept/event/factor;
 2. retain genuinely distinct concepts separately;
 3. consolidate candidate relationships;
-4. produce a concise analysis summary in the requested output language.
+4. when analysis_objective contains a question or requested analytical objective,
+   answer it explicitly and directly from the supplied evidence;
+5. produce a concise analysis summary in the requested output language.
 
 Critical rules:
 - Do NOT create a causal/contributory relationship that is not already present
@@ -1125,6 +1179,10 @@ Critical rules:
 - Do NOT convert FOLLOWED_BY into RESULTED_IN or CONTRIBUTED_TO.
 - Do NOT invent facts from outside the supplied candidates.
 - Preserve all supporting passage_ids.
+- The explicit answer must contain only claims supported by supplied candidates.
+- Return the passage_ids that support the explicit answer.
+- If the supplied evidence is insufficient to answer the question/objective,
+  say so explicitly; do not fill the gap from general knowledge.
 - Conflicting source claims must be listed in source_conflicts instead of
   silently resolved.
 - Node kinds must remain within the supplied controlled node-kind vocabulary.
@@ -1159,6 +1217,10 @@ Required JSON shape:
       "evidence_class": "DIRECT"
     }
   ],
+  "answer": {
+    "text": "direct evidence-grounded answer to analysis_objective, or empty if no objective was supplied",
+    "passage_ids": ["passage_..."]
+  },
   "summary": {
     "overview": "concise overall description",
     "key_findings": ["..."],
@@ -1302,6 +1364,9 @@ for node in resolution.get(
         "passage_ids": sorted(
             passage_ids
         ),
+        "evidence_references": evidence_references(
+            sorted(passage_ids)
+        ),
     }
 
     resolved_nodes.append(payload)
@@ -1435,6 +1500,9 @@ for relationship in resolution.get(
             ),
             "evidence_class": evidence_class,
             "edge_class": "REPORT_DERIVED",
+            "evidence_references": evidence_references(
+                sorted(passage_ids)
+            ),
         }
     )
 
@@ -1639,6 +1707,9 @@ if (
                 "passage_ids": first_event["passage_ids"],
                 "evidence_class": "DIRECT",
                 "edge_class": "STRUCTURAL",
+                "evidence_references": evidence_references(
+                    first_event["passage_ids"]
+                ),
             }
         )
         existing_relationship_keys.add(structural_key)
@@ -1686,6 +1757,9 @@ for earlier, later in zip(
             "passage_ids": temporal_passages,
             "evidence_class": "DIRECT",
             "edge_class": "DETERMINISTIC_TEMPORAL",
+            "evidence_references": evidence_references(
+                temporal_passages
+            ),
         }
     )
     existing_relationship_keys.add(temporal_key)
@@ -1750,6 +1824,49 @@ for node in resolved_nodes:
     )
 
 # COMMAND ----------
+
+answer_payload = resolution.get(
+    "answer",
+    {},
+) or {}
+
+answer_text_raw = str(
+    answer_payload.get(
+        "text",
+        "",
+    )
+).strip()
+
+valid_passage_ids = set(passage_reference_by_id)
+
+answer_passage_ids = sorted(
+    {
+        str(passage_id)
+        for passage_id in answer_payload.get(
+            "passage_ids",
+            [],
+        )
+        if str(passage_id) in valid_passage_ids
+    }
+)
+
+# An explicit answer without evidence references is not presented as grounded.
+if analysis.get("analysis_objective") and answer_text_raw and not answer_passage_ids:
+    answer_text_raw = (
+        "The model produced a response, but no valid supporting passage "
+        "reference was returned. Treat the question as not yet answered."
+    )
+
+answer_text = redact_direct_identifiers(
+    answer_text_raw
+)
+privacy_redaction_count += int(
+    answer_text != answer_text_raw
+)
+
+answer_references = evidence_references(
+    answer_passage_ids
+)
 
 summary = resolution.get(
     "summary",
@@ -1928,6 +2045,7 @@ try:
                     label: $label,
                     description: $description,
                     evidence_passage_ids: $passage_ids,
+                    evidence_references: $evidence_references,
                     assistant_review_status: 'ASSISTANT_CANDIDATE',
                     privacy_output_mode: $privacy_output_mode,
                     analysis_version: $analysis_version,
@@ -1943,6 +2061,10 @@ try:
                 label=node["label"],
                 description=node["description"],
                 passage_ids=node["passage_ids"],
+                evidence_references=node.get(
+                    "evidence_references",
+                    [],
+                ),
                 privacy_output_mode=PRIVACY_OUTPUT_MODE,
                 analysis_version=ANALYSIS_VERSION,
                 model_service=model_service,
@@ -1973,6 +2095,7 @@ try:
                 evidence_status: 'ASSISTANT_CANDIDATE',
                 evidence_class: $evidence_class,
                 evidence_passage_ids: $passage_ids,
+                evidence_references: $evidence_references,
                 supporting_candidate_relationship_ids: $support_ids,
                 analysis_version: $analysis_version,
                 model_service: $model_service,
@@ -2003,6 +2126,10 @@ try:
                 passage_ids=relationship[
                     "passage_ids"
                 ],
+                evidence_references=relationship.get(
+                    "evidence_references",
+                    [],
+                ),
                 support_ids=relationship[
                     "support_ids"
                 ],
@@ -2020,6 +2147,9 @@ try:
             MATCH (m:ModelRun {model_run_id: $model_run_id})
             SET
                 m.status = 'COMPLETED',
+                m.answer_to_question = $answer_to_question,
+                m.answer_passage_ids = $answer_passage_ids,
+                m.answer_references = $answer_references,
                 m.overview = $overview,
                 m.key_findings = $key_findings,
                 m.uncertainties = $uncertainties,
@@ -2038,6 +2168,9 @@ try:
                 m.updated_at = datetime()
             """,
             model_run_id=model_run_id,
+            answer_to_question=answer_text or None,
+            answer_passage_ids=answer_passage_ids,
+            answer_references=answer_references,
             overview=overview,
             key_findings=key_findings,
             uncertainties=uncertainties,
@@ -2063,6 +2196,9 @@ try:
             SET
                 a.status = 'COMPLETED',
                 a.processing_stage = 'COMPLETED',
+                a.answer_to_question = $answer_to_question,
+                a.answer_passage_ids = $answer_passage_ids,
+                a.answer_references = $answer_references,
                 a.analysis_summary = $overview,
                 a.key_findings = $key_findings,
                 a.uncertainties = $uncertainties,
@@ -2079,6 +2215,9 @@ try:
                 a.processing_error = NULL
             """,
             analysis_id=analysis_id,
+            answer_to_question=answer_text or None,
+            answer_passage_ids=answer_passage_ids,
+            answer_references=answer_references,
             overview=overview,
             key_findings=key_findings,
             uncertainties=uncertainties,
