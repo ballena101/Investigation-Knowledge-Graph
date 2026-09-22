@@ -193,6 +193,68 @@ def app_protected_prescreen(
 
     return sorted(found)
 
+
+def record_app_prescreen_block(
+    *,
+    declared_class,
+    input_mode,
+    rule_ids,
+    document_ids=None,
+    direct_text=None,
+):
+    """Persist compact audit metadata without protected source text."""
+
+    event_id = (
+        "prescreen_event_"
+        + uuid.uuid4().hex
+    )
+    reviewer = get_reviewer_identity()
+    actor = (
+        reviewer["email"]
+        if reviewer["email"] != "unknown"
+        else reviewer["username"]
+    )
+
+    content_sha256 = (
+        hashlib.sha256(
+            direct_text.encode("utf-8")
+        ).hexdigest()
+        if direct_text
+        else None
+    )
+
+    with get_driver().session() as session:
+        session.run(
+            """
+            CREATE (e:ClassificationPrescreenAttempt {
+                event_id: $event_id,
+                prescreen_version: $prescreen_version,
+                prescreen_layer: 'APP_PREFLIGHT',
+                decision: 'BLOCKED_REQUIRES_CLASS_D',
+                required_class: 'D',
+                declared_class: $declared_class,
+                input_mode: $input_mode,
+                rule_ids: $rule_ids,
+                document_ids: $document_ids,
+                content_sha256: $content_sha256,
+                created_by: $created_by,
+                created_at: datetime()
+            })
+            """,
+            event_id=event_id,
+            prescreen_version=APP_PRESCREEN_VERSION,
+            declared_class=declared_class,
+            input_mode=input_mode,
+            rule_ids=list(rule_ids),
+            document_ids=list(
+                document_ids or []
+            ),
+            content_sha256=content_sha256,
+            created_by=actor,
+        ).consume()
+
+    return event_id
+
 INFORMATION_CLASSES = {
     "A": {
         "label": "A — Public / technical",
@@ -239,7 +301,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-class-d-prescreen-v16"
+APP_BUILD = "2026-09-22-class-d-prescreen-audit-v17"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -1668,7 +1730,18 @@ def load_analysis_evidence_counts(analysis_id):
         properties(a)["processing_error"] AS processing_error,
         properties(a)["processing_stage"] AS processing_stage,
         properties(a)["extraction_duration_seconds"] AS extraction_duration_seconds,
-        properties(a)["evidence_source_mode"] AS evidence_source_mode
+        properties(a)["evidence_source_mode"] AS evidence_source_mode,
+        properties(a)["classification_prescreen_version"] AS classification_prescreen_version,
+        properties(a)["classification_prescreen_status"] AS classification_prescreen_status,
+        coalesce(
+            properties(a)["classification_prescreen_rule_ids"],
+            []
+        ) AS classification_prescreen_rule_ids,
+        properties(a)["classification_prescreen_required_class"] AS classification_prescreen_required_class,
+        properties(a)["classification_prescreen_declared_class"] AS classification_prescreen_declared_class,
+        toString(
+            properties(a)["classification_prescreen_checked_at"]
+        ) AS classification_prescreen_checked_at
     """
 
     with get_driver().session() as session:
@@ -1884,6 +1957,47 @@ def render_pipeline_status(
                     evidence_source_mode,
                 )
             )
+
+
+        prescreen_status = evidence_counts.get(
+            "classification_prescreen_status"
+        )
+        if prescreen_status:
+            st.write(
+                "Information-class pre-screen: "
+                + prescreen_status
+            )
+            prescreen_version = evidence_counts.get(
+                "classification_prescreen_version"
+            )
+            if prescreen_version:
+                st.caption(
+                    "Pre-screen rule version: "
+                    + prescreen_version
+                )
+
+            prescreen_rules = (
+                evidence_counts.get(
+                    "classification_prescreen_rule_ids"
+                )
+                or []
+            )
+            if prescreen_rules:
+                st.caption(
+                    "Triggered rule IDs: "
+                    + ", ".join(
+                        prescreen_rules
+                    )
+                )
+
+            required_class = evidence_counts.get(
+                "classification_prescreen_required_class"
+            )
+            if required_class:
+                st.caption(
+                    "Required processing class: "
+                    + required_class
+                )
 
         if evidence_counts.get("processing_error"):
             st.code(
@@ -4339,11 +4453,39 @@ with tab_new_analysis:
                 )
 
             if prescreen_rule_ids:
+                try:
+                    prescreen_event_id = record_app_prescreen_block(
+                        declared_class=information_class,
+                        input_mode=(
+                            "DIRECT_TEXT"
+                            if input_mode == "Direct text"
+                            else "DOCUMENTS"
+                        ),
+                        rule_ids=prescreen_rule_ids,
+                        document_ids=(
+                            selected_document_ids
+                            if input_mode == "Documents"
+                            else []
+                        ),
+                        direct_text=(
+                            direct_text
+                            if input_mode == "Direct text"
+                            else None
+                        ),
+                    )
+                except Exception:
+                    prescreen_event_id = None
+
                 errors.append(
                     "Protected-record indicators were detected before "
                     "processing (" + ", ".join(prescreen_rule_ids) + "). "
                     "This input must use Class D or be reviewed before "
                     "continuing."
+                    + (
+                        f" Audit event: {prescreen_event_id}."
+                        if prescreen_event_id
+                        else ""
+                    )
                 )
 
         if errors:
