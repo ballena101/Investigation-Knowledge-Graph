@@ -52,12 +52,44 @@ from neo4j import GraphDatabase
 from pyspark.sql import Row
 from pyspark.sql import functions as F
 
+current_notebook_path = (
+    dbutils.notebook.entry_point
+    .getDbutils()
+    .notebook()
+    .getContext()
+    .notebookPath()
+    .get()
+)
+workspace_notebook_path = (
+    "/Workspace" + current_notebook_path
+    if current_notebook_path.startswith("/Users/")
+    else current_notebook_path
+)
+ikf_repo_root = workspace_notebook_path.rsplit(
+    "/notebooks/",
+    1,
+)[0]
+ikf_src_path = os.path.join(
+    ikf_repo_root,
+    "src",
+)
+if ikf_src_path not in sys.path:
+    sys.path.insert(
+        0,
+        ikf_src_path,
+    )
+
+from ikf.classification_prescreen import (
+    PRESCREEN_VERSION,
+    prescreen_texts,
+)
+
 DetectorFactory.seed = 0
 
 ANALYSIS_PASSAGE_TABLE = "bdw_analysis_prod.kg_poc.analysis_passage"
 MAIRA_DOCUMENT_TABLE = "bdw_analysis_prod.maira.documents"
 MAIRA_PASSAGE_TABLE = "bdw_analysis_prod.maira.passages"
-EXTRACTION_VERSION = "EVIDENCE_EXTRACTION_V0.4_MAIRA_FIRST"
+EXTRACTION_VERSION = "EVIDENCE_EXTRACTION_V0.5_CLASSIFICATION_PRESCREEN"
 
 try:
     from maira.integration.ikf_passage_contract import (
@@ -237,6 +269,11 @@ MAX_DOCUMENTS_PER_ANALYSIS = 5
 TARGET_PASSAGE_CHARS = 2400
 MAX_PASSAGE_CHARS = 3600
 
+
+class ClassificationPrescreenBlocked(RuntimeError):
+    """Raised after a fail-closed Class-D escalation has been persisted."""
+
+
 analysis_id = dbutils.widgets.get("analysis_id").strip()
 
 if not re.fullmatch(r"analysis_[0-9a-f]{32}", analysis_id):
@@ -367,7 +404,11 @@ def load_analysis_sources():
                 filename: d.filename,
                 volume_path: d.volume_path,
                 source_type: d.source_type,
-                sha256: d.sha256
+                sha256: d.sha256,
+                source_managed_by: coalesce(
+                    properties(d)["source_managed_by"],
+                    "IKF"
+                )
             }
         ] AS documents
     """
@@ -390,6 +431,7 @@ if analysis is None:
 
 documents = analysis["documents"] or []
 input_mode = analysis.get("input_mode") or "DOCUMENTS"
+information_class = analysis.get("information_class") or "B"
 text_source = analysis.get("text_source")
 
 if input_mode == "DIRECT_TEXT":
@@ -423,6 +465,7 @@ else:
 
 print("Title:", analysis["analysis_title"])
 print("Input mode:", input_mode)
+print("Declared information class:", information_class)
 
 if input_mode == "DIRECT_TEXT":
     print("Direct text source:", text_source["source_id"])
@@ -869,6 +912,62 @@ def passage_id_for(
 
 # COMMAND ----------
 
+def persist_classification_prescreen(
+    *,
+    status,
+    rule_ids,
+    required_class=None,
+):
+    with driver.session() as session:
+        session.run(
+            """
+            MATCH (a:AnalysisGroup {
+                analysis_id: $analysis_id
+            })
+            SET
+                a.classification_prescreen_version = $version,
+                a.classification_prescreen_status = $status,
+                a.classification_prescreen_rule_ids = $rule_ids,
+                a.classification_prescreen_required_class = $required_class,
+                a.classification_prescreen_declared_class = $declared_class,
+                a.classification_prescreen_checked_at = datetime()
+            """,
+            analysis_id=analysis_id,
+            version=PRESCREEN_VERSION,
+            status=status,
+            rule_ids=rule_ids,
+            required_class=required_class,
+            declared_class=information_class,
+        ).consume()
+
+
+def purge_direct_text_after_prescreen_block():
+    if (
+        input_mode != "DIRECT_TEXT"
+        or not text_source
+    ):
+        return
+
+    with driver.session() as session:
+        session.run(
+            """
+            MATCH (s:DirectTextSource {
+                source_id: $source_id
+            })
+            REMOVE s.encrypted_text
+            SET
+                s.extraction_status = 'CLASSIFICATION_PRESCREEN_BLOCKED',
+                s.retention_status = 'ENCRYPTED_PAYLOAD_PURGED_AFTER_PRESCREEN',
+                s.prescreen_version = $version,
+                s.prescreen_blocked_at = datetime()
+            """,
+            source_id=text_source[
+                "source_id"
+            ],
+            version=PRESCREEN_VERSION,
+        ).consume()
+
+
 created_at = datetime.now(timezone.utc)
 
 try:
@@ -1200,6 +1299,123 @@ try:
             local_fallback_count,
         )
 
+    # Deterministic classification pre-screen.
+    #
+    # Published MAIRA Class-B material is already governed as published
+    # investigation material and is not escalated merely because a published
+    # report discusses protected record types. Raw/direct or IKF-managed
+    # material is screened before any model call.
+    classification_prescreen_texts = []
+
+    maira_published_exempt = (
+        information_class == "B"
+        and input_mode == "DOCUMENTS"
+        and bool(documents)
+        and all(
+            document.get(
+                "source_managed_by"
+            )
+            == "MAIRA"
+            for document in documents
+        )
+    )
+
+    if not maira_published_exempt:
+        if input_mode == "DIRECT_TEXT":
+            classification_prescreen_texts = [
+                row.passage_text
+                for row in passage_rows
+            ]
+        elif input_mode == "DOCUMENTS":
+            local_document_ids = {
+                document_id
+                for document_id, route
+                in document_routes.items()
+                if route["route"]
+                == "IKF_LOCAL_FALLBACK"
+            }
+            classification_prescreen_texts = [
+                row.passage_text
+                for row in passage_rows
+                if row.document_id
+                in local_document_ids
+            ]
+
+    if maira_published_exempt:
+        persist_classification_prescreen(
+            status="PUBLISHED_MAIRA_CLASS_B_EXEMPT",
+            rule_ids=[],
+            required_class=None,
+        )
+    elif classification_prescreen_texts:
+        prescreen_result = prescreen_texts(
+            classification_prescreen_texts
+        )
+        prescreen_rule_ids = list(
+            prescreen_result.rule_ids
+        )
+
+        if information_class == "D":
+            persist_classification_prescreen(
+                status=(
+                    "DECLARED_D_WITH_STRONG_INDICATORS"
+                    if prescreen_rule_ids
+                    else "DECLARED_D_NO_STRONG_INDICATORS"
+                ),
+                rule_ids=prescreen_rule_ids,
+                required_class=(
+                    "D"
+                    if prescreen_rule_ids
+                    else None
+                ),
+            )
+        elif prescreen_result.blocked_for_non_d:
+            persist_classification_prescreen(
+                status="REQUIRES_CLASS_D",
+                rule_ids=prescreen_rule_ids,
+                required_class="D",
+            )
+
+            purge_direct_text_after_prescreen_block()
+
+            if text_source is not None:
+                text_source["text_content"] = None
+
+            message = (
+                "Deterministic protected-content pre-screen requires "
+                "Class D. Rule IDs: "
+                + ", ".join(
+                    prescreen_rule_ids
+                )
+            )
+
+            update_analysis_status(
+                status="FAILED",
+                stage="CLASSIFICATION_PRESCREEN_BLOCKED",
+                documents_total=documents_total,
+                documents_processed=documents_processed,
+                pages_total=pages_total,
+                pages_processed=pages_processed,
+                passages_total=0,
+                error_message=message,
+            )
+
+            raise ClassificationPrescreenBlocked(
+                message
+            )
+        else:
+            persist_classification_prescreen(
+                status="PASSED_NO_STRONG_D_INDICATOR",
+                rule_ids=[],
+                required_class=None,
+            )
+    else:
+        persist_classification_prescreen(
+            status="NO_SCREENABLE_RAW_CONTENT",
+            rule_ids=[],
+            required_class=None,
+        )
+
     if passage_rows:
         passage_schema = spark.table(
             ANALYSIS_PASSAGE_TABLE
@@ -1319,6 +1535,9 @@ try:
     print("evidence source mode:", evidence_source_mode)
     print("extraction duration seconds:", extraction_duration_seconds)
 
+except ClassificationPrescreenBlocked:
+    # The precise fail-closed status/error has already been persisted above.
+    raise
 except Exception as exc:
     update_analysis_status(
         status="FAILED",
