@@ -722,3 +722,18 @@ Implemented in source on 2026-09-22:
   `2026-09-22-summary-evidence-separation-v24`.
 
 Status: **code/documentation complete; runtime validation pending redeploy**.
+
+
+### Findings content index
+
+Implemented in source on 2026-09-22:
+
+- added a compact Findings & Evidence content index;
+- first-class categories are Events, Contributing Factors, Findings,
+  Safety Issues, Safety Recommendations and Analytical Relationships;
+- category selection filters the detailed evidence sheet;
+- structural graph links are excluded from Analytical Relationships;
+- App build:
+  `2026-09-22-findings-index-v25`.
+
+Status: **code/documentation complete; runtime validation pending redeploy**.
