@@ -514,3 +514,29 @@ Implemented in source:
 - persistent SHIELD source corpus and compact human-review governance remain.
 
 Status: **code complete; runtime validation deferred**.
+
+
+### Findings Knowledge assistant and relationship correction
+
+Implemented in source:
+
+- enabled whole-case cited questions in Findings & Knowledge;
+- reuses the existing QuestionRun + Ask Job rather than creating another model
+  pipeline;
+- QuestionRuns record `interaction_surface = KNOWLEDGE`;
+- optional REFERENCE_CONTEXT remains a separately retrieved source layer;
+- Class-D questions preserve the existing dedicated-model policy;
+- relationship selector exposes candidate vs latest human-review status;
+- notebooks 49/50 provide evidence-bounded relationship correction proposals;
+- App exposes proposal generation and human APPROVED / DISMISSED /
+  APPLIED_WITH_AMENDMENT decisions;
+- approved/amended assistant proposals create a new append-only
+  RelationshipReview;
+- graph edges are never overwritten by the correction workflow;
+- stale proposals are blocked when a newer human RelationshipReview exists;
+- notebook 51 validates the proposal → human correction review →
+  authoritative RelationshipReview chain;
+- relationship-correction rationale/evidence follows analysis retention and is
+  scrubbed by notebook 23.
+
+Status: **code complete; runtime validation deferred**.
