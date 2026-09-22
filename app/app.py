@@ -7693,20 +7693,6 @@ with tab_findings:
                 "checks are handled in Review & Validate."
             )
 
-            with st.expander("View graph", expanded=False):
-                st.caption(
-                    "Colour key — event: amber · contributing factor: red · "
-                    "finding: blue · safety issue: purple · recommendation: "
-                    "green · actor: pink · vessel: teal · system: slate."
-                )
-                streamlit_cytoscape(
-                    elements=knowledge_elements,
-                    layout="fcose",
-                    node_styles=analysis_node_styles,
-                    edge_styles=analysis_edge_styles,
-                    height=700,
-                    key="knowledge_analysis_graph_" + knowledge_analysis_id,
-                )
         else:
             st.info("This analysis does not yet contain a published graph.")
     else:
