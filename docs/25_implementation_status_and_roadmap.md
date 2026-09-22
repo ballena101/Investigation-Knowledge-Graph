@@ -455,3 +455,24 @@ EMCIP mapping:
 - notebook 42 validates proposal/review governance.
 
 Status: **code complete; runtime validation deferred**.
+
+
+### Separate reference-context retrieval
+
+Implemented in code:
+- Ask can attach up to three completed Class-A analyses as optional
+  REFERENCE_CONTEXT;
+- selected reference analyses are validated as completed Class A;
+- primary case evidence and reference passages use separate retrieval;
+- reference context uses MAIRA deterministic lexical retrieval;
+- independent reference retrieval snapshot and passage IDs are persisted;
+- model prompt labels every passage as SOURCE_EVIDENCE or REFERENCE_CONTEXT;
+- response contract returns separate passage-ID arrays per layer;
+- case and reference citations/page locations are persisted separately;
+- App displays case evidence and reference context as separate citation blocks;
+- PDF viewer resolves sources across the primary analysis and reference
+  analyses;
+- notebook 38 validates cross-layer provenance and prevents layer leakage;
+- retention cleanup scrubs layer-specific citation/provenance content.
+
+Status: **code complete; runtime validation deferred**.
