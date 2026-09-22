@@ -5146,10 +5146,21 @@ with tab_new_analysis:
 
     st.markdown("**Processing disclosure**")
     st.write(policy["description"])
-    st.write(f"**Model path:** {policy['model_name']}")
-    if policy["model"]:
-        st.code(policy["model"], language=None)
-    st.caption(policy["data_flow"])
+    with st.expander(
+        "Technical processing details",
+        expanded=False,
+    ):
+        st.write(
+            f"**Model path:** {policy['model_name']}"
+        )
+        if policy["model"]:
+            st.code(
+                policy["model"],
+                language=None,
+            )
+        st.caption(
+            policy["data_flow"]
+        )
 
     if input_mode == "Documents":
         if information_class == "B":
@@ -6218,9 +6229,11 @@ def render_compare_llms():
                             + selected_analysis_id
                         ),
                     )
-                    scope_document_ids = [
-                        one_document_id
-                    ]
+                    scope_document_ids = (
+                        [one_document_id]
+                        if one_document_id
+                        else []
+                    )
                 elif scope_mode == "SELECTED_DOCUMENTS":
                     scope_document_ids = st.multiselect(
                         "Use these documents for the question",
@@ -7303,8 +7316,8 @@ with tab_graph:
         st.info(
             "Free-text questions and model comparison are handled in "
             "Ask / Compare LLMs. This page is intentionally read-only: "
-            "browse the extracted knowledge, inspect its evidence, view the "
-            "graph and retrieve similar MAIRA cases."
+            "browse the extracted knowledge, inspect investigation evidence, view "
+            "relationships and retrieve similar MAIRA cases."
         )
 
         knowledge_elements = {
@@ -8143,16 +8156,32 @@ with tab_review:
     st.markdown("**Assistant review status**")
     st.write(selected["evidence_status"] or "—")
 
-    if selected.get("model_run_id"):
-        st.markdown("**Model provenance**")
-        st.code(
-            selected["model_run_id"],
-            language=None,
-        )
+    if (
+        selected.get("model_run_id")
+        or selected["evidence_anchor"]
+    ):
+        with st.expander(
+            "Technical provenance",
+            expanded=False,
+        ):
+            if selected.get("model_run_id"):
+                st.markdown(
+                    "**Model run**"
+                )
+                st.code(
+                    selected["model_run_id"],
+                    language=None,
+                )
 
-    if selected["evidence_anchor"]:
-        st.markdown("**Evidence anchor**")
-        st.write(selected["evidence_anchor"])
+            if selected["evidence_anchor"]:
+                st.markdown(
+                    "**Evidence anchor**"
+                )
+                st.write(
+                    selected[
+                        "evidence_anchor"
+                    ]
+                )
 
     st.markdown("**Supporting evidence**")
 
