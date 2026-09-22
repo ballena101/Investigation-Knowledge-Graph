@@ -37,7 +37,7 @@ env:
   - name: LLAMA_DAILY_QUESTION_LIMIT
     value: "5"
 
-  - name: NEWS_DASHBOARD_EMBED_URL
+  - name: NEWS_DASHBOARD_URL
     value: ""
   - name: STREAMLIT_GATHER_USAGE_STATS
     value: "false"
