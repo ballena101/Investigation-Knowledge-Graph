@@ -780,3 +780,38 @@ Implemented in source on 2026-09-22:
   `2026-09-22-evidence-and-action-followup-v26`.
 
 Status: **code/documentation complete; runtime validation pending redeploy**.
+
+
+### Direct reference-document Q&A
+
+Implemented in source on 2026-09-22:
+
+- Ask / Compare now separates **Case / analysed evidence** from
+  **Direct reference documents**;
+- direct mode creates a standalone QuestionRun and reuses the existing Ask Job;
+- selected governed REFERENCE_CONTEXT documents are retrieved directly;
+- no AnalysisGroup, graph build or structured investigation extraction is
+  required;
+- direct answers retain page-level reference citations and PDF rendering;
+- notebook 36 now supports
+  `interaction_surface = DIRECT_DOCUMENT_ASK`;
+- normal case Ask behavior remains unchanged;
+- App build:
+  `2026-09-22-direct-reference-ask-v28`.
+
+Status: **code/documentation complete; focused runtime validation pending**.
+
+### Validation priority after UI freeze
+
+No further discretionary GUI refinement should precede model/runtime
+validation unless deployment reveals a functional defect.
+
+Priority order:
+
+1. redeploy and smoke-test build v28;
+2. fresh Class-B MAIRA analysis + notebooks 32 and 35;
+3. focused direct-reference Q&A test using one indexed authoritative source;
+4. consolidate existing MAIRA dual-model benchmark/gold-match outputs into
+   model-performance results;
+5. validate scoped Ask, relationship/EMCIP, SHIELD, correction, similar cases
+   and retention using the existing validators.
