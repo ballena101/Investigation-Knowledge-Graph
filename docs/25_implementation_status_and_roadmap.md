@@ -142,92 +142,91 @@ and human-validated knowledge distinct.
 
 ## 3. NEXT — current milestone
 
+### Development — reference-context retrieval
+
+Add legal/methodological reference material as a separate retrieval layer.
+
+Required separation:
+
+```text
+SOURCE_EVIDENCE
+    occurrence-specific report evidence
+
+REFERENCE_CONTEXT
+    Directive 2009/18/EC
+    Directive (EU) 2024/3017
+    IMO Casualty Investigation Code MSC.255(84)
+    IMO Guidelines A.1075(28)
+    other governed technical/methodological references
+
+CONTROLLED_TAXONOMY
+    EMCIP registry
+```
+
+Reference context may guide interpretation or answer framework questions, but it
+must never be presented as proof that an accident fact occurred.
+
+The App must preserve the source-layer label in retrieval, citations and model
+prompts.
+
 ### Consolidated runtime validation
 
-The scoped Ask backend and exact governed-query integration are implemented in
-source but have not yet been deployed/run. The next Databricks session should
-validate all accumulated changes together rather than paying for repeated small
-deployments.
+The accumulated App/Job changes remain intentionally undeployed to avoid
+repeated Databricks cost.
 
-Validation sequence:
+Next validation session:
 
-1. Pull current `main`.
-2. Run notebook `37_create_ask_processed_evidence_job.py` once to create/update:
-   `Investigation KG - Ask Processed Evidence`.
-3. Attach that Job to the App with:
-   - resource key: `ask_job`;
+1. Pull current IKF `main` and current MAIRA `main`.
+2. Run notebook `37_create_ask_processed_evidence_job.py`.
+3. Attach Job resource:
+   - key: `ask_job`;
    - permission: `Can manage run`.
-4. Redeploy the App once.
-5. Create/retry one Class-B MAIRA MAIN_REPORT analysis.
-6. Confirm Prepare evidence completes and Technical details shows
-   `MAIRA canonical passages`.
-7. Run notebook 32 and require:
+4. Run notebook `41_create_emcip_mapping_proposal_job.py`.
+5. Attach Job resource:
+   - key: `emcip_mapping_job`;
+   - permission: `Can manage run`.
+6. Redeploy the App once.
+7. Create/retry one Class-B MAIRA MAIN_REPORT analysis.
+8. Require notebook 32:
    `PASS — NORMAL APP ANALYSIS PRESERVES MAIRA_IKF_PASSAGE_V0.1`.
-8. Run notebook 35 and require:
+9. Require notebook 35:
    `PASS — SOURCE VIEWER METADATA AND PAGE RANGES ARE VALID`.
-9. Confirm the App visibly shows report/page references and renders the cited
-   MAIRA PDF page.
-10. Ask one ordinary free-text question against:
-    - the whole case;
-    - then one document or selected documents.
-11. Run notebook 38 for that QuestionRun and require:
-    `PASS — SCOPED ASK / COMPARE RUN IS EVIDENCE-BOUNDED`.
-12. Run notebook 34 for the governed-query test and require:
-    `PASS — GOVERNED MAIRA RETRIEVAL DATA PREFLIGHT`.
-13. Ask one exact persisted MAIRA governed question (for example the applicable
-    Q001/Q002/Q003 text) and confirm the App shows:
-    `Retrieval: governed MAIRA relationship evidence`.
-14. Validate that governed QuestionRun again with notebook 38.
+10. Confirm report/page citations and cited PDF rendering in the App.
+11. Run an ordinary Ask question and a document-scoped Ask question.
+12. Require notebook 38:
+   `PASS — SCOPED ASK / COMPARE RUN IS EVIDENCE-BOUNDED`.
+13. Test one exact persisted MAIRA governed query and confirm:
+   `GOVERNED_RELATIONSHIP_EVIDENCE`.
+14. Test one large ordinary free-text scope and confirm:
+   `DETERMINISTIC_FREE_TEXT_LEXICAL_V0.1`.
+15. Save at least one generic relationship review and require notebook 39:
+   `PASS — GENERIC RELATIONSHIP REVIEWS PRESERVE ANALYSIS AND MODEL PROVENANCE`.
+16. Generate generic EMCIP proposals from Review & Validate.
+17. Save at least one mapping review and require notebook 42:
+   `PASS — GENERIC EMCIP PROPOSALS AND REVIEWS REMAIN GOVERNED`.
 
-No graph rebuild should occur when a question is asked.
+No question, relationship review or EMCIP mapping review should rebuild the case
+graph.
 
 ## 4. PENDING — planned implementation sequence
 
-### P1 — governed retrieval generalisation for arbitrary large-scope questions
+### P1 — reference-context retrieval
 
-Current ordinary free-text Ask works against the full selected scope only while
-the controlled passage/character limit is respected. Exact persisted MAIRA
-questions already use governed relationship evidence.
-
-Remaining work:
-- generalise deterministic MAIRA free-text interpretation beyond exact
-  persisted-query matches;
-- preserve the distinction between interpretation, retrieval and relationship
-  evidence;
-- avoid fuzzy/LLM query-spec assignment unless explicitly governed;
-- preserve retrieval snapshots/versioning for benchmarkable questions;
-- remove the temporary large-scope fail-closed limit only after the governed
-  retrieval path is validated.
-
-### P2 — generic human relationship review
-
-- Remove remaining Commodore-Clipper-specific assumptions.
-- Review arbitrary analysis relationships.
-- Preserve append-only human decisions.
-- Add evidence-sheet/page-viewer access directly in review.
-
-### P3 — generic EMCIP mapping review
-
-- LLM proposes mapping only.
-- Human validates/rejects/amends independently from relationship review.
-- Consume MAIRA EMCIP registry; do not create another taxonomy.
-
-### P4 — reference-context retrieval
-
-- Add legal/methodological reference fragments separately from occurrence
+- Retrieve legal/methodological reference fragments separately from occurrence
   evidence.
-- Preserve source layer labels:
+- Preserve source-layer labels:
   SOURCE_EVIDENCE / REFERENCE_CONTEXT / CONTROLLED_TAXONOMY.
 - Reference context may guide interpretation but cannot prove an accident fact.
+- Keep reference citations distinguishable from report-evidence citations.
 
-### P5 — Class-D completion
+### P2 — Class-D completion
 
 - Automated A/B/C/D pre-screen with fail-closed routing.
 - Complete protected-data controls and assurance.
 - Keep production protected raw content outside Neo4j.
 - Preserve dual-model comparison and privacy validation.
 
-### P6 — SHIELD workflow
+### P3 — SHIELD workflow
 
 - Candidate contributing factor
   → human validation
@@ -235,21 +234,21 @@ Remaining work:
   → independent human SHIELD validation.
 - Only validated SHIELD classification becomes authoritative.
 
-### P7 — knowledge assistant and relationship correction
+### P4 — knowledge assistant and relationship correction
 
 - Ask/Research over processed knowledge with citations.
 - Distinguish candidate from human-validated knowledge.
 - Allow LLM to propose relationship corrections from the graph.
 - Never change validated graph relationships without explicit human approval.
 
-### P8 — similar cases and external signals
+### P5 — similar cases and external signals
 
 - Retrieve similar MAIRA investigation reports.
 - Keep News & Alerts separate as external/unvalidated information.
 - Later allow governed read-only LLM access to the news backend without mixing
   news with validated investigation findings.
 
-### P9 — production-readiness validation
+### P6 — production-readiness validation
 
 - Reproducible benchmarks.
 - Versioned prompts/models/retrieval snapshots.
@@ -369,8 +368,8 @@ Implemented in code:
 - Class-D question text is encrypted before persistence;
 - answers preserve passage IDs, report/page references and viewer locations;
 - cited PDF pages can be rendered directly in Ask results;
-- oversized scopes fail closed with `GOVERNED_RETRIEVAL_REQUIRED` rather than
-  being silently truncated;
+- ordinary large scopes use deterministic MAIRA free-text lexical retrieval
+  rather than silent truncation;
 - QuestionRun/QuestionModelRun content is included in retention cleanup.
 
 Status: **code complete; runtime validation deferred**.
