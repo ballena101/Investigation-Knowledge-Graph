@@ -108,3 +108,27 @@ Class D → IKF documents
 
 This routing is a catalogue/source-ownership rule. It does not change the
 separate model-routing policy for A/B/C/D.
+
+
+## Reference-context source layer
+
+Legal, IMO and reusable technical/methodological reference material is stored
+separately from both investigation reports and ordinary case inputs.
+
+```text
+IKF reference context
+/Volumes/bdw_analysis_prod/kg_poc/reference_context
+        ↓
+reference_document
+reference_passage
+        ↓
+SOURCE_LAYER = REFERENCE_CONTEXT
+```
+
+This corpus is not part of the Class-B MAIRA investigation-report catalogue and
+is not treated as Class-A case evidence merely because the material is public.
+
+It is a reusable framework layer available optionally to Ask / Compare LLMs.
+
+SHIELD documents remain outside REFERENCE_CONTEXT because they have their own
+classification-governance workflow.
