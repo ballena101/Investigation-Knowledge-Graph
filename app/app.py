@@ -696,8 +696,8 @@ def create_question_run(
     question_text,
     scope_mode,
     scope_document_ids,
-    reference_analysis_ids,
     model_selection,
+    include_reference_context,
 ):
     if analysis.get("status") != "COMPLETED":
         raise ValueError(
@@ -795,7 +795,6 @@ def create_question_run(
                 information_class: $information_class,
                 scope_mode: $scope_mode,
                 scope_document_ids: $scope_document_ids,
-                reference_analysis_ids: $reference_analysis_ids,
                 model_selection: $model_selection,
                 include_reference_context: $include_reference_context,
                 model_keys: $model_keys,
@@ -819,7 +818,6 @@ def create_question_run(
             information_class=information_class,
             scope_mode=scope_mode,
             scope_document_ids=scope_document_ids,
-            reference_analysis_ids=reference_analysis_ids,
             model_selection=model_selection,
             include_reference_context=bool(include_reference_context),
             model_keys=model_keys,
@@ -2020,7 +2018,6 @@ def load_question_runs(analysis_id):
         q.information_class AS information_class,
         q.scope_mode AS scope_mode,
         coalesce(q.scope_document_ids, []) AS scope_document_ids,
-        coalesce(q.reference_analysis_ids, []) AS reference_analysis_ids,
         q.model_selection AS model_selection,
         coalesce(q.include_reference_context, false) AS include_reference_context,
         coalesce(q.model_keys, []) AS model_keys,
@@ -2278,18 +2275,10 @@ def render_question_answer(
         )
     }
 
-    for reference_analysis_id in (
-        question_run.get(
-            "reference_analysis_ids"
-        )
-        or []
-    ):
-        for source in load_analysis_sources(
-            reference_analysis_id
-        ):
-            source_by_id[
-                source["document_id"]
-            ] = source
+    for reference_source in load_reference_documents():
+        source_by_id[
+            reference_source["reference_document_id"]
+        ] = reference_source
 
     location_index = st.selectbox(
         "Cited source page",
@@ -2354,7 +2343,7 @@ def render_question_answer(
 
     if source is None:
         st.caption(
-            "The cited document is not linked to the relevant source analysis."
+            "The cited document is not available in the relevant governed source catalogue."
         )
         return
 
@@ -4655,57 +4644,6 @@ def render_compare_llms():
                 else:
                     scope_document_ids = []
 
-            reference_analysis_ids = []
-
-            reference_candidates = [
-                item
-                for item in analysis_groups
-                if (
-                    item.get("status") == "COMPLETED"
-                    and (
-                        item.get("information_class")
-                        or "B"
-                    )
-                    == "A"
-                    and item["analysis_id"]
-                    != selected_analysis_id
-                )
-            ]
-
-            if reference_candidates:
-                with st.expander(
-                    "Reference context (optional)",
-                    expanded=False,
-                ):
-                    st.caption(
-                        "Use completed Class-A IKF technical/legal analyses as "
-                        "REFERENCE_CONTEXT. They can explain framework or "
-                        "methodology but cannot prove that a case fact occurred."
-                    )
-
-                    reference_by_id = {
-                        item["analysis_id"]: item
-                        for item in reference_candidates
-                    }
-
-                    reference_analysis_ids = st.multiselect(
-                        "Reference analyses",
-                        options=list(
-                            reference_by_id
-                        ),
-                        format_func=lambda value: (
-                            reference_by_id[value][
-                                "analysis_title"
-                            ]
-                            + " · Class A"
-                        ),
-                        max_selections=3,
-                        key=(
-                            "ask_reference_context_"
-                            + selected_analysis_id
-                        ),
-                    )
-
             if class_for_ask == "D":
                 ask_model_label = st.radio(
                     "Model mode",
@@ -4859,7 +4797,6 @@ def render_compare_llms():
                             question_text=ask_question_text.strip(),
                             scope_mode=scope_mode,
                             scope_document_ids=scope_document_ids,
-                            reference_analysis_ids=reference_analysis_ids,
                             model_selection=ask_model_selection,
                             include_reference_context=include_reference_context,
                         )
@@ -4973,44 +4910,6 @@ def render_compare_llms():
                         or "UNKNOWN"
                     )
                 )
-
-                selected_reference_ids = (
-                    selected_question.get(
-                        "reference_analysis_ids"
-                    )
-                    or []
-                )
-                if selected_reference_ids:
-                    st.caption(
-                        "Reference context analyses: "
-                        + str(
-                            len(
-                                selected_reference_ids
-                            )
-                        )
-                        + " · kept separate from case evidence"
-                    )
-
-                    if selected_question.get(
-                        "reference_retrieval_snapshot_id"
-                    ):
-                        st.caption(
-                            "Reference retrieval: "
-                            + (
-                                selected_question.get(
-                                    "reference_retrieval_mode"
-                                )
-                                or "—"
-                            )
-                            + " · "
-                            + str(
-                                selected_question.get(
-                                    "reference_context_passage_count"
-                                )
-                                or 0
-                            )
-                            + " passage(s)"
-                        )
 
                 retrieval_mode = (
                     selected_question.get(
