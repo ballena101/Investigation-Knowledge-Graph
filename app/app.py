@@ -1864,6 +1864,10 @@ def load_question_runs(analysis_id):
         q.retrieval_mode AS retrieval_mode,
         q.retrieval_snapshot_id AS retrieval_snapshot_id,
         coalesce(q.retrieval_passage_ids, []) AS retrieval_passage_ids,
+        q.reference_retrieval_mode AS reference_retrieval_mode,
+        q.reference_retrieval_snapshot_id AS reference_retrieval_snapshot_id,
+        coalesce(q.reference_retrieval_passage_ids, []) AS reference_retrieval_passage_ids,
+        coalesce(q.reference_context_passage_count, 0) AS reference_context_passage_count,
         coalesce(q.retrieval_candidate_count, 0) AS retrieval_candidate_count,
         coalesce(q.retrieval_selected_count, 0) AS retrieval_selected_count,
         coalesce(q.retrieval_selected_characters, 0) AS retrieval_selected_characters,
@@ -1906,6 +1910,12 @@ def load_question_model_runs(question_run_id):
         coalesce(m.passage_ids, []) AS passage_ids,
         coalesce(m.evidence_references, []) AS evidence_references,
         coalesce(m.evidence_locations, []) AS evidence_locations,
+        coalesce(m.source_evidence_passage_ids, []) AS source_evidence_passage_ids,
+        coalesce(m.source_evidence_references, []) AS source_evidence_references,
+        coalesce(m.source_evidence_locations, []) AS source_evidence_locations,
+        coalesce(m.reference_context_passage_ids, []) AS reference_context_passage_ids,
+        coalesce(m.reference_context_references, []) AS reference_context_references,
+        coalesce(m.reference_context_locations, []) AS reference_context_locations,
         coalesce(m.limitations, []) AS limitations,
         coalesce(m.insufficient_evidence, false) AS insufficient_evidence,
         m.duration_seconds AS duration_seconds,
@@ -1984,17 +1994,45 @@ def render_question_answer(
     else:
         st.info("No answer has been returned yet.")
 
-    references = (
-        model_run.get("evidence_references")
+    source_references = (
+        model_run.get(
+            "source_evidence_references"
+        )
         or []
     )
-    if references:
-        st.markdown("**Source pages**")
-        for reference in references:
+    reference_references = (
+        model_run.get(
+            "reference_context_references"
+        )
+        or []
+    )
+
+    if source_references:
+        st.markdown(
+            "**Case evidence — SOURCE_EVIDENCE**"
+        )
+        for reference in source_references:
             st.write(f"• {reference}")
-    elif model_run.get("status") == "COMPLETED":
+
+    if reference_references:
+        st.markdown(
+            "**Reference context — REFERENCE_CONTEXT**"
+        )
+        for reference in reference_references:
+            st.write(f"• {reference}")
+        st.caption(
+            "Reference context supports framework, methodology or technical "
+            "background. It is not evidence that a case fact occurred."
+        )
+
+    if (
+        not source_references
+        and not reference_references
+        and model_run.get("status")
+        == "COMPLETED"
+    ):
         st.warning(
-            "The answer contains no valid document/page citation."
+            "The answer contains no valid source-layer citation."
         )
 
     limitations = (
@@ -2021,54 +2059,132 @@ def render_question_answer(
         model_run.get("total_tokens") or "—",
     )
 
-    locations = [
-        parsed
+    source_locations = [
+        {
+            "layer": "SOURCE_EVIDENCE",
+            "location": parsed,
+        }
         for parsed in (
             parse_evidence_location(value)
             for value in (
-                model_run.get("evidence_locations")
+                model_run.get(
+                    "source_evidence_locations"
+                )
                 or []
             )
         )
         if parsed is not None
     ]
 
-    if not locations:
+    reference_locations = [
+        {
+            "layer": "REFERENCE_CONTEXT",
+            "location": parsed,
+        }
+        for parsed in (
+            parse_evidence_location(value)
+            for value in (
+                model_run.get(
+                    "reference_context_locations"
+                )
+                or []
+            )
+        )
+        if parsed is not None
+    ]
+
+    layered_locations = (
+        source_locations
+        + reference_locations
+    )
+
+    if not layered_locations:
         return
 
-    sources = load_analysis_sources(
-        analysis_id
-    )
     source_by_id = {
         source["document_id"]: source
-        for source in sources
+        for source in load_analysis_sources(
+            analysis_id
+        )
     }
+
+    for reference_analysis_id in (
+        question_run.get(
+            "reference_analysis_ids"
+        )
+        or []
+    ):
+        for source in load_analysis_sources(
+            reference_analysis_id
+        ):
+            source_by_id[
+                source["document_id"]
+            ] = source
 
     location_index = st.selectbox(
         "Cited source page",
-        options=list(range(len(locations))),
-        format_func=lambda index: format_evidence_location(
-            locations[index],
-            source_by_id.get(
-                locations[index]["document_id"]
-            ),
+        options=list(
+            range(
+                len(layered_locations)
+            )
+        ),
+        format_func=lambda index: (
+            layered_locations[index][
+                "layer"
+            ]
+            + " · "
+            + format_evidence_location(
+                layered_locations[index][
+                    "location"
+                ],
+                source_by_id.get(
+                    layered_locations[index][
+                        "location"
+                    ]["document_id"]
+                ),
+            )
         ),
         key=(
             "question_citation_"
-            + question_run["question_run_id"]
+            + question_run[
+                "question_run_id"
+            ]
             + "_"
             + render_key
         ),
     )
 
-    location = locations[location_index]
+    selected_layered_location = (
+        layered_locations[
+            location_index
+        ]
+    )
+    layer = selected_layered_location[
+        "layer"
+    ]
+    location = selected_layered_location[
+        "location"
+    ]
     source = source_by_id.get(
         location["document_id"]
     )
 
+    st.caption(
+        "Source layer: "
+        + layer
+        + (
+            " — case-specific occurrence evidence."
+            if layer == "SOURCE_EVIDENCE"
+            else (
+                " — framework/technical context only; "
+                "not proof of a case fact."
+            )
+        )
+    )
+
     if source is None:
         st.caption(
-            "The cited document is not linked to this analysis."
+            "The cited document is not linked to the relevant source analysis."
         )
         return
 
@@ -2079,7 +2195,10 @@ def render_question_answer(
         source.get("source_type") or ""
     ).upper()
 
-    if source_type != "PDF" or not source_path:
+    if (
+        source_type != "PDF"
+        or not source_path
+    ):
         st.caption(
             "The citation is available, but an embedded PDF source is not available."
         )
@@ -2102,15 +2221,27 @@ def render_question_answer(
                 "question_pdf_"
                 + hashlib.sha256(
                     (
-                        question_run["question_run_id"]
+                        question_run[
+                            "question_run_id"
+                        ]
                         + "|"
                         + render_key
                         + "|"
+                        + layer
+                        + "|"
                         + source_path
                         + "|"
-                        + str(location.get("page_start"))
+                        + str(
+                            location.get(
+                                "page_start"
+                            )
+                        )
                         + "|"
-                        + str(location.get("page_end"))
+                        + str(
+                            location.get(
+                                "page_end"
+                            )
+                        )
                     ).encode("utf-8")
                 ).hexdigest()[:16]
             ),
@@ -4609,6 +4740,27 @@ def render_compare_llms():
                         )
                         + " · kept separate from case evidence"
                     )
+
+                    if selected_question.get(
+                        "reference_retrieval_snapshot_id"
+                    ):
+                        st.caption(
+                            "Reference retrieval: "
+                            + (
+                                selected_question.get(
+                                    "reference_retrieval_mode"
+                                )
+                                or "—"
+                            )
+                            + " · "
+                            + str(
+                                selected_question.get(
+                                    "reference_context_passage_count"
+                                )
+                                or 0
+                            )
+                            + " passage(s)"
+                        )
 
                 retrieval_mode = (
                     selected_question.get(
