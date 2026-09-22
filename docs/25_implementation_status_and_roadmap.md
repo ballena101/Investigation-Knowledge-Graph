@@ -756,3 +756,27 @@ Implemented in source on 2026-09-22:
   `2026-09-22-evidence-viewer-v26`.
 
 Status: **code/documentation complete; runtime validation pending redeploy**.
+
+
+### Evidence viewer and asynchronous follow-up
+
+Implemented in source on 2026-09-22:
+
+- simplified Findings & Evidence to
+  Description → Supporting evidence → Source page/PDF;
+- one evidence location renders directly; multiple locations use one
+  Supporting evidence selector;
+- technical passage/location/reference data moved under
+  **Technical provenance (advanced)**;
+- added reusable Databricks async-run status rendering;
+- added Similar MAIRA Cases refresh/status follow-up;
+- added relationship-correction refresh/status follow-up;
+- added Knowledge Graph question refresh/status follow-up;
+- clarified queued-message follow-up for normal Ask, EMCIP and SHIELD;
+- preserved immediate rerun behavior for synchronous human review saves;
+- backup branch:
+  `backup/pre-action-followup-2026-09-22`;
+- App build:
+  `2026-09-22-evidence-and-action-followup-v26`.
+
+Status: **code/documentation complete; runtime validation pending redeploy**.
