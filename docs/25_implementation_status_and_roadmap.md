@@ -541,3 +541,28 @@ Implemented in source:
   scrubbed by notebook 23.
 
 Status: **code complete; runtime validation deferred**.
+
+
+### Deterministic similar MAIRA cases
+
+Implemented in source:
+
+- notebook 52 derives similarity focus from processed Event /
+  ContributingFactor / Finding / SafetyIssue / System graph labels;
+- Vessel / Actor / Claim identity labels are excluded;
+- MAIRA MAIN_REPORT passages are searched with
+  `DETERMINISTIC_FREE_TEXT_LEXICAL_V0.1`;
+- the current MAIRA package is excluded;
+- candidate passages are aggregated to report-package candidates;
+- top candidates preserve rank, matched terms, evidence passage IDs,
+  report/page references, page locations and a deterministic retrieval
+  snapshot;
+- no LLM, embedding or vector similarity model is used;
+- notebook 53 defines the one-task Similar MAIRA Cases Job;
+- App resource is `SIMILAR_CASES_JOB_ID <- similar_cases_job`;
+- Findings & Knowledge displays "why this matched" and can render the cited
+  MAIRA page directly;
+- notebook 54 validates current-package exclusion and passage/page provenance;
+- transient similar-case matched evidence follows analysis retention cleanup.
+
+Status: **code complete; runtime validation deferred**.
