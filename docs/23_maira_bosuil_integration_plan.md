@@ -753,3 +753,37 @@ permissions for IKF and MAIRA documents.
 The embedded PDF capability uses Streamlit's PDF component and PyMuPDF only to
 construct the cited-page subset in App memory. Source documents are not copied
 into Neo4j and are not persisted by the viewer.
+
+
+### Unified MAIRA and IKF source catalogue
+
+The App document selector now uses one logical catalogue composed of two
+governed source owners:
+
+- MAIRA investigation documents from
+  `bdw_analysis_prod.maira.documents`, backed by
+  `/Volumes/bdw_analysis_prod/maira/source_documents`;
+- IKF input documents indexed from the IKF investigation-source volume.
+
+Notebook 33 synchronises MAIRA investigation-document metadata into Neo4j
+`SourceDocument` catalogue nodes without copying MAIRA PDFs into IKF.
+
+Ownership is explicit:
+- `source_managed_by = MAIRA` for MAIRA canonical documents;
+- `source_managed_by = IKF` for IKF-managed inputs.
+
+MAIRA catalogue entries are exempt from IKF source-retention semantics. IKF
+analysis retention may remove derived analytical artefacts, but it must not
+delete or expire MAIRA-owned canonical source files.
+
+When the same physical file exists in both catalogues, the App deduplicates by
+SHA-256 and presents the MAIRA canonical entry.
+
+The user-facing selector identifies repository and MAIRA document role, for
+example:
+
+`[MAIRA · MAIN_REPORT] <report title> · <filename> · PDF`
+
+or:
+
+`[IKF] <filename> · PDF · <language>`
