@@ -110,7 +110,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-scoped-ask-backend-v9"
+APP_BUILD = "2026-09-22-governed-ask-v10"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -1855,6 +1855,12 @@ def load_question_runs(analysis_id):
         q.processing_stage AS processing_stage,
         q.processing_error AS processing_error,
         q.job_run_id AS job_run_id,
+        q.retrieval_mode AS retrieval_mode,
+        q.governed_query_id AS governed_query_id,
+        q.governed_query_spec_id AS governed_query_spec_id,
+        q.governed_relationship AS governed_relationship,
+        q.deterministic_answer AS deterministic_answer,
+        coalesce(q.insufficient_evidence, false) AS insufficient_evidence,
         q.created_by AS created_by,
         toString(q.created_at) AS created_at,
         toString(q.completed_at) AS completed_at
@@ -4171,6 +4177,30 @@ def render_compare_llms():
                     )
                 )
 
+                retrieval_mode = (
+                    selected_question.get(
+                        "retrieval_mode"
+                    )
+                    or "SCOPED_ALL_PASSAGES"
+                )
+
+                if retrieval_mode == "GOVERNED_RELATIONSHIP_EVIDENCE":
+                    st.caption(
+                        "Retrieval: governed MAIRA relationship evidence"
+                        + (
+                            " · "
+                            + selected_question["governed_query_id"]
+                            if selected_question.get("governed_query_id")
+                            else ""
+                        )
+                    )
+                else:
+                    st.caption(
+                        "Retrieval: scoped processed passages. "
+                        "Large scopes fail closed until governed retrieval "
+                        "covers the question."
+                    )
+
                 question_status = (
                     selected_question.get("status")
                     or "UNKNOWN"
@@ -4193,6 +4223,17 @@ def render_compare_llms():
                         or "Question processing failed."
                     )
                 elif question_status == "COMPLETED":
+                    deterministic_answer = (
+                        selected_question.get(
+                            "deterministic_answer"
+                        )
+                    )
+
+                    if deterministic_answer:
+                        st.warning(
+                            deterministic_answer
+                        )
+
                     answer_runs = load_question_model_runs(
                         selected_question_run_id
                     )
