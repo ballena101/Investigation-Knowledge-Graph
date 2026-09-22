@@ -13,16 +13,18 @@ The user can provide either:
 - 1–5 governed source documents; or
 - direct text entered in the App.
 
-The user also supplies the investigation question/objective.
+Document analysis is question-independent. Free-text investigator questions are
+asked later through **Ask / Compare LLMs** against the already processed
+evidence set.
 
-The user may run:
+For Class D questions, the user may run:
 
 - GPT-OSS 20B only;
 - Llama 3.3 70B only;
 - both models.
 
-When both are selected, both models receive the same evidence passages and the
-same question independently. Their outputs are stored separately and displayed
+When both are selected for Ask / Compare, both models receive the same scoped
+evidence passages and the same question independently. Their outputs are stored separately and displayed
 side by side.
 
 ## Model serving
@@ -209,3 +211,18 @@ The larger model in this PoC is **Meta Llama 3.3 70B Instruct**. It can be run
 through Ollama in other/local environments, but IKG's Class D design uses an
 approved dedicated Databricks serving endpoint. This avoids adding an Ollama
 server as another protected-data processing boundary.
+
+
+### Classification pre-screen
+
+Class D is still selected by the investigator, but IKF now also has a
+deterministic fail-closed pre-screen for obvious protected-record indicators.
+
+The safeguard:
+- can escalate non-D raw/direct or IKF-managed content to require Class D;
+- does not downgrade declared Class D;
+- does not treat references to protected evidence in a published MAIRA report
+  as if the published report were the raw protected record;
+- runs before a non-D model receives extracted content.
+
+See `docs/28_classification_prescreen.md`.
