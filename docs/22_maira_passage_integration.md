@@ -231,3 +231,19 @@ The AnalysisGroup records `evidence_source_mode` as one of:
 
 The App exposes this value under Technical details. Direct text remains an
 IKF-specific ingress at this stage.
+
+
+## Canonical source-document viewer provenance — 2026-09-22
+
+For a MAIRA-matched App document, notebook 15 now persists the MAIRA
+`documents.file_path`, source filename and repository marker on the linked
+IKF `SourceDocument` as viewer metadata.
+
+This keeps two identities distinct:
+
+- the IKF analysis/document link used to scope the App analysis;
+- the MAIRA canonical source file used to display evidence for MAIRA-owned
+  passages.
+
+The viewer therefore opens the same MAIRA source artifact from which the
+canonical passages were constructed, rather than relying on an IKF copy.
