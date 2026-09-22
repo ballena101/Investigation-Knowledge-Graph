@@ -910,6 +910,133 @@ def create_question_run(
     return question_run_id
 
 
+def create_direct_reference_question_run(
+    *,
+    question_text,
+    reference_document_ids,
+):
+    """Create a lightweight QuestionRun directly over REFERENCE_CONTEXT."""
+
+    if not reference_document_ids:
+        raise ValueError(
+            "Select at least one reference document."
+        )
+
+    policy = resolve_model_policy(
+        "A"
+    )
+    model_service = policy.get(
+        "model"
+    )
+    if not model_service:
+        raise RuntimeError(
+            "No approved default model is configured for Class A/reference questions."
+        )
+
+    question_run_id = (
+        "question_" + uuid.uuid4().hex
+    )
+    question_hash = hashlib.sha256(
+        question_text.encode(
+            "utf-8"
+        )
+    ).hexdigest()
+
+    reviewer = get_reviewer_identity()
+    creator = (
+        reviewer["email"]
+        if reviewer["email"]
+        != "unknown"
+        else reviewer["username"]
+    )
+
+    with get_driver().session() as session:
+        session.run(
+            """
+            CREATE (q:QuestionRun {
+                question_run_id: $question_run_id,
+                analysis_id: NULL,
+                information_class: 'A',
+                scope_mode: 'SELECTED_REFERENCE_DOCUMENTS',
+                scope_document_ids: [],
+                direct_reference_document_ids: $reference_document_ids,
+                include_reference_context: true,
+                interaction_surface: 'DIRECT_DOCUMENT_ASK',
+                model_selection: 'DEFAULT',
+                model_keys: ['DEFAULT'],
+                model_services: [$model_service],
+                question_text: $question_text,
+                encrypted_question_text: '',
+                question_encryption_scheme: '',
+                question_sha256: $question_sha256,
+                status: 'PENDING',
+                processing_stage: 'PENDING',
+                created_by: $created_by,
+                created_at: datetime(),
+                retention_policy: 'REFERENCE_QUESTION',
+                content_expires_at: datetime() + duration({hours: 72})
+            })
+            """,
+            question_run_id=question_run_id,
+            reference_document_ids=reference_document_ids,
+            model_service=model_service,
+            question_text=question_text,
+            question_sha256=question_hash,
+            created_by=creator,
+        ).consume()
+
+    return question_run_id
+
+
+@st.cache_data(ttl=30)
+def load_direct_reference_question_runs():
+    query = """
+    MATCH (q:QuestionRun {
+        interaction_surface: 'DIRECT_DOCUMENT_ASK'
+    })
+    RETURN
+        q.question_run_id AS question_run_id,
+        q.analysis_id AS analysis_id,
+        q.information_class AS information_class,
+        q.scope_mode AS scope_mode,
+        coalesce(
+            q.direct_reference_document_ids,
+            []
+        ) AS direct_reference_document_ids,
+        q.model_selection AS model_selection,
+        q.interaction_surface AS interaction_surface,
+        true AS include_reference_context,
+        coalesce(q.model_keys, []) AS model_keys,
+        q.question_text AS question_text,
+        q.status AS status,
+        q.processing_stage AS processing_stage,
+        q.processing_error AS processing_error,
+        q.job_run_id AS job_run_id,
+        q.reference_retrieval_mode AS reference_retrieval_mode,
+        q.reference_retrieval_snapshot_id AS reference_retrieval_snapshot_id,
+        coalesce(
+            q.reference_retrieval_passage_ids,
+            []
+        ) AS reference_retrieval_passage_ids,
+        coalesce(
+            q.reference_context_passage_count,
+            0
+        ) AS reference_context_passage_count,
+        q.created_by AS created_by,
+        toString(q.created_at) AS created_at,
+        toString(q.completed_at) AS completed_at
+    ORDER BY q.created_at DESC
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(
+                query
+            )
+        ]
+
+
 def trigger_question_job(question_run_id):
     if not ASK_JOB_ID:
         raise RuntimeError(
@@ -2473,12 +2600,17 @@ def render_question_answer(
     if not layered_locations:
         return
 
-    source_by_id = {
-        source["document_id"]: source
-        for source in load_analysis_sources(
-            analysis_id
+    source_by_id = {}
+
+    if analysis_id:
+        source_by_id.update(
+            {
+                source["document_id"]: source
+                for source in load_analysis_sources(
+                    analysis_id
+                )
+            }
         )
-    }
 
     for reference_source in load_reference_documents():
         source_by_id[
