@@ -8406,10 +8406,13 @@ workflow**.
 The investigator can:
 
 - select governed documents or provide encrypted direct text;
-- state an investigation question/objective;
-- choose GPT-OSS 20B, Ollama-hosted Llama 3.3 70B, or both for Class D;
-- inspect independent evidence-grounded outputs;
-- compare both models side by side;
+- prepare a question-independent evidence/knowledge base;
+- ask scoped free-text questions later through Ask / Compare LLMs;
+- choose GPT-OSS 20B, Llama 3.3 70B, or both for Class D;
+- inspect independent evidence-grounded outputs with page citations;
+- compare models when useful;
+- human-review relationships and EMCIP mappings;
+- apply the two-gate human-controlled SHIELD workflow;
 - inspect privacy-validation results and generated knowledge graphs.
 
 Ollama Llama 3.3 70B is limited to
