@@ -1486,8 +1486,8 @@ SOURCE_EVIDENCE:
 - may support statements about what happened in the selected case.
 
 REFERENCE_CONTEXT:
-- legal, methodological or technical context from separately processed
-  Class-A material;
+- legal, methodological or technical context from the governed IKF
+  reference-context corpus;
 - may explain requirements, definitions, methods or technical background;
 - MUST NOT be used as proof that an event, condition, cause or factor occurred
   in the selected case.
