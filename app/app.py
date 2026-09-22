@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import urllib.error
 import urllib.parse
@@ -111,7 +112,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-model-scoped-human-review-v13"
+APP_BUILD = "2026-09-22-generic-emcip-review-v14"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -3538,8 +3539,8 @@ with tab_home:
             "documents. Compare model answers only when useful."
         )
         st.caption(
-            "Model comparison is already available; free-text scoped questioning "
-            "is the next backend integration slice."
+            "Scoped free-text questioning and optional model comparison are "
+            "implemented in source, with document/page citations."
         )
 
     c4, c5 = st.columns(2)
@@ -6180,33 +6181,194 @@ with tab_mapping_review:
     st.divider()
     st.markdown("### EMCIP mapping review")
     st.caption(
-        "EMCIP mappings will be loaded for the same selected analysis above. "
-        "The Commodore Clipper reference mappings are not used here."
+        "Assistant mappings are generated on demand from the governed MAIRA "
+        "EMCIP registry. The proposal never becomes authoritative until a "
+        "human validates or amends it."
     )
 
-    mapping_rows = []
-    latest_mapping_reviews = {}
+    try:
+        mapping_analyses = [
+            item
+            for item in load_analysis_groups()
+            if item.get("status") == "COMPLETED"
+        ]
+    except Exception as exc:
+        mapping_analyses = []
+        st.error(
+            "Completed analyses could not be loaded for EMCIP mapping."
+        )
+        st.exception(exc)
 
-    reviewed_mapping_keys = set(latest_mapping_reviews)
+    mapping_analysis_by_id = {
+        item["analysis_id"]: item
+        for item in mapping_analyses
+    }
+
+    mapping_analysis_id = (
+        st.selectbox(
+            "Analysis for EMCIP mapping",
+            options=list(mapping_analysis_by_id),
+            format_func=lambda value: (
+                f"{mapping_analysis_by_id[value]['analysis_title']} · "
+                f"Class {mapping_analysis_by_id[value].get('information_class') or '—'}"
+            ),
+            key="mapping_analysis_selector",
+        )
+        if mapping_analysis_by_id
+        else None
+    )
+
+    mapping_model_run_id = None
+    mapping_model_run = None
+
+    if mapping_analysis_id:
+        mapping_model_runs = [
+            item
+            for item in load_model_runs(mapping_analysis_id)
+            if item.get("status") == "COMPLETED"
+        ]
+
+        mapping_model_run_by_id = {
+            item["model_run_id"]: item
+            for item in mapping_model_runs
+        }
+
+        if mapping_model_run_by_id:
+            mapping_model_run_id = st.selectbox(
+                "Model graph to map",
+                options=list(mapping_model_run_by_id),
+                format_func=lambda value: (
+                    mapping_model_run_by_id[value].get("model_label")
+                    or mapping_model_run_by_id[value].get("model_key")
+                    or value
+                ),
+                key="mapping_model_run_selector",
+            )
+            mapping_model_run = mapping_model_run_by_id[
+                mapping_model_run_id
+            ]
+        else:
+            st.info(
+                "No completed model graph is available for this analysis."
+            )
+
+    action_left, action_right = st.columns([1, 1])
+
+    with action_left:
+        generate_mapping = st.button(
+            "Generate / refresh EMCIP proposals",
+            type="primary",
+            disabled=(
+                mapping_analysis_id is None
+                or mapping_model_run_id is None
+                or not EMCIP_MAPPING_JOB_ID
+            ),
+            key="generate_emcip_proposals",
+        )
+
+    with action_right:
+        refresh_mapping = st.button(
+            "Refresh mapping status",
+            disabled=(
+                mapping_analysis_id is None
+                or mapping_model_run_id is None
+            ),
+            key="refresh_emcip_mapping_status",
+        )
+
+    if not EMCIP_MAPPING_JOB_ID:
+        st.caption(
+            "The generic EMCIP proposal Job is not attached to this App "
+            "deployment yet. Source code is ready; runtime setup uses "
+            "resource key emcip_mapping_job."
+        )
+
+    if refresh_mapping:
+        load_emcip_mapping_proposals.clear()
+        load_latest_analysis_mapping_reviews.clear()
+        load_analysis_groups.clear()
+        st.toast("EMCIP mapping status refreshed")
+
+    if generate_mapping:
+        try:
+            mapping_job_run_id = trigger_emcip_mapping_job(
+                mapping_analysis_id,
+                mapping_model_run_id,
+            )
+            load_emcip_mapping_proposals.clear()
+            st.success(
+                "EMCIP proposal generation queued."
+            )
+            st.caption(
+                "Databricks run: " + mapping_job_run_id
+            )
+        except Exception as exc:
+            st.error(
+                "EMCIP proposal generation could not be queued."
+            )
+            st.exception(exc)
+
+    mapping_proposals = (
+        load_emcip_mapping_proposals(
+            mapping_analysis_id,
+            mapping_model_run_id,
+        )
+        if (
+            mapping_analysis_id
+            and mapping_model_run_id
+        )
+        else []
+    )
+
+    latest_mapping_reviews = (
+        load_latest_analysis_mapping_reviews(
+            mapping_analysis_id,
+            mapping_model_run_id,
+        )
+        if (
+            mapping_analysis_id
+            and mapping_model_run_id
+        )
+        else {}
+    )
+
+    reviewed_mapping_keys = set(
+        latest_mapping_reviews
+    )
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("Reviewable mappings", len(mapping_rows))
-    m2.metric("Human reviewed", len(reviewed_mapping_keys))
+    m1.metric(
+        "Mapping proposals",
+        len(mapping_proposals),
+    )
+    m2.metric(
+        "Human reviewed",
+        len(reviewed_mapping_keys),
+    )
     m3.metric(
         "Remaining",
-        max(0, len(mapping_rows) - len(reviewed_mapping_keys)),
+        max(
+            0,
+            len(mapping_proposals)
+            - len(reviewed_mapping_keys),
+        ),
     )
 
-    if not mapping_rows:
+    if (
+        mapping_analysis_id
+        and mapping_model_run_id
+        and not mapping_proposals
+    ):
         st.info(
-            "No EMCIP mapping candidates are currently published for this "
-            "analysis. The analysis-specific EMCIP mapping contract is pending."
+            "No generic EMCIP proposals are available for this analysis/model "
+            "graph yet. Generate them on demand above."
         )
-    else:
+
+    if mapping_proposals:
         def mapping_option_label(index):
-            mapping = mapping_rows[index]
+            proposal = mapping_proposals[index]
             latest_mapping = latest_mapping_reviews.get(
-                mapping["mapping_key"]
+                proposal["proposal_id"]
             )
 
             if latest_mapping:
@@ -6214,44 +6376,295 @@ with tab_mapping_review:
                     "VALIDATED": "✓",
                     "REJECTED": "✕",
                     "AMENDED": "✎",
-                }.get(latest_mapping["decision"], "•")
+                }.get(
+                    latest_mapping["decision"],
+                    "•",
+                )
                 prefix = f"{marker} "
             else:
                 prefix = ""
 
             return (
-                f"{prefix}{mapping['node_label']} "
-                f"→ {mapping['original_mapping']}"
+                f"{prefix}{proposal['node_kind']}: "
+                f"{proposal['node_label']} → "
+                f"{emcip_mapping_text(proposal)}"
             )
 
         selected_mapping_index = st.selectbox(
-            "Mapping",
-            options=list(range(len(mapping_rows))),
+            "Mapping proposal",
+            options=list(range(len(mapping_proposals))),
             format_func=mapping_option_label,
-            key="mapping_selector",
+            key="generic_mapping_selector",
         )
 
-        selected_mapping = mapping_rows[selected_mapping_index]
+        selected_mapping = mapping_proposals[
+            selected_mapping_index
+        ]
         latest_mapping = latest_mapping_reviews.get(
-            selected_mapping["mapping_key"]
+            selected_mapping["proposal_id"]
         )
 
-        st.markdown("**Case concept**")
-        st.write(selected_mapping["node_label"])
-
-        mc1, mc2 = st.columns(2)
+        mc1, mc2, mc3 = st.columns(3)
         with mc1:
+            st.markdown("**Concept**")
+            st.write(selected_mapping["node_label"])
+        with mc2:
             st.markdown("**Concept type**")
             st.write(selected_mapping["node_kind"])
-        with mc2:
-            st.markdown("**EMCIP entity**")
-            st.write(selected_mapping["proposed_emcip_entity"])
+        with mc3:
+            st.markdown("**Assistant status**")
+            st.write(
+                selected_mapping[
+                    "assistant_mapping_status"
+                ]
+            )
 
-        st.markdown("**Assistant mapping**")
-        st.info(selected_mapping["original_mapping"])
+        st.markdown("**Assistant EMCIP proposal**")
+        if (
+            selected_mapping[
+                "assistant_mapping_status"
+            ]
+            == "ASSISTANT_PROPOSED"
+        ):
+            st.info(
+                emcip_mapping_text(
+                    selected_mapping
+                )
+            )
+        else:
+            st.warning("NO_MAPPING")
 
-        st.markdown("**Assistant mapping disposition**")
-        st.write(selected_mapping["mapping_disposition"])
+        if selected_mapping.get("rationale"):
+            st.caption(
+                "Assistant rationale: "
+                + selected_mapping["rationale"]
+            )
+
+        st.caption(
+            "Proposal method: "
+            + (
+                selected_mapping.get("proposal_method")
+                or "—"
+            )
+            + " · Model: "
+            + (
+                selected_mapping.get("model_service")
+                or "—"
+            )
+        )
+
+        candidate_options = (
+            selected_mapping.get("candidate_options")
+            or []
+        )
+
+        with st.expander(
+            "Governed EMCIP shortlist",
+            expanded=False,
+        ):
+            if not candidate_options:
+                st.write(
+                    "No deterministic taxonomy candidates were available."
+                )
+            else:
+                for candidate in candidate_options:
+                    st.write(
+                        "• "
+                        + (
+                            candidate.get("entity_path")
+                            or candidate.get("entity_name")
+                            or "EMCIP"
+                        )
+                        + " → "
+                        + (
+                            candidate.get("attribute_name")
+                            or ""
+                        )
+                        + " → "
+                        + (
+                            candidate.get("code_value")
+                            or ""
+                        )
+                        + " ["
+                        + str(
+                            candidate.get("code_idcode")
+                            or "—"
+                        )
+                        + "]"
+                        + " · lexical/structural score "
+                        + str(candidate.get("score") or 0)
+                    )
+
+        st.markdown("**Source evidence for the concept**")
+        map_evidence_left, map_evidence_right = st.columns(
+            [1.0, 1.2]
+        )
+
+        with map_evidence_left:
+            map_refs = (
+                selected_mapping.get(
+                    "evidence_references"
+                )
+                or []
+            )
+            if map_refs:
+                for reference in map_refs:
+                    st.write(f"• {reference}")
+            else:
+                st.caption(
+                    "No page-level source reference is stored for this concept."
+                )
+
+            with st.expander(
+                "Technical provenance",
+                expanded=False,
+            ):
+                st.write(
+                    "Proposal ID:",
+                    selected_mapping["proposal_id"],
+                )
+                st.write(
+                    "Mapping version:",
+                    selected_mapping.get("mapping_version")
+                    or "—",
+                )
+                st.write(
+                    "Registry versions:",
+                    ", ".join(
+                        selected_mapping.get(
+                            "taxonomy_registry_versions"
+                        )
+                        or []
+                    )
+                    or "—",
+                )
+                for passage_id in (
+                    selected_mapping.get(
+                        "evidence_passage_ids"
+                    )
+                    or []
+                ):
+                    st.code(
+                        passage_id,
+                        language=None,
+                    )
+
+        with map_evidence_right:
+            map_locations = [
+                parsed
+                for parsed in (
+                    parse_evidence_location(value)
+                    for value in (
+                        selected_mapping.get(
+                            "evidence_locations"
+                        )
+                        or []
+                    )
+                )
+                if parsed is not None
+            ]
+
+            if map_locations:
+                map_sources = load_analysis_sources(
+                    mapping_analysis_id
+                )
+                map_source_by_id = {
+                    source["document_id"]: source
+                    for source in map_sources
+                }
+
+                map_location_index = st.selectbox(
+                    "Evidence page",
+                    options=list(
+                        range(len(map_locations))
+                    ),
+                    format_func=lambda index: format_evidence_location(
+                        map_locations[index],
+                        map_source_by_id.get(
+                            map_locations[index][
+                                "document_id"
+                            ]
+                        ),
+                    ),
+                    key=(
+                        "mapping_evidence_page_"
+                        + selected_mapping[
+                            "proposal_id"
+                        ]
+                    ),
+                )
+
+                map_location = map_locations[
+                    map_location_index
+                ]
+                map_source = map_source_by_id.get(
+                    map_location["document_id"]
+                )
+
+                if map_source:
+                    map_path = map_source.get(
+                        "viewer_source_path"
+                    )
+                    map_type = str(
+                        map_source.get("source_type")
+                        or ""
+                    ).upper()
+
+                    if (
+                        map_type == "PDF"
+                        and map_path
+                    ):
+                        try:
+                            map_pdf = download_source_file_as_user(
+                                map_path
+                            )
+                            map_excerpt = pdf_page_range_bytes(
+                                map_pdf,
+                                map_location.get(
+                                    "page_start"
+                                ),
+                                map_location.get(
+                                    "page_end"
+                                ),
+                            )
+                            st.pdf(
+                                map_excerpt,
+                                height=620,
+                                key=(
+                                    "mapping_pdf_"
+                                    + hashlib.sha256(
+                                        (
+                                            selected_mapping[
+                                                "proposal_id"
+                                            ]
+                                            + "|"
+                                            + map_path
+                                            + "|"
+                                            + str(
+                                                map_location.get(
+                                                    "page_start"
+                                                )
+                                            )
+                                        ).encode("utf-8")
+                                    ).hexdigest()[:16]
+                                ),
+                            )
+                        except PermissionError as exc:
+                            st.warning(str(exc))
+                        except Exception as exc:
+                            st.caption(
+                                "The cited source page could not be rendered: "
+                                + str(exc)
+                            )
+                    else:
+                        st.caption(
+                            "A citation exists, but this source is not "
+                            "available as an embedded PDF."
+                        )
+            else:
+                st.caption(
+                    "No page-level evidence location is stored for this concept."
+                )
 
         if latest_mapping:
             st.markdown("**Latest human review**")
@@ -6261,13 +6674,39 @@ with tab_mapping_review:
                 f"{latest_mapping['reviewer_email'] or latest_mapping['reviewer_username'] or 'unknown'}"
             )
 
-            if latest_mapping["amended_mapping"]:
+            if latest_mapping.get("amended_code_value"):
                 st.write(
-                    "Proposed amended mapping:",
-                    latest_mapping["amended_mapping"],
+                    "Human amendment:",
+                    (
+                        (
+                            latest_mapping.get(
+                                "amended_entity_path"
+                            )
+                            or "EMCIP"
+                        )
+                        + " → "
+                        + (
+                            latest_mapping.get(
+                                "amended_attribute_name"
+                            )
+                            or ""
+                        )
+                        + " → "
+                        + latest_mapping[
+                            "amended_code_value"
+                        ]
+                        + " ["
+                        + str(
+                            latest_mapping.get(
+                                "amended_code_idcode"
+                            )
+                            or "—"
+                        )
+                        + "]"
+                    ),
                 )
 
-            if latest_mapping["review_comment"]:
+            if latest_mapping.get("review_comment"):
                 st.write(
                     "Comment:",
                     latest_mapping["review_comment"],
@@ -6275,43 +6714,91 @@ with tab_mapping_review:
 
         st.divider()
 
-        if "mapping_review_flash" in st.session_state:
-            flash = st.session_state.pop("mapping_review_flash")
-            st.success(flash)
-
-        with st.form("emcip_mapping_review_form"):
+        with st.form(
+            (
+                "generic_emcip_review_form_"
+                + selected_mapping["proposal_id"]
+            )
+        ):
             mapping_decision = st.radio(
                 "Human mapping decision",
-                options=["VALIDATED", "REJECTED", "AMENDED"],
+                options=[
+                    "VALIDATED",
+                    "REJECTED",
+                    "AMENDED",
+                ],
                 horizontal=True,
-                key="mapping_decision",
+                key=(
+                    "generic_mapping_decision_"
+                    + selected_mapping["proposal_id"]
+                ),
             )
 
-            amended_mapping = None
-            if mapping_decision == "AMENDED":
-                amended_mapping = st.text_input(
-                    "Proposed amended EMCIP mapping",
-                    placeholder=(
-                        "Enter the replacement taxonomy path/value. "
-                        "It will be stored as a proposal and will not overwrite "
-                        "the original mapping."
-                    ),
-                    key="mapping_amended_value",
-                ).strip()
+            amended_candidate = None
 
-                if not amended_mapping:
-                    st.info(
-                        "An amended mapping value is required before an "
-                        "AMENDED review can be saved."
+            if mapping_decision == "AMENDED":
+                if candidate_options:
+                    amended_candidate_index = st.selectbox(
+                        "Replacement governed EMCIP candidate",
+                        options=list(
+                            range(len(candidate_options))
+                        ),
+                        format_func=lambda index: (
+                            (
+                                candidate_options[index].get(
+                                    "entity_path"
+                                )
+                                or "EMCIP"
+                            )
+                            + " → "
+                            + (
+                                candidate_options[index].get(
+                                    "attribute_name"
+                                )
+                                or ""
+                            )
+                            + " → "
+                            + (
+                                candidate_options[index].get(
+                                    "code_value"
+                                )
+                                or ""
+                            )
+                            + " ["
+                            + str(
+                                candidate_options[index].get(
+                                    "code_idcode"
+                                )
+                                or "—"
+                            )
+                            + "]"
+                        ),
+                        key=(
+                            "mapping_amend_candidate_"
+                            + selected_mapping[
+                                "proposal_id"
+                            ]
+                        ),
+                    )
+                    amended_candidate = candidate_options[
+                        amended_candidate_index
+                    ]
+                else:
+                    st.warning(
+                        "No governed shortlist candidate is available for "
+                        "an amended mapping."
                     )
 
             mapping_comment = st.text_area(
                 "Mapping review comment",
                 placeholder=(
-                    "Optional for validation; strongly recommended for rejection "
+                    "Optional for validation; recommended for rejection "
                     "or amendment."
                 ),
-                key="mapping_review_comment",
+                key=(
+                    "generic_mapping_comment_"
+                    + selected_mapping["proposal_id"]
+                ),
             )
 
             mapping_reviewer = get_reviewer_identity()
@@ -6321,12 +6808,13 @@ with tab_mapping_review:
                 else mapping_reviewer["username"]
             )
             st.caption(
-                f"Reviewer recorded as: {mapping_reviewer_display}"
+                "Reviewer recorded as: "
+                + mapping_reviewer_display
             )
 
             mapping_save_disabled = (
                 mapping_decision == "AMENDED"
-                and not amended_mapping
+                and amended_candidate is None
             )
 
             mapping_submitted = st.form_submit_button(
@@ -6337,48 +6825,35 @@ with tab_mapping_review:
 
         if mapping_submitted:
             try:
-                mapping_review_id = save_mapping_review(
+                mapping_review_id = save_analysis_mapping_review(
                     selected_mapping,
                     decision=mapping_decision,
-                    amended_mapping=amended_mapping,
+                    amended_candidate=amended_candidate,
                     comment=mapping_comment.strip(),
                 )
 
-                with get_driver().session() as session:
-                    persisted = session.run(
-                        """
-                        MATCH (r:EMCIPMappingReview {review_id: $review_id})
-                        RETURN
-                            r.human_review_decision AS decision,
-                            r.human_review_status AS status
-                        """,
-                        review_id=mapping_review_id,
-                    ).single()
+                load_latest_analysis_mapping_reviews.clear()
 
-                if persisted is None:
-                    raise RuntimeError(
-                        "The write returned a review ID but the review record "
-                        "could not be read back from Neo4j."
-                    )
-
-                st.session_state["mapping_review_flash"] = (
-                    f"Mapping review saved: {persisted['decision']} — "
-                    f"review ID {mapping_review_id}"
+                st.success(
+                    "Mapping review saved: "
+                    + mapping_decision
+                    + " — review ID "
+                    + mapping_review_id
                 )
                 st.rerun()
 
             except Exception as exc:
                 st.error(
-                    "The EMCIP mapping review could not be saved to Neo4j."
+                    "The generic EMCIP mapping review could not be saved."
                 )
                 st.exception(exc)
 
     st.divider()
     st.markdown("### SHIELD classification review")
     st.info(
-        "Coming next: after a contributing factor has been human validated, "
-        "the LLM may suggest a SHIELD classification here. The suggestion will "
-        "require a separate human validation before acceptance."
+        "Next: after a contributing factor has been human validated, "
+        "the LLM may suggest a SHIELD classification here. The suggestion "
+        "will require its own human validation before acceptance."
     )
 
 with tab_about:
