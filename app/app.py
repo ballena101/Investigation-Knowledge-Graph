@@ -308,7 +308,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-similar-maira-cases-v21"
+APP_BUILD = "2026-09-22-case-centric-gui-v22"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -356,59 +356,60 @@ or automatically convert AI output into an investigation conclusion.
 """
 )
 
-st.markdown("### AI models, confidentiality and Article 9 suitability")
-
-model_disclosure_rows = [
-    {
-        "Information class": "A — Public / technical",
-        "Model": "Meta Llama 3.3 70B Instruct",
-        "Serving route": "Databricks system.ai.meta-llama-3-3-70b-instruct",
-        "Confidentiality level": "Public / non-sensitive",
-        "Article 9 / Class D": "Not approved for protected Class D evidence",
-    },
-    {
-        "Information class": "B — Published investigation material",
-        "Model": "Meta Llama 3.3 70B Instruct",
-        "Serving route": "Databricks system.ai.meta-llama-3-3-70b-instruct",
-        "Confidentiality level": "Published / non-sensitive",
-        "Article 9 / Class D": "Not approved for protected Class D evidence",
-    },
-    {
-        "Information class": "C — Internal / restricted",
-        "Model": "OpenAI GPT-OSS 120B",
-        "Serving route": "Databricks-hosted system.ai.gpt-oss-120b",
-        "Confidentiality level": "Internal / restricted",
-        "Article 9 / Class D": "Not automatically approved for Article 9 evidence",
-    },
-    {
-        "Information class": "D — Protected / Article 9",
-        "Model": "OpenAI GPT-OSS 20B",
-        "Serving route": "Dedicated IKG Databricks endpoint",
-        "Confidentiality level": "Protected / confidential",
-        "Article 9 / Class D": "Conditionally suitable only after endpoint approval",
-    },
-    {
-        "Information class": "D — Protected / Article 9",
-        "Model": "Meta Llama 3.3 70B Instruct",
-        "Serving route": "Dedicated IKG Databricks endpoint",
-        "Confidentiality level": "Protected / confidential",
-        "Article 9 / Class D": "Conditionally suitable only after endpoint approval",
-    },
-]
-
-st.dataframe(
-    model_disclosure_rows,
-    use_container_width=True,
-    hide_index=True,
-)
-
-st.caption(
-    "Article 9 status shown here is a project processing classification, not a "
-    "legal certification. Class D model use remains blocked unless the dedicated "
-    "endpoint, access, networking, logging, retention and organisational/legal/"
-    "security approval are in place."
-)
-
+with st.expander(
+    "AI model routing and Article 9 suitability",
+    expanded=False,
+):
+    model_disclosure_rows = [
+        {
+            "Information class": "A — Public / technical",
+            "Model": "Meta Llama 3.3 70B Instruct",
+            "Serving route": "Databricks system.ai.meta-llama-3-3-70b-instruct",
+            "Confidentiality level": "Public / non-sensitive",
+            "Article 9 / Class D": "Not approved for protected Class D evidence",
+        },
+        {
+            "Information class": "B — Published investigation material",
+            "Model": "Meta Llama 3.3 70B Instruct",
+            "Serving route": "Databricks system.ai.meta-llama-3-3-70b-instruct",
+            "Confidentiality level": "Published / non-sensitive",
+            "Article 9 / Class D": "Not approved for protected Class D evidence",
+        },
+        {
+            "Information class": "C — Internal / restricted",
+            "Model": "OpenAI GPT-OSS 120B",
+            "Serving route": "Databricks-hosted system.ai.gpt-oss-120b",
+            "Confidentiality level": "Internal / restricted",
+            "Article 9 / Class D": "Not automatically approved for Article 9 evidence",
+        },
+        {
+            "Information class": "D — Protected / Article 9",
+            "Model": "OpenAI GPT-OSS 20B",
+            "Serving route": "Dedicated IKG Databricks endpoint",
+            "Confidentiality level": "Protected / confidential",
+            "Article 9 / Class D": "Conditionally suitable only after endpoint approval",
+        },
+        {
+            "Information class": "D — Protected / Article 9",
+            "Model": "Meta Llama 3.3 70B Instruct",
+            "Serving route": "Dedicated IKG Databricks endpoint",
+            "Confidentiality level": "Protected / confidential",
+            "Article 9 / Class D": "Conditionally suitable only after endpoint approval",
+        },
+    ]
+    
+    st.dataframe(
+        model_disclosure_rows,
+        use_container_width=True,
+        hide_index=True,
+    )
+    
+    st.caption(
+        "Article 9 status shown here is a project processing classification, not a "
+        "legal certification. Class D model use remains blocked unless the dedicated "
+        "endpoint, access, networking, logging, retention and organisational/legal/"
+        "security approval are in place."
+    )
 
 with st.expander(
     "Compliance, confidentiality and AI-use notice",
@@ -4757,6 +4758,132 @@ analysis_edge_styles = [
     ),
 ]
 
+
+# ACTIVE_ANALYSIS_CONTEXT
+#
+# One analysis is selected once and reused across Analyse Documents,
+# Findings & Knowledge, Ask / Compare and Review & Validate.
+try:
+    active_analysis_rows = load_analysis_groups()
+except Exception:
+    active_analysis_rows = []
+
+active_analysis_by_id = {
+    item["analysis_id"]: item
+    for item in active_analysis_rows
+}
+active_analysis_ids = list(
+    active_analysis_by_id
+)
+active_analysis_id = None
+active_analysis = None
+
+if active_analysis_ids:
+    if (
+        st.session_state.get(
+            "active_analysis_id"
+        )
+        not in active_analysis_by_id
+    ):
+        st.session_state[
+            "active_analysis_id"
+        ] = active_analysis_ids[0]
+
+    with st.sidebar:
+        st.markdown("### Active analysis")
+        active_analysis_id = st.selectbox(
+            "Use this analysis across the App",
+            options=active_analysis_ids,
+            format_func=lambda value: (
+                active_analysis_by_id[value][
+                    "analysis_title"
+                ]
+                + " · Class "
+                + str(
+                    active_analysis_by_id[
+                        value
+                    ].get(
+                        "information_class"
+                    )
+                    or "—"
+                )
+                + " · "
+                + str(
+                    active_analysis_by_id[
+                        value
+                    ].get(
+                        "status"
+                    )
+                    or "UNKNOWN"
+                )
+            ),
+            key="active_analysis_id",
+        )
+        st.caption(
+            "Change this once to switch the working case "
+            "throughout Analyse, Findings, Ask and Review."
+        )
+
+    active_analysis = (
+        active_analysis_by_id[
+            active_analysis_id
+        ]
+    )
+
+    with st.container(border=True):
+        h1, h2, h3, h4 = st.columns(
+            [2.2, 0.8, 0.9, 1.1]
+        )
+        with h1:
+            st.markdown(
+                "**Active analysis**  
+"
+                + str(
+                    active_analysis.get(
+                        "analysis_title"
+                    )
+                    or active_analysis_id
+                )
+            )
+            st.caption(
+                "ID: " + active_analysis_id
+            )
+        h2.metric(
+            "Class",
+            active_analysis.get(
+                "information_class"
+            )
+            or "—",
+        )
+        h3.metric(
+            "Sources",
+            (
+                "Text"
+                if active_analysis.get(
+                    "input_mode"
+                )
+                == "DIRECT_TEXT"
+                else str(
+                    active_analysis.get(
+                        "document_count"
+                    )
+                    or 0
+                )
+            ),
+        )
+        h4.metric(
+            "Status",
+            active_analysis.get(
+                "status"
+            )
+            or "UNKNOWN",
+        )
+else:
+    with st.sidebar:
+        st.markdown("### Active analysis")
+        st.caption(
+            "Create an analysis to establish a shared working case."
+        )
 
 (
     tab_home,
