@@ -49,11 +49,25 @@ from cryptography.fernet import Fernet
 from langdetect import DetectorFactory, LangDetectException, detect
 from neo4j import GraphDatabase
 from pyspark.sql import Row
+from pyspark.sql import functions as F
 
 DetectorFactory.seed = 0
 
 ANALYSIS_PASSAGE_TABLE = "bdw_analysis_prod.kg_poc.analysis_passage"
-EXTRACTION_VERSION = "EVIDENCE_EXTRACTION_V0.2"
+MAIRA_DOCUMENT_TABLE = "bdw_analysis_prod.maira.documents"
+MAIRA_PASSAGE_TABLE = "bdw_analysis_prod.maira.passages"
+EXTRACTION_VERSION = "EVIDENCE_EXTRACTION_V0.3_MAIRA_FIRST"
+
+try:
+    from maira.integration.ikf_passage_contract import (
+        PASSAGE_CONTRACT_VERSION,
+        build_ikf_passage_bridge,
+    )
+    MAIRA_CONTRACT_AVAILABLE = True
+except ModuleNotFoundError:
+    PASSAGE_CONTRACT_VERSION = "MAIRA_IKF_PASSAGE_V0.1"
+    build_ikf_passage_bridge = None
+    MAIRA_CONTRACT_AVAILABLE = False
 MAX_DOCUMENTS_PER_ANALYSIS = 5
 TARGET_PASSAGE_CHARS = 2400
 MAX_PASSAGE_CHARS = 3600
@@ -255,27 +269,144 @@ else:
             document["volume_path"],
         )
 
-# Document-only extraction dependencies are deliberately deferred. Direct text
-# should not pay the PyMuPDF/python-docx installation cost.
-if input_mode == "DOCUMENTS":
-    subprocess.check_call(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--quiet",
-            "pymupdf==1.26.4",
-            "python-docx==1.2.0",
-        ]
+def resolve_maira_document_route(document):
+    """Return the canonical MAIRA match for one IKF source document, if any."""
+
+    sha256 = str(document.get("sha256") or "").lower().strip()
+    if not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        raise ValueError(
+            f"Source document {document.get('document_id')} has no valid SHA-256."
+        )
+
+    if not (
+        spark.catalog.tableExists(MAIRA_DOCUMENT_TABLE)
+        and spark.catalog.tableExists(MAIRA_PASSAGE_TABLE)
+    ):
+        return {
+            "route": "IKF_LOCAL_FALLBACK",
+            "reason": "MAIRA tables unavailable",
+        }
+
+    matches = (
+        spark.table(MAIRA_DOCUMENT_TABLE)
+        .filter(F.lower(F.col("sha256")) == sha256)
+        .select(
+            "document_id",
+            "report_package_id",
+        )
+        .distinct()
+        .collect()
     )
-    import fitz  # PyMuPDF
-    from docx import Document as DocxDocument
+
+    if len(matches) > 1:
+        raise ValueError(
+            "Source SHA-256 matched more than one MAIRA document. "
+            "Failing closed rather than selecting an ambiguous canonical source."
+        )
+
+    if not matches:
+        return {
+            "route": "IKF_LOCAL_FALLBACK",
+            "reason": "No MAIRA document with this SHA-256",
+        }
+
+    if not MAIRA_CONTRACT_AVAILABLE:
+        raise RuntimeError(
+            "This document already exists in MAIRA, but the installed MAIRA "
+            "passage contract cannot be imported. Refusing to create a second "
+            "IKF passage identity."
+        )
+
+    match = matches[0]
+    return {
+        "route": "MAIRA_CANONICAL",
+        "maira_document_id": match["document_id"],
+        "report_package_id": match["report_package_id"],
+    }
+
+
+def load_maira_bridge_rows(document, route):
+    """Load and contract-validate canonical MAIRA passages for one document."""
+
+    rows = (
+        spark.table(MAIRA_PASSAGE_TABLE)
+        .filter(
+            F.col("document_id")
+            == route["maira_document_id"]
+        )
+        .select(
+            "report_package_id",
+            "document_id",
+            "passage_id",
+            "passage_number",
+            "start_page",
+            "end_page",
+            "passage_text",
+            "passage_text_sha256",
+            "chunking_method",
+            "chunking_version",
+        )
+        .orderBy("passage_number")
+        .collect()
+    )
+
+    if not rows:
+        raise ValueError(
+            "The matched MAIRA document has no canonical passages."
+        )
+
+    bridges = []
+    for row in rows:
+        bridge = build_ikf_passage_bridge(
+            row.asDict(recursive=True),
+            analysis_id=analysis_id,
+            ikf_document_id=document["document_id"],
+            source_document_sha256=document["sha256"],
+        )
+        bridges.append(bridge)
+
+    return bridges
+
+
+document_routes = {}
+
+if input_mode == "DOCUMENTS":
+    for document in documents:
+        route = resolve_maira_document_route(document)
+        document_routes[document["document_id"]] = route
+        print(
+            "Evidence route:",
+            document["filename"],
+            "→",
+            route["route"],
+        )
+
+    needs_local_document_parser = any(
+        route["route"] == "IKF_LOCAL_FALLBACK"
+        for route in document_routes.values()
+    )
+
+    if needs_local_document_parser:
+        subprocess.check_call(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--quiet",
+                "pymupdf==1.26.4",
+                "python-docx==1.2.0",
+            ]
+        )
+        import fitz  # PyMuPDF
+        from docx import Document as DocxDocument
+    else:
+        fitz = None
+        DocxDocument = None
 else:
     fitz = None
     DocxDocument = None
 
-# COMMAND ----------
 
 LANGUAGE_NAMES = {
     "af": "Afrikaans",
@@ -571,11 +702,27 @@ try:
         pages_total = 1
         documents_total = 1
     else:
-        pages_total = sum(
-            count_document_pages(document)
-            for document in documents
-        )
+        pages_total = 0
         documents_total = len(documents)
+
+        for document in documents:
+            route = document_routes[document["document_id"]]
+
+            if route["route"] == "MAIRA_CANONICAL":
+                maira_page_row = (
+                    spark.table(MAIRA_PASSAGE_TABLE)
+                    .filter(
+                        F.col("document_id")
+                        == route["maira_document_id"]
+                    )
+                    .agg(F.max("end_page").alias("page_count"))
+                    .first()
+                )
+                pages_total += int(
+                    maira_page_row["page_count"] or 0
+                )
+            else:
+                pages_total += count_document_pages(document)
 
     update_analysis_status(
         status="EXTRACTING",
@@ -662,101 +809,192 @@ try:
         )
 
     else:
+        maira_document_count = 0
+        local_fallback_count = 0
+
         for document in documents:
             print("")
-            print("Extracting:", document["filename"])
+            route = document_routes[document["document_id"]]
 
-            pages = extract_document(document)
-            document_text = []
-            document_passage_count = 0
-            passage_order = 0
+            if route["route"] == "MAIRA_CANONICAL":
+                print("Using MAIRA canonical passages:", document["filename"])
 
-            for page in pages:
-                page_number = page["page_number"]
-                page_text = page["text"]
+                bridges = load_maira_bridge_rows(
+                    document,
+                    route,
+                )
+                document_passage_count = len(bridges)
+                document_page_count = max(
+                    int(item["page_end"])
+                    for item in bridges
+                )
+                document_languages = []
 
-                if page_text:
-                    document_text.append(page_text)
-
-                chunks = split_text(page_text)
-
-                for chunk in chunks:
-                    passage_order += 1
-                    text_sha256 = hashlib.sha256(
-                        chunk.encode("utf-8")
-                    ).hexdigest()
+                for bridge in bridges:
+                    language = detect_language_name(
+                        bridge["passage_text"]
+                    )
+                    document_languages.append(language)
 
                     passage_rows.append(
                         Row(
                             analysis_id=analysis_id,
                             document_id=document["document_id"],
-                            passage_id=passage_id_for(
-                                document["document_id"],
-                                page_number,
-                                passage_order,
-                                text_sha256,
-                            ),
-                            page_start=page_number,
-                            page_end=page_number,
-                            passage_order=passage_order,
-                            passage_text=chunk,
-                            text_sha256=text_sha256,
-                            extraction_version=EXTRACTION_VERSION,
+                            passage_id=bridge["passage_id"],
+                            page_start=int(bridge["page_start"]),
+                            page_end=int(bridge["page_end"]),
+                            passage_order=int(bridge["passage_order"]),
+                            passage_text=bridge["passage_text"],
+                            text_sha256=bridge["text_sha256"],
+                            extraction_version=PASSAGE_CONTRACT_VERSION,
                             created_at=created_at,
-                            detected_language=detect_language_name(
-                                chunk
-                            ),
+                            detected_language=language,
                         )
                     )
 
-                    document_passage_count += 1
+                valid_languages = [
+                    value
+                    for value in document_languages
+                    if value not in {None, "UNKNOWN"}
+                ]
+                document_language = (
+                    Counter(valid_languages).most_common(1)[0][0]
+                    if valid_languages
+                    else "UNKNOWN"
+                )
 
-                pages_processed += 1
+                pages_processed += document_page_count
+                documents_processed += 1
+                maira_document_count += 1
 
-                if (
-                    pages_processed % 10 == 0
-                    or pages_processed == pages_total
-                ):
-                    update_analysis_status(
-                        status="EXTRACTING",
-                        stage="EXTRACTING",
-                        documents_total=documents_total,
-                        documents_processed=documents_processed,
-                        pages_total=pages_total,
-                        pages_processed=pages_processed,
-                        passages_total=len(passage_rows),
-                    )
+                with driver.session() as session:
+                    session.run(
+                        """
+                        MATCH (d:SourceDocument {
+                            document_id: $document_id
+                        })
+                        SET
+                            d.detected_language = $detected_language,
+                            d.page_count = $page_count,
+                            d.passage_count = $passage_count,
+                            d.extraction_status = 'MAIRA_CANONICAL',
+                            d.extraction_version = $extraction_version,
+                            d.maira_document_id = $maira_document_id,
+                            d.maira_report_package_id = $report_package_id,
+                            d.passage_contract_version = $passage_contract_version,
+                            d.extracted_at = datetime()
+                        """,
+                        document_id=document["document_id"],
+                        detected_language=document_language,
+                        page_count=document_page_count,
+                        passage_count=document_passage_count,
+                        extraction_version=PASSAGE_CONTRACT_VERSION,
+                        maira_document_id=route["maira_document_id"],
+                        report_package_id=route["report_package_id"],
+                        passage_contract_version=PASSAGE_CONTRACT_VERSION,
+                    ).consume()
 
-            full_document_text = "\n\n".join(
-                document_text
-            )
+                print(
+                    "  MAIRA document:",
+                    route["maira_document_id"],
+                    "| pages:",
+                    document_page_count,
+                    "| passages:",
+                    document_passage_count,
+                )
 
-            document_language = detect_language_name(
-                full_document_text
-            )
+            else:
+                print(
+                    "Using temporary IKF local fallback:",
+                    document["filename"],
+                )
+                print("  reason:", route["reason"])
 
-            with driver.session() as session:
-                session.run(
-                    """
-                    MATCH (d:SourceDocument {
-                        document_id: $document_id
-                    })
-                    SET
-                        d.detected_language = $detected_language,
-                        d.page_count = $page_count,
-                        d.passage_count = $passage_count,
-                        d.extraction_status = 'EXTRACTED',
-                        d.extraction_version = $extraction_version,
-                        d.extracted_at = datetime()
-                    """,
-                    document_id=document["document_id"],
-                    detected_language=document_language,
-                    page_count=len(pages),
-                    passage_count=document_passage_count,
-                    extraction_version=EXTRACTION_VERSION,
-                ).consume()
+                pages = extract_document(document)
+                document_text = []
+                document_passage_count = 0
+                passage_order = 0
 
-            documents_processed += 1
+                for page in pages:
+                    page_number = page["page_number"]
+                    page_text = page["text"]
+
+                    if page_text:
+                        document_text.append(page_text)
+
+                    chunks = split_text(page_text)
+
+                    for chunk in chunks:
+                        passage_order += 1
+                        text_sha256 = hashlib.sha256(
+                            chunk.encode("utf-8")
+                        ).hexdigest()
+
+                        passage_rows.append(
+                            Row(
+                                analysis_id=analysis_id,
+                                document_id=document["document_id"],
+                                passage_id=passage_id_for(
+                                    document["document_id"],
+                                    page_number,
+                                    passage_order,
+                                    text_sha256,
+                                ),
+                                page_start=page_number,
+                                page_end=page_number,
+                                passage_order=passage_order,
+                                passage_text=chunk,
+                                text_sha256=text_sha256,
+                                extraction_version=EXTRACTION_VERSION,
+                                created_at=created_at,
+                                detected_language=detect_language_name(
+                                    chunk
+                                ),
+                            )
+                        )
+                        document_passage_count += 1
+
+                    pages_processed += 1
+
+                full_document_text = "\n\n".join(
+                    document_text
+                )
+                document_language = detect_language_name(
+                    full_document_text
+                )
+
+                with driver.session() as session:
+                    session.run(
+                        """
+                        MATCH (d:SourceDocument {
+                            document_id: $document_id
+                        })
+                        SET
+                            d.detected_language = $detected_language,
+                            d.page_count = $page_count,
+                            d.passage_count = $passage_count,
+                            d.extraction_status = 'IKF_LOCAL_FALLBACK',
+                            d.extraction_version = $extraction_version,
+                            d.extracted_at = datetime()
+                        """,
+                        document_id=document["document_id"],
+                        detected_language=document_language,
+                        page_count=len(pages),
+                        passage_count=document_passage_count,
+                        extraction_version=EXTRACTION_VERSION,
+                    ).consume()
+
+                documents_processed += 1
+                local_fallback_count += 1
+
+                print(
+                    "  pages:",
+                    len(pages),
+                    "| passages:",
+                    document_passage_count,
+                    "| language:",
+                    document_language,
+                )
 
             update_analysis_status(
                 status="EXTRACTING",
@@ -768,14 +1006,12 @@ try:
                 passages_total=len(passage_rows),
             )
 
-            print(
-                "  pages:",
-                len(pages),
-                "| passages:",
-                document_passage_count,
-                "| language:",
-                document_language,
-            )
+        print(
+            "Document evidence routes — MAIRA canonical:",
+            maira_document_count,
+            "| IKF local fallback:",
+            local_fallback_count,
+        )
 
     if passage_rows:
         passage_schema = spark.table(
@@ -838,6 +1074,20 @@ try:
         3,
     )
 
+    if input_mode == "DIRECT_TEXT":
+        evidence_source_mode = "IKF_DIRECT_TEXT"
+    else:
+        route_values = {
+            route["route"]
+            for route in document_routes.values()
+        }
+        if route_values == {"MAIRA_CANONICAL"}:
+            evidence_source_mode = "MAIRA_CANONICAL"
+        elif "MAIRA_CANONICAL" in route_values:
+            evidence_source_mode = "MAIRA_FIRST_MIXED"
+        else:
+            evidence_source_mode = "IKF_LOCAL_FALLBACK"
+
     with driver.session() as session:
         session.run(
             """
@@ -855,6 +1105,7 @@ try:
                 a.detected_language = $detected_language,
                 a.extraction_version = $extraction_version,
                 a.extraction_duration_seconds = $extraction_duration_seconds,
+                a.evidence_source_mode = $evidence_source_mode,
                 a.evidence_ready_at = datetime(),
                 a.processing_updated_at = datetime(),
                 a.processing_error = NULL
@@ -868,6 +1119,7 @@ try:
             detected_language=dominant_language,
             extraction_version=EXTRACTION_VERSION,
             extraction_duration_seconds=extraction_duration_seconds,
+            evidence_source_mode=evidence_source_mode,
         ).consume()
 
     print("")
@@ -877,6 +1129,7 @@ try:
     print("pages:", pages_processed, "/", pages_total)
     print("passages:", len(passage_rows))
     print("dominant passage language:", dominant_language)
+    print("evidence source mode:", evidence_source_mode)
     print("extraction duration seconds:", extraction_duration_seconds)
 
 except Exception as exc:
