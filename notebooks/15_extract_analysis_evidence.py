@@ -40,6 +40,7 @@ extraction_notebook_started = time.perf_counter()
 import hashlib
 import os
 import re
+from collections.abc import Mapping
 import subprocess
 import sys
 from collections import Counter
@@ -56,18 +57,182 @@ DetectorFactory.seed = 0
 ANALYSIS_PASSAGE_TABLE = "bdw_analysis_prod.kg_poc.analysis_passage"
 MAIRA_DOCUMENT_TABLE = "bdw_analysis_prod.maira.documents"
 MAIRA_PASSAGE_TABLE = "bdw_analysis_prod.maira.passages"
-EXTRACTION_VERSION = "EVIDENCE_EXTRACTION_V0.3_MAIRA_FIRST"
+EXTRACTION_VERSION = "EVIDENCE_EXTRACTION_V0.4_MAIRA_FIRST"
 
 try:
     from maira.integration.ikf_passage_contract import (
         PASSAGE_CONTRACT_VERSION,
         build_ikf_passage_bridge,
     )
-    MAIRA_CONTRACT_AVAILABLE = True
+    MAIRA_CONTRACT_SOURCE = "MAIRA_PACKAGE"
 except ModuleNotFoundError:
+    # Cross-repository runtime compatibility.
+    #
+    # The automated IKF job is not guaranteed to have the separate MAIRA repo
+    # on sys.path. Keep the stable V0.1 contract executable locally rather than
+    # creating a second passage identity or failing an otherwise valid MAIRA
+    # analysis. This implementation mirrors the authoritative MAIRA contract
+    # exactly and is validated by notebook 25.
     PASSAGE_CONTRACT_VERSION = "MAIRA_IKF_PASSAGE_V0.1"
-    build_ikf_passage_bridge = None
-    MAIRA_CONTRACT_AVAILABLE = False
+    MAIRA_CONTRACT_SOURCE = "IKF_COMPATIBILITY_FALLBACK"
+
+    MAIRA_PASSAGE_FIELDS = (
+        "report_package_id",
+        "document_id",
+        "passage_id",
+        "passage_number",
+        "start_page",
+        "end_page",
+        "passage_text",
+        "passage_text_sha256",
+        "chunking_method",
+        "chunking_version",
+    )
+    IKF_BRIDGE_FIELDS = (
+        "passage_contract_version",
+        "analysis_id",
+        "ikf_document_id",
+        "maira_document_id",
+        "report_package_id",
+        "passage_id",
+        "passage_order",
+        "page_start",
+        "page_end",
+        "passage_text",
+        "text_sha256",
+        "source_document_sha256",
+        "chunking_method",
+        "chunking_version",
+    )
+    _CONTRACT_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+    def _contract_required_text(value, field):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"MAIRA passage contract: {field} must be non-blank text"
+            )
+        return value
+
+    def _contract_sha256(value, field):
+        text = _contract_required_text(
+            value,
+            field,
+        ).lower()
+        if not _CONTRACT_SHA256.fullmatch(text):
+            raise ValueError(
+                f"MAIRA passage contract: {field} must be a 64-character SHA-256"
+            )
+        return text
+
+    def _contract_positive_int(value, field):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < 1
+        ):
+            raise ValueError(
+                f"MAIRA passage contract: {field} must be a positive integer"
+            )
+        return value
+
+    def build_ikf_passage_bridge(
+        row: Mapping,
+        *,
+        analysis_id,
+        ikf_document_id,
+        source_document_sha256,
+    ):
+        missing = [
+            field
+            for field in MAIRA_PASSAGE_FIELDS
+            if field not in row
+        ]
+        if missing:
+            raise ValueError(
+                "MAIRA passage contract: missing fields: "
+                + ", ".join(missing)
+            )
+
+        passage = {
+            field: row[field]
+            for field in MAIRA_PASSAGE_FIELDS
+        }
+
+        for field in (
+            "report_package_id",
+            "document_id",
+            "passage_id",
+            "passage_text",
+            "chunking_method",
+            "chunking_version",
+        ):
+            passage[field] = _contract_required_text(
+                passage[field],
+                field,
+            )
+
+        passage["passage_number"] = _contract_positive_int(
+            passage["passage_number"],
+            "passage_number",
+        )
+        passage["start_page"] = _contract_positive_int(
+            passage["start_page"],
+            "start_page",
+        )
+        passage["end_page"] = _contract_positive_int(
+            passage["end_page"],
+            "end_page",
+        )
+
+        if passage["end_page"] < passage["start_page"]:
+            raise ValueError(
+                "MAIRA passage contract: end_page cannot precede start_page"
+            )
+
+        supplied_hash = _contract_sha256(
+            passage["passage_text_sha256"],
+            "passage_text_sha256",
+        )
+        calculated_hash = hashlib.sha256(
+            passage["passage_text"].encode("utf-8")
+        ).hexdigest()
+
+        if supplied_hash != calculated_hash:
+            raise ValueError(
+                "MAIRA passage contract: passage_text_sha256 does not match "
+                "the exact passage_text"
+            )
+
+        bridge = {
+            "passage_contract_version": PASSAGE_CONTRACT_VERSION,
+            "analysis_id": _contract_required_text(
+                analysis_id,
+                "analysis_id",
+            ),
+            "ikf_document_id": _contract_required_text(
+                ikf_document_id,
+                "ikf_document_id",
+            ),
+            "maira_document_id": passage["document_id"],
+            "report_package_id": passage["report_package_id"],
+            "passage_id": passage["passage_id"],
+            "passage_order": passage["passage_number"],
+            "page_start": passage["start_page"],
+            "page_end": passage["end_page"],
+            "passage_text": passage["passage_text"],
+            "text_sha256": supplied_hash,
+            "source_document_sha256": _contract_sha256(
+                source_document_sha256,
+                "source_document_sha256",
+            ),
+            "chunking_method": passage["chunking_method"],
+            "chunking_version": passage["chunking_version"],
+        }
+
+        return {
+            field: bridge[field]
+            for field in IKF_BRIDGE_FIELDS
+        }
 MAX_DOCUMENTS_PER_ANALYSIS = 5
 TARGET_PASSAGE_CHARS = 2400
 MAX_PASSAGE_CHARS = 3600
@@ -81,6 +246,8 @@ if not re.fullmatch(r"analysis_[0-9a-f]{32}", analysis_id):
     )
 
 print("Analysis:", analysis_id)
+print("MAIRA passage contract:", PASSAGE_CONTRACT_VERSION)
+print("MAIRA contract source:", MAIRA_CONTRACT_SOURCE)
 
 # COMMAND ----------
 
@@ -312,13 +479,6 @@ def resolve_maira_document_route(document):
             "reason": "No MAIRA document with this SHA-256",
         }
 
-    if not MAIRA_CONTRACT_AVAILABLE:
-        raise RuntimeError(
-            "This document already exists in MAIRA, but the installed MAIRA "
-            "passage contract cannot be imported. Refusing to create a second "
-            "IKF passage identity."
-        )
-
     match = matches[0]
     return {
         "route": "MAIRA_CANONICAL",
@@ -374,42 +534,52 @@ def load_maira_bridge_rows(document, route):
 
 document_routes = {}
 
-if input_mode == "DOCUMENTS":
-    for document in documents:
-        route = resolve_maira_document_route(document)
-        document_routes[document["document_id"]] = route
-        print(
-            "Evidence route:",
-            document["filename"],
-            "→",
-            route["route"],
+try:
+    if input_mode == "DOCUMENTS":
+        for document in documents:
+            route = resolve_maira_document_route(document)
+            document_routes[document["document_id"]] = route
+            print(
+                "Evidence route:",
+                document["filename"],
+                "→",
+                route["route"],
+            )
+
+        needs_local_document_parser = any(
+            route["route"] == "IKF_LOCAL_FALLBACK"
+            for route in document_routes.values()
         )
 
-    needs_local_document_parser = any(
-        route["route"] == "IKF_LOCAL_FALLBACK"
-        for route in document_routes.values()
-    )
-
-    if needs_local_document_parser:
-        subprocess.check_call(
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "--quiet",
-                "pymupdf==1.26.4",
-                "python-docx==1.2.0",
-            ]
-        )
-        import fitz  # PyMuPDF
-        from docx import Document as DocxDocument
+        if needs_local_document_parser:
+            subprocess.check_call(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--quiet",
+                    "pymupdf==1.26.4",
+                    "python-docx==1.2.0",
+                ]
+            )
+            import fitz  # PyMuPDF
+            from docx import Document as DocxDocument
+        else:
+            fitz = None
+            DocxDocument = None
     else:
         fitz = None
         DocxDocument = None
-else:
-    fitz = None
-    DocxDocument = None
+
+except Exception as exc:
+    update_analysis_status(
+        status="FAILED",
+        stage="PREPARE_EVIDENCE_FAILED",
+        error_message=f"{type(exc).__name__}: {exc}",
+    )
+    driver.close()
+    raise
 
 
 LANGUAGE_NAMES = {
