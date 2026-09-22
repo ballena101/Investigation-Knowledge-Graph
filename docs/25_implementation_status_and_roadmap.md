@@ -652,3 +652,31 @@ form-submit line; it is treated as a secondary symptom of the runtime/library
 mismatch rather than as evidence that the source form lacked a submit button.
 
 Status: **code/documentation complete; runtime validation pending redeploy**.
+
+
+### Case-centric GUI refinement
+
+Implemented in source on 2026-09-22:
+
+- added one persistent **Active analysis** selector shared across Analyse,
+  Findings, Ask and Review;
+- added compact active-analysis header with class/source/status context;
+- newly created analyses are handed off safely to the shared active context on
+  the next rerun;
+- Analyse Documents results now support category filtering and side-by-side
+  description/evidence presentation;
+- extracted items are visibly **AI identified / candidate** unless human
+  validation has occurred;
+- Contributing Factors show human-validated state only when the current
+  relationship review confirms `CONTRIBUTED_TO`;
+- Ask now uses explicit document-scope labels and a visible Question scope
+  summary;
+- normal model-route details are collapsed;
+- global model-routing/Article-9 matrix is collapsed by default;
+- Review & Validate is explicitly ordered as Relationship → EMCIP → SHIELD;
+- technical relationship provenance is collapsed;
+- backup branch created:
+  `backup/pre-case-centric-gui-2026-09-22`.
+
+Status: **code/documentation complete; runtime validation pending one
+redeployment**.
