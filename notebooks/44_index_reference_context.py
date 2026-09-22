@@ -1,20 +1,20 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # 44 — Index IKF reference-context documents
+# MAGIC # 44 — Index IKF authoritative REFERENCE_CONTEXT
 # MAGIC
-# MAGIC Creates a governed REFERENCE_CONTEXT corpus for legal, IMO and
-# MAGIC methodological/technical reference material.
+# MAGIC Builds a governed REFERENCE_CONTEXT corpus from:
 # MAGIC
-# MAGIC This corpus is deliberately separate from:
-# MAGIC - occurrence SOURCE_EVIDENCE;
-# MAGIC - EMCIP CONTROLLED_TAXONOMY;
-# MAGIC - SHIELD classification material.
+# MAGIC 1. the Git-governed authoritative-source registry
+# MAGIC    `config/reference_sources.json`; and
+# MAGIC 2. optional manually supplied PDF/TXT/MD/DOCX files in the reference
+# MAGIC    volume.
 # MAGIC
-# MAGIC Expected volume root:
-# MAGIC `/Volumes/bdw_analysis_prod/kg_poc/reference_context`
+# MAGIC Registry URLs remain the authoritative provenance. Remote content is
+# MAGIC snapshotted into the governed Volume and indexed from that immutable
+# MAGIC captured content so retrieval remains reproducible and page-citable.
 # MAGIC
-# MAGIC The notebook is safe to run when the folder does not yet exist: it
-# MAGIC reports the missing source root and exits without modifying case data.
+# MAGIC REFERENCE_CONTEXT remains separate from SOURCE_EVIDENCE, EMCIP
+# MAGIC CONTROLLED_TAXONOMY and SHIELD.
 
 # COMMAND ----------
 
@@ -23,8 +23,10 @@
 # COMMAND ----------
 
 import hashlib
+import json
 import os
 import re
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -32,7 +34,6 @@ import fitz
 from docx import Document as DocxDocument
 from neo4j import GraphDatabase
 from pyspark.sql import Row
-from pyspark.sql import functions as F
 from pyspark.sql.types import (
     IntegerType,
     StringType,
@@ -44,6 +45,10 @@ from pyspark.sql.types import (
 REFERENCE_VOLUME_ROOT = (
     "/Volumes/bdw_analysis_prod/kg_poc/reference_context"
 )
+SNAPSHOT_ROOT = os.path.join(
+    REFERENCE_VOLUME_ROOT,
+    "_snapshots",
+)
 REFERENCE_DOCUMENT_TABLE = (
     "bdw_analysis_prod.kg_poc.reference_document"
 )
@@ -52,8 +57,9 @@ REFERENCE_PASSAGE_TABLE = (
 )
 
 SOURCE_LAYER = "REFERENCE_CONTEXT"
-INDEX_VERSION = "IKF_REFERENCE_CONTEXT_V0.1"
+INDEX_VERSION = "IKF_REFERENCE_CONTEXT_V0.2"
 CHUNKING_VERSION = "REFERENCE_PAGE_CHUNK_V0.1"
+REGISTRY_VERSION_EXPECTED = "IKF_REFERENCE_SOURCE_REGISTRY_V0.1"
 
 SUPPORTED_SUFFIXES = {
     ".pdf",
@@ -62,21 +68,47 @@ SUPPORTED_SUFFIXES = {
     ".docx",
 }
 
+# Resolve the Git-backed registry next to this notebook's repository.
+current_notebook = (
+    dbutils.notebook.entry_point
+    .getDbutils()
+    .notebook()
+    .getContext()
+    .notebookPath()
+    .get()
+)
+repo_root = current_notebook.rsplit(
+    "/notebooks/",
+    1,
+)[0]
+REGISTRY_PATH = (
+    "/Workspace"
+    + repo_root
+    + "/config/reference_sources.json"
+)
+
 # COMMAND ----------
 
 document_schema = StructType(
     [
         StructField("reference_document_id", StringType(), False),
+        StructField("registry_key", StringType(), True),
         StructField("filename", StringType(), False),
         StructField("file_path", StringType(), False),
         StructField("file_sha256", StringType(), False),
         StructField("source_type", StringType(), False),
         StructField("source_layer", StringType(), False),
+        StructField("source_authority", StringType(), True),
+        StructField("canonical_url", StringType(), True),
+        StructField("snapshot_url", StringType(), True),
+        StructField("retrieval_origin", StringType(), False),
+        StructField("source_language", StringType(), True),
         StructField("reference_family", StringType(), False),
         StructField("reference_code", StringType(), True),
         StructField("reference_title", StringType(), True),
         StructField("page_count", IntegerType(), True),
         StructField("index_version", StringType(), False),
+        StructField("retrieved_at", TimestampType(), True),
         StructField("indexed_at", TimestampType(), False),
     ]
 )
@@ -230,46 +262,252 @@ def extract_pages(path):
 
     return []
 
+
+def download_snapshot(source):
+    snapshot_url = str(
+        source.get("snapshot_url")
+        or ""
+    ).strip()
+    filename = str(
+        source.get("snapshot_filename")
+        or ""
+    ).strip()
+
+    if not snapshot_url or not filename:
+        raise ValueError(
+            "Registry source requires snapshot_url and snapshot_filename: "
+            + str(source.get("registry_key"))
+        )
+
+    request = urllib.request.Request(
+        snapshot_url,
+        headers={
+            "User-Agent": (
+                "IKF-ReferenceContext/0.2 "
+                "(governed evidence snapshot)"
+            )
+        },
+    )
+
+    with urllib.request.urlopen(
+        request,
+        timeout=60,
+    ) as response:
+        data = response.read()
+
+    if not data:
+        raise ValueError(
+            "Downloaded empty authoritative source: "
+            + snapshot_url
+        )
+
+    expected_type = str(
+        source.get("source_type")
+        or ""
+    ).upper()
+
+    if (
+        expected_type == "PDF"
+        and not data.startswith(b"%PDF")
+    ):
+        raise ValueError(
+            "Authoritative snapshot is not a PDF: "
+            + snapshot_url
+        )
+
+    os.makedirs(
+        SNAPSHOT_ROOT,
+        exist_ok=True,
+    )
+    path = os.path.join(
+        SNAPSHOT_ROOT,
+        filename,
+    )
+
+    with open(path, "wb") as handle:
+        handle.write(data)
+
+    return path, data
+
+
+def load_registry():
+    if not os.path.isfile(REGISTRY_PATH):
+        raise FileNotFoundError(
+            "Reference-source registry not found: "
+            + REGISTRY_PATH
+        )
+
+    with open(
+        REGISTRY_PATH,
+        "r",
+        encoding="utf-8",
+    ) as handle:
+        payload = json.load(handle)
+
+    version = payload.get(
+        "registry_version"
+    )
+
+    if version != REGISTRY_VERSION_EXPECTED:
+        raise ValueError(
+            "Unexpected reference registry version: "
+            + str(version)
+        )
+
+    sources = payload.get("sources") or []
+
+    keys = [
+        source.get("registry_key")
+        for source in sources
+    ]
+
+    if (
+        not sources
+        or any(not key for key in keys)
+        or len(keys) != len(set(keys))
+    ):
+        raise ValueError(
+            "Reference registry must contain unique non-empty registry_key values."
+        )
+
+    return sources
+
 # COMMAND ----------
 
 if not os.path.isdir(REFERENCE_VOLUME_ROOT):
     print("Reference-context volume does not exist yet:")
     print(REFERENCE_VOLUME_ROOT)
-    print("")
-    print("Create it and place governed legal/IMO/technical reference files there.")
     dbutils.notebook.exit("REFERENCE_CONTEXT_ROOT_NOT_FOUND")
 
-paths = sorted(
+registry_sources = load_registry()
+
+print(
+    "Authoritative registry sources:",
+    len(registry_sources),
+)
+print(
+    "Registry:",
+    REGISTRY_PATH,
+)
+
+retrieved_at = datetime.now(timezone.utc)
+
+prepared_sources = []
+
+for source in registry_sources:
+    path, file_bytes = download_snapshot(
+        source
+    )
+
+    prepared_sources.append(
+        {
+            "path": path,
+            "file_bytes": file_bytes,
+            "registry_key": source["registry_key"],
+            "source_authority": source.get(
+                "source_authority"
+            ),
+            "canonical_url": source.get(
+                "canonical_url"
+            ),
+            "snapshot_url": source.get(
+                "snapshot_url"
+            ),
+            "retrieval_origin": "AUTHORITATIVE_URL",
+            "source_language": source.get(
+                "language"
+            ),
+            "reference_family": source.get(
+                "reference_family"
+            ),
+            "reference_code": source.get(
+                "reference_code"
+            ),
+            "reference_title": source.get(
+                "reference_title"
+            ),
+            "source_type": source.get(
+                "source_type"
+            ),
+            "retrieved_at": retrieved_at,
+        }
+    )
+
+# Optional manually governed files remain supported. Snapshot files created
+# above are deliberately excluded from this scan to avoid duplicate documents.
+manual_paths = sorted(
     str(path)
     for path in Path(REFERENCE_VOLUME_ROOT).rglob("*")
     if path.is_file()
+    and "_snapshots" not in path.parts
     and path.suffix.casefold() in SUPPORTED_SUFFIXES
 )
 
-print("Reference files found:", len(paths))
-
-if not paths:
-    dbutils.notebook.exit("NO_REFERENCE_CONTEXT_DOCUMENTS")
-
-# COMMAND ----------
-
-created_at = datetime.now(timezone.utc)
-document_rows = []
-passage_rows = []
-
-for path in paths:
+for path in manual_paths:
     with open(path, "rb") as handle:
         file_bytes = handle.read()
 
-    file_sha256 = sha256_bytes(file_bytes)
-    filename = os.path.basename(path)
-
-    reference_document_id = (
-        "refdoc_" + file_sha256[:24]
+    family, code, title = classify_reference(
+        os.path.basename(path)
     )
 
-    family, code, title = classify_reference(
-        filename
+    prepared_sources.append(
+        {
+            "path": path,
+            "file_bytes": file_bytes,
+            "registry_key": None,
+            "source_authority": None,
+            "canonical_url": None,
+            "snapshot_url": None,
+            "retrieval_origin": "GOVERNED_LOCAL_FILE",
+            "source_language": None,
+            "reference_family": family,
+            "reference_code": code,
+            "reference_title": title,
+            "source_type": Path(path).suffix.lstrip(".").upper(),
+            "retrieved_at": None,
+        }
+    )
+
+print(
+    "Manual governed files:",
+    len(manual_paths),
+)
+print(
+    "Total reference sources prepared:",
+    len(prepared_sources),
+)
+
+if not prepared_sources:
+    dbutils.notebook.exit(
+        "NO_REFERENCE_CONTEXT_DOCUMENTS"
+    )
+
+# COMMAND ----------
+
+indexed_at = datetime.now(timezone.utc)
+document_rows = []
+passage_rows = []
+
+for source in prepared_sources:
+    path = source["path"]
+    file_bytes = source["file_bytes"]
+    file_sha256 = sha256_bytes(
+        file_bytes
+    )
+    filename = os.path.basename(path)
+
+    identity_seed = (
+        str(source.get("registry_key") or "LOCAL")
+        + "|"
+        + file_sha256
+    )
+
+    reference_document_id = (
+        "refdoc_"
+        + hashlib.sha256(
+            identity_seed.encode("utf-8")
+        ).hexdigest()[:24]
     )
 
     pages = extract_pages(path)
@@ -278,7 +516,9 @@ for path in paths:
     for page in pages:
         page_number = page["page_number"]
 
-        for chunk in split_text(page["text"]):
+        for chunk in split_text(
+            page["text"]
+        ):
             passage_number += 1
             text_hash = hashlib.sha256(
                 chunk.encode("utf-8")
@@ -309,29 +549,65 @@ for path in paths:
                     passage_text_sha256=text_hash,
                     source_layer=SOURCE_LAYER,
                     chunking_version=CHUNKING_VERSION,
-                    created_at=created_at,
+                    created_at=indexed_at,
                 )
             )
 
     document_rows.append(
         Row(
             reference_document_id=reference_document_id,
+            registry_key=source.get(
+                "registry_key"
+            ),
             filename=filename,
             file_path=path,
             file_sha256=file_sha256,
-            source_type=Path(path).suffix.lstrip(".").upper(),
+            source_type=str(
+                source.get("source_type")
+                or Path(path).suffix.lstrip(".")
+            ).upper(),
             source_layer=SOURCE_LAYER,
-            reference_family=family,
-            reference_code=code,
-            reference_title=title,
+            source_authority=source.get(
+                "source_authority"
+            ),
+            canonical_url=source.get(
+                "canonical_url"
+            ),
+            snapshot_url=source.get(
+                "snapshot_url"
+            ),
+            retrieval_origin=source[
+                "retrieval_origin"
+            ],
+            source_language=source.get(
+                "source_language"
+            ),
+            reference_family=source[
+                "reference_family"
+            ],
+            reference_code=source.get(
+                "reference_code"
+            ),
+            reference_title=source.get(
+                "reference_title"
+            ),
             page_count=len(pages),
             index_version=INDEX_VERSION,
-            indexed_at=created_at,
+            retrieved_at=source.get(
+                "retrieved_at"
+            ),
+            indexed_at=indexed_at,
         )
     )
 
-print("Reference documents prepared:", len(document_rows))
-print("Reference passages prepared:", len(passage_rows))
+print(
+    "Reference documents prepared:",
+    len(document_rows),
+)
+print(
+    "Reference passages prepared:",
+    len(passage_rows),
+)
 
 # COMMAND ----------
 
@@ -342,16 +618,44 @@ spark.createDataFrame(
     "tmp_ikf_reference_document"
 )
 
-spark.sql(
-    f"""
-    CREATE TABLE IF NOT EXISTS {REFERENCE_DOCUMENT_TABLE}
-    USING DELTA
-    AS
-    SELECT *
-    FROM tmp_ikf_reference_document
-    WHERE 1 = 0
-    """
-)
+if not spark.catalog.tableExists(
+    REFERENCE_DOCUMENT_TABLE
+):
+    spark.sql(
+        f"""
+        CREATE TABLE {REFERENCE_DOCUMENT_TABLE}
+        USING DELTA
+        AS
+        SELECT *
+        FROM tmp_ikf_reference_document
+        WHERE 1 = 0
+        """
+    )
+else:
+    existing_columns = {
+        field.name
+        for field in spark.table(
+            REFERENCE_DOCUMENT_TABLE
+        ).schema.fields
+    }
+    required_column_sql = {
+        "registry_key": "STRING",
+        "source_authority": "STRING",
+        "canonical_url": "STRING",
+        "snapshot_url": "STRING",
+        "retrieval_origin": "STRING",
+        "source_language": "STRING",
+        "retrieved_at": "TIMESTAMP",
+    }
+
+    for column_name, column_type in required_column_sql.items():
+        if column_name not in existing_columns:
+            spark.sql(
+                f"""
+                ALTER TABLE {REFERENCE_DOCUMENT_TABLE}
+                ADD COLUMNS ({column_name} {column_type})
+                """
+            )
 
 spark.sql(
     f"""
@@ -393,8 +697,8 @@ spark.sql(
 
 # COMMAND ----------
 
-# Mirror compact reference metadata into Neo4j for App discovery only.
-# Passage text remains in Delta.
+# Mirror compact reference metadata into Neo4j for App catalogue and viewer
+# resolution only. Passage text remains governed in Delta.
 
 NEO4J_URI = dbutils.secrets.get(
     scope="kg-poc-app",
@@ -411,7 +715,10 @@ NEO4J_PASSWORD = dbutils.secrets.get(
 
 driver = GraphDatabase.driver(
     NEO4J_URI,
-    auth=(NEO4J_USERNAME, NEO4J_PASSWORD),
+    auth=(
+        NEO4J_USERNAME,
+        NEO4J_PASSWORD,
+    ),
 )
 driver.verify_connectivity()
 
@@ -426,18 +733,26 @@ with driver.session() as session:
     ).consume()
 
     for row in document_rows:
-        values = row.asDict(recursive=True)
+        values = row.asDict(
+            recursive=True
+        )
         session.run(
             """
             MERGE (d:ReferenceDocument {
                 reference_document_id: $reference_document_id
             })
             SET
+                d.registry_key = $registry_key,
                 d.filename = $filename,
                 d.file_path = $file_path,
                 d.file_sha256 = $file_sha256,
                 d.source_type = $source_type,
                 d.source_layer = 'REFERENCE_CONTEXT',
+                d.source_authority = $source_authority,
+                d.canonical_url = $canonical_url,
+                d.snapshot_url = $snapshot_url,
+                d.retrieval_origin = $retrieval_origin,
+                d.source_language = $source_language,
                 d.reference_family = $reference_family,
                 d.reference_code = $reference_code,
                 d.reference_title = $reference_title,
@@ -447,6 +762,7 @@ with driver.session() as session:
                 d.viewer_source_path = $file_path,
                 d.viewer_source_filename = $filename,
                 d.catalogue_status = 'AVAILABLE',
+                d.retrieved_at = $retrieved_at,
                 d.indexed_at = datetime()
             """,
             **values,
@@ -454,8 +770,37 @@ with driver.session() as session:
 
 driver.close()
 
+# COMMAND ----------
+
 print("")
-print("PASS — IKF REFERENCE_CONTEXT CORPUS INDEXED")
-print("Documents:", len(document_rows))
-print("Passages:", len(passage_rows))
-print("Source layer:", SOURCE_LAYER)
+print(
+    "PASS — IKF AUTHORITATIVE REFERENCE_CONTEXT CORPUS INDEXED"
+)
+print(
+    "Registry version:",
+    REGISTRY_VERSION_EXPECTED,
+)
+print(
+    "Authoritative URL sources:",
+    len(registry_sources),
+)
+print(
+    "Manual governed sources:",
+    len(manual_paths),
+)
+print(
+    "Documents:",
+    len(document_rows),
+)
+print(
+    "Passages:",
+    len(passage_rows),
+)
+print(
+    "Snapshot root:",
+    SNAPSHOT_ROOT,
+)
+print(
+    "Source layer:",
+    SOURCE_LAYER,
+)
