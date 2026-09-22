@@ -109,7 +109,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-authorized-source-viewer-v5"
+APP_BUILD = "2026-09-22-unified-document-catalogue-v6"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -858,6 +858,10 @@ def format_evidence_location(location, source):
 def load_source_documents():
     query = """
     MATCH (d:SourceDocument)
+    WHERE coalesce(
+        properties(d)["catalogue_status"],
+        "AVAILABLE"
+    ) = "AVAILABLE"
     RETURN
         d.document_id AS document_id,
         d.filename AS filename,
@@ -867,18 +871,89 @@ def load_source_documents():
         d.byte_size AS byte_size,
         d.sha256 AS sha256,
         coalesce(
+            properties(d)["source_managed_by"],
+            "IKF"
+        ) AS source_managed_by,
+        coalesce(
+            properties(d)["source_repository"],
+            properties(d)["source_managed_by"],
+            "IKF"
+        ) AS source_repository,
+        properties(d)["maira_report_package_id"] AS maira_report_package_id,
+        properties(d)["maira_document_role"] AS maira_document_role,
+        properties(d)["report_title"] AS report_title,
+        properties(d)["vessel_name"] AS vessel_name,
+        coalesce(
             properties(d)["detected_language"],
             "PENDING"
         ) AS detected_language,
         toString(d.indexed_at) AS indexed_at
-    ORDER BY d.filename, d.volume_path
+    ORDER BY
+        CASE
+            WHEN coalesce(
+                properties(d)["source_managed_by"],
+                "IKF"
+            ) = "MAIRA"
+            THEN 0
+            ELSE 1
+        END,
+        coalesce(
+            properties(d)["report_title"],
+            d.filename
+        ),
+        d.filename
     """
 
     with get_driver().session() as session:
-        return [
+        rows = [
             record.data()
             for record in session.run(query)
         ]
+
+    # The same physical report can temporarily exist in both catalogues during
+    # migration. Prefer the MAIRA canonical catalogue entry for identical SHA.
+    by_sha = {}
+    without_sha = []
+
+    for row in rows:
+        sha256 = str(row.get("sha256") or "").lower().strip()
+
+        if not sha256:
+            without_sha.append(row)
+            continue
+
+        existing = by_sha.get(sha256)
+
+        if existing is None:
+            by_sha[sha256] = row
+            continue
+
+        existing_is_maira = (
+            existing.get("source_managed_by") == "MAIRA"
+        )
+        row_is_maira = (
+            row.get("source_managed_by") == "MAIRA"
+        )
+
+        if row_is_maira and not existing_is_maira:
+            by_sha[sha256] = row
+
+    deduplicated = list(by_sha.values()) + without_sha
+
+    return sorted(
+        deduplicated,
+        key=lambda item: (
+            0
+            if item.get("source_managed_by") == "MAIRA"
+            else 1,
+            (
+                item.get("report_title")
+                or item.get("filename")
+                or ""
+            ).casefold(),
+            (item.get("filename") or "").casefold(),
+        ),
+    )
 
 
 def create_analysis_from_documents(
@@ -941,16 +1016,37 @@ def create_analysis_from_documents(
          d.first_indexed_at + duration({hours: $content_retention_hours}) AS requested_expiry
     SET
         d.source_expires_at = CASE
-            WHEN d.source_expires_at IS NULL THEN requested_expiry
-            WHEN requested_expiry < d.source_expires_at THEN requested_expiry
+            WHEN coalesce(
+                properties(d)["source_managed_by"],
+                "IKF"
+            ) = "MAIRA"
+            THEN NULL
+            WHEN d.source_expires_at IS NULL
+            THEN requested_expiry
+            WHEN requested_expiry < d.source_expires_at
+            THEN requested_expiry
             ELSE d.source_expires_at
         END,
         d.source_retention_hours = CASE
-            WHEN d.source_retention_hours IS NULL THEN $content_retention_hours
-            WHEN $content_retention_hours < d.source_retention_hours THEN $content_retention_hours
+            WHEN coalesce(
+                properties(d)["source_managed_by"],
+                "IKF"
+            ) = "MAIRA"
+            THEN NULL
+            WHEN d.source_retention_hours IS NULL
+            THEN $content_retention_hours
+            WHEN $content_retention_hours < d.source_retention_hours
+            THEN $content_retention_hours
             ELSE d.source_retention_hours
         END,
-        d.source_purge_status = 'ACTIVE'
+        d.source_purge_status = CASE
+            WHEN coalesce(
+                properties(d)["source_managed_by"],
+                "IKF"
+            ) = "MAIRA"
+            THEN "EXEMPT_MAIRA_CANONICAL"
+            ELSE "ACTIVE"
+        END
     WITH a, count(d) AS linked_documents, sum(coalesce(d.byte_size, 0)) AS source_bytes_total
     SET
         a.document_count = linked_documents,
@@ -2687,16 +2783,34 @@ with tab_new_analysis:
 
     def source_document_label(document_id):
         document = documents_by_id[document_id]
-        relative = (
-            document.get("relative_path")
-            or document.get("volume_path")
-            or ""
+        repository = (
+            document.get("source_managed_by")
+            or "IKF"
         )
         source_type = document.get("source_type") or "FILE"
-        language = document.get("detected_language") or "language pending"
+        language = (
+            document.get("detected_language")
+            or "language pending"
+        )
+
+        if repository == "MAIRA":
+            role = (
+                document.get("maira_document_role")
+                or "INVESTIGATION"
+            )
+            title = (
+                document.get("report_title")
+                or document.get("vessel_name")
+                or document.get("filename")
+            )
+            return (
+                f"[MAIRA · {role}] {title} · "
+                f"{document['filename']} · {source_type}"
+            )
+
         return (
-            f"{document['filename']} · {source_type} · "
-            f"{language} · {relative}"
+            f"[IKF] {document['filename']} · "
+            f"{source_type} · {language}"
         )
 
     input_mode = st.radio(
@@ -2853,8 +2967,17 @@ with tab_new_analysis:
         direct_text = ""
 
         if input_mode == "Documents":
+            maira_available = sum(
+                1
+                for document in source_documents
+                if document.get("source_managed_by") == "MAIRA"
+            )
+            ikf_available = len(source_documents) - maira_available
+
             st.caption(
-                f"Select 1–{MAX_DOCUMENTS_PER_ANALYSIS} indexed source documents."
+                f"Available catalogue: {maira_available} MAIRA investigation "
+                f"document(s) · {ikf_available} IKF input document(s). "
+                f"Select 1–{MAX_DOCUMENTS_PER_ANALYSIS}."
             )
             selected_document_ids = st.multiselect(
                 "Available documents",
