@@ -192,6 +192,21 @@ for item in expired:
         session.run(
             """
             MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+            OPTIONAL MATCH (a)-[:HAS_SHIELD_PROPOSAL]->(p:ShieldProposal)
+            REMOVE
+                p.rationale,
+                p.shield_passage_ids,
+                p.shield_references,
+                p.shield_locations
+            SET
+                p.derived_content_purged_at = datetime()
+            """,
+            analysis_id=analysis_id,
+        ).consume()
+
+        session.run(
+            """
+            MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
             REMOVE
                 a.analysis_summary,
                 a.key_findings,
