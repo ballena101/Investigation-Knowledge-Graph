@@ -1095,6 +1095,68 @@ def get_analysis_job_run(run_id):
         return None
 
 
+def render_async_job_status(
+    run_id,
+    label="Background process",
+):
+    """Show a compact Databricks run state for an async App action."""
+
+    if not run_id:
+        return
+
+    run_info = get_analysis_job_run(
+        run_id
+    )
+
+    if not run_info:
+        st.caption(
+            label
+            + " · Databricks run "
+            + str(run_id)
+            + " · status unavailable"
+        )
+        return
+
+    state = run_info.get(
+        "state"
+    ) or {}
+    life_cycle_state = (
+        state.get(
+            "life_cycle_state"
+        )
+        or state.get(
+            "life_cycle_state_message"
+        )
+        or "UNKNOWN"
+    )
+    result_state = (
+        state.get(
+            "result_state"
+        )
+        or ""
+    )
+
+    st.caption(
+        label
+        + " · "
+        + str(
+            life_cycle_state
+        )
+        + (
+            " · "
+            + str(
+                result_state
+            )
+            if result_state
+            else ""
+        )
+        + " · run "
+        + str(
+            run_id
+        )
+    )
+
+
 def get_user_access_token():
     """Return the Databricks OBO token forwarded to the Streamlit App."""
 
@@ -7122,9 +7184,13 @@ with tab_findings:
                                 )
 
                 with st.expander(
-                    "Technical details",
+                    "Technical provenance (advanced)",
                     expanded=False,
                 ):
+                    st.caption(
+                        "Internal traceability used for audit, validation and "
+                        "reproducibility. It is not needed for normal evidence review."
+                    )
                     if selected_evidence[
                         "passage_ids"
                     ]:
