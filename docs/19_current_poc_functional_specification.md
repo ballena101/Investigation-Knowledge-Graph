@@ -794,3 +794,64 @@ Class A/C/D → IKF document library
 
 This routing is implemented in code but remains pending runtime/deployment
 validation in the next scheduled App test.
+
+
+## 2D. Separate document analysis from investigator questions
+
+The App separates evidence preparation/analysis from later investigator
+questions.
+
+### Analyse Documents
+
+Purpose:
+- choose information classification;
+- select the governed source documents or direct text;
+- create the evidence passages;
+- extract question-independent concepts/relationships;
+- build the candidate knowledge structure and graph.
+
+The document-analysis stage must **not** be optimised around one user question.
+
+New analyses therefore use:
+- analysis title;
+- optional analysis description;
+- no analysis-time question/objective.
+
+The description is metadata only and must not steer evidence extraction.
+
+### Ask / Compare LLMs
+
+Questions belong to a separate capability after an evidence set has been
+processed.
+
+Target question scopes:
+1. whole case / analysis;
+2. one source document;
+3. selected source documents.
+
+The investigator enters free text, for example:
+
+`What factors contributed to the contact with the quay?`
+
+The answer must:
+- be grounded only in the selected evidence scope;
+- show report/document references;
+- show page or page-range references;
+- preserve passage IDs for technical provenance;
+- allow direct inspection of the cited source page;
+- state when the selected evidence does not support an answer.
+
+Normal single-model questioning is the default interaction. Model comparison is
+optional and uses the same question and same evidence scope for each compared
+model.
+
+This design prevents the initial question from shaping the case graph and lets
+investigators ask multiple questions against the same processed evidence
+without rebuilding the case.
+
+Implementation status:
+- analysis-time question removed from the new-analysis UI;
+- analysis backend made question-independent;
+- Compare LLMs renamed to Ask / Compare LLMs;
+- scoped free-text question execution backend remains the next implementation
+  slice.
