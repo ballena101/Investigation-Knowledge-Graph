@@ -565,3 +565,54 @@ Access-control assumption:
 - opening the News & Alerts dashboard does not bypass Databricks permissions;
 - dashboard access remains restricted to users authorised for that dashboard
   and its underlying data.
+
+
+## 13. Clean generic App-run findings — 2026-09-22
+
+The first clean Class-B direct-text App run exposed three implementation issues
+that are now treated as explicit PoC checkpoints.
+
+### Status refresh navigation
+
+The Compare LLMs status refresh previously called a full Streamlit rerun. With
+ordinary `st.tabs`, that returned the visible UI to the first tab.
+
+The Compare LLMs body now runs as a Streamlit fragment. Refresh clears the
+relevant cached analysis/status data and reruns only that fragment, preserving
+the user's workflow position.
+
+### Direct-text extraction latency
+
+Notebook 15 previously installed PDF, DOCX, language, encryption and Neo4j
+dependencies and explicitly restarted Python on every run, including
+two-sentence direct-text tests.
+
+The direct-text path now:
+- installs only the core Neo4j/language/encryption dependencies;
+- skips PyMuPDF and python-docx unless the analysis uses documents;
+- omits the unnecessary explicit Python restart before first import;
+- records `extraction_duration_seconds` on the AnalysisGroup.
+
+The App exposes this measured duration. Queue/startup delay before the task
+begins remains separate.
+
+This is an interim optimisation. The longer-term architecture remains the
+MAIRA-first passage path defined above.
+
+### Explicit vessel representation
+
+The LLM node vocabulary already allowed `Vessel`, but did not guarantee a
+vessel node when the source explicitly used a generic singular reference such
+as "the vessel".
+
+Notebook 16 now applies a deterministic completion rule after model resolution:
+- when the evidence explicitly refers to one generic subject vessel and the
+  model emitted no Vessel node, add a `Subject vessel` node;
+- infer no vessel name, identity or characteristics;
+- connect that vessel to evidence-linked Event nodes with the structural
+  relationship `INVOLVED_IN`;
+- mark those links `edge_class = STRUCTURAL`;
+- exclude structural links from semantic relationship human-review queues.
+
+This adds graph completeness without converting sequence or involvement into
+causality.
