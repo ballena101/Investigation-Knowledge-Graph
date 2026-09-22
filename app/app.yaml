@@ -25,6 +25,9 @@ env:
   - name: EMCIP_MAPPING_JOB_ID
     valueFrom: emcip_mapping_job
 
+  - name: SHIELD_PROPOSAL_JOB_ID
+    valueFrom: shield_proposal_job
+
   - name: CLASS_D_GPT20_ENDPOINT
     valueFrom: class_d_gpt20_endpoint
 
