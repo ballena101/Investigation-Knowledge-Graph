@@ -54,6 +54,13 @@ SUPPORTED_EXTENSIONS = {
     ".txt",
 }
 
+# Persistent governed resources inside the volume are not ordinary case inputs.
+# They are indexed by their dedicated workflows and must never inherit the
+# transient SourceDocument retention policy.
+RESERVED_TOP_LEVEL_FOLDERS = {
+    "SHIELD",
+}
+
 # Prefer existing notebook variables if they are already defined.
 try:
     NEO4J_URI
@@ -100,7 +107,19 @@ def sha256_file(path, chunk_size=1024 * 1024):
 def discover_documents(root):
     rows = []
 
-    for current_root, _, filenames in os.walk(root):
+    for current_root, dirnames, filenames in os.walk(root):
+        relative_root = os.path.relpath(
+            current_root,
+            root,
+        )
+
+        if relative_root == ".":
+            dirnames[:] = [
+                dirname
+                for dirname in dirnames
+                if dirname not in RESERVED_TOP_LEVEL_FOLDERS
+            ]
+
         for filename in filenames:
             if filename == "manifest.json":
                 continue
@@ -189,9 +208,40 @@ with driver.session() as session:
 
 print("Neo4j constraints: ready")
 
+# Reserve any SHIELD files that may have been indexed by an older generic
+# source-library run. Do not delete the source files or historical metadata.
+with driver.session() as session:
+    reserved = session.run(
+        """
+        MATCH (d:SourceDocument)
+        WHERE d.library_root = $library_root
+          AND (
+              d.relative_path STARTS WITH 'SHIELD/'
+              OR d.relative_path STARTS WITH 'SHIELD\\'
+          )
+        SET
+            d.catalogue_status = 'RESERVED_TAXONOMY',
+            d.source_managed_by = 'IKF_SHIELD',
+            d.source_repository = 'IKF_SHIELD',
+            d.source_retention_hours = NULL,
+            d.source_expires_at = NULL,
+            d.source_purge_status = 'EXEMPT_PERSISTENT_TAXONOMY',
+            d.reserved_from_generic_catalogue_at = datetime()
+        RETURN count(d) AS reserved_count
+        """,
+        library_root=library_root,
+    ).single()
+
+print(
+    "Previously indexed SHIELD documents reserved:",
+    int(reserved["reserved_count"] or 0)
+    if reserved
+    else 0,
+)
+
 # COMMAND ----------
 
-INDEX_VERSION = "SOURCE_LIBRARY_V0.2"
+INDEX_VERSION = "SOURCE_LIBRARY_V0.3_RESERVED_FOLDERS"
 DEFAULT_SOURCE_RETENTION_HOURS = 72
 
 query = """
@@ -281,6 +331,10 @@ print(
 print("")
 print("DOCUMENT LIBRARY READY")
 print("Documents available to App:", len(indexed_ids))
+print(
+    "Reserved persistent folders excluded:",
+    sorted(RESERVED_TOP_LEVEL_FOLDERS),
+)
 print("")
 print(
     "Next: redeploy/open the App and use New analysis → "
