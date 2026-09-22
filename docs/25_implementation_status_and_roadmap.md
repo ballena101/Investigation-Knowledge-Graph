@@ -142,7 +142,29 @@ and human-validated knowledge distinct.
 
 ## 3. NEXT — current milestone
 
-### Validate repaired MAIRA document run
+### Build scoped free-text Ask / Compare backend
+
+Implement the question runner for already processed evidence sets.
+
+Required interaction:
+1. choose one completed analysis/case;
+2. choose evidence scope:
+   - whole case;
+   - one source document;
+   - selected source documents;
+3. enter a free-text question;
+4. run the default model, or optionally compare models;
+5. return a grounded answer with document + page/page-range citations;
+6. preserve supporting passage IDs;
+7. allow direct opening of the cited source page in the Evidence viewer;
+8. keep question execution separate from the case graph construction.
+
+The question runner must reuse the governed MAIRA evidence/retrieval stack where
+applicable and must not introduce a second canonical passage/retrieval system.
+
+### Consolidated runtime validation after Ask backend is ready
+
+Validate repaired MAIRA document run
 
 1. Pull current `main`.
 2. Redeploy the App if App code changed since the active deployment.
@@ -156,34 +178,33 @@ and human-validated knowledge distinct.
 9. Run notebook 34 with the governed query used for the next retrieval test
    (Q003 is the current default) and require:
    `PASS — GOVERNED MAIRA RETRIEVAL DATA PREFLIGHT`.
+10. Run notebook 35 and require:
+    `PASS — SOURCE VIEWER METADATA AND PAGE RANGES ARE VALID`.
+11. Confirm the App renders the cited source PDF page after the metadata PASS.
 
-These validations are the gate before activating governed MAIRA retrieval in
-the normal App workflow.
+These validations are the gate before relying on governed question answering
+and source-page rendering in the normal App workflow.
 
 ## 4. PENDING — planned implementation sequence
 
-### P1 — searchable document selector
+### P1 — scoped free-text Ask / Compare execution
 
-Add search/filter to Available documents so the investigator can quickly find
-the relevant source within the **active classification-specific catalogue**:
+- Persist each question as its own run, separate from the analysis/case.
+- Scope to whole case, one document or selected documents.
+- Single-model answer by default.
+- Optional same-question/same-evidence model comparison.
+- Always return document/page citations and passage provenance.
+- Do not rebuild the graph merely because a new question is asked.
 
-- Class B: search MAIRA investigation material by report title, vessel,
-  filename and document role;
-- Classes A/C/D: search the IKF-managed library by filename/title and available
-  metadata.
+### P2 — governed MAIRA retrieval in question execution
 
-Do not search across both repositories after classification has selected the
-source domain, and do not create another source-ownership index.
-
-### P2 — governed MAIRA query/retrieval in normal App analyses
-
-- Reuse MAIRA governed query specifications and terminology.
-- Reuse MAIRA lexical/governed retrieval functions rather than creating an IKF
-  retrieval stack.
+- Reuse MAIRA governed query specifications and terminology where applicable.
+- Reuse MAIRA deterministic retrieval/relationship modules rather than creating
+  an IKF retrieval stack.
 - Apply only human-validated terminology normalisations.
-- Preserve deterministic retrieval snapshots for benchmarkable analyses.
-- Keep free-text investigator questions separate from governed query-spec
-  execution unless a governed mapping is explicit and traceable.
+- Preserve deterministic retrieval snapshots for benchmarkable questions.
+- Keep arbitrary free-text questions distinct from governed query-spec
+  execution unless a traceable governed mapping exists.
 
 ### P3 — generic human relationship review
 
@@ -245,7 +266,6 @@ source domain, and do not create another source-ownership index.
 
 ## 5. Deferred UI improvements
 
-- Search/filter in Available documents.
 - Potential catalogue grouping by MAIN_REPORT / ANNEX / APPENDIX.
 - Faster browse for larger MAIRA repositories.
 - Optional direct jump from answer citations to the matching Evidence-sheet
@@ -284,6 +304,18 @@ Status: **code complete; runtime validation intentionally deferred** to avoid an
 additional App deployment/run before the next planned validation session.
 
 
+### Searchable classification-scoped document selector
+
+Implemented in code:
+- the Available documents multiselect now supports typing/filtering;
+- Class B searches only MAIRA investigation material;
+- Classes A/C/D search only IKF-managed documents;
+- no cross-repository search is performed after classification selects the
+  source domain.
+
+Status: code complete; runtime validation deferred.
+
+
 ### Question-independent analysis UX
 
 Implemented in code:
@@ -306,6 +338,10 @@ Implemented in code:
   rerun is required.
 
 ### Source viewer validation gap
+
+- Added read-only notebook `35_validate_source_viewer_metadata.py` to validate
+  source paths, PDF readability, evidence locations and page-range validity
+  before App rendering is tested.
 
 The PDF-viewer implementation is present in code and uses:
 - Databricks user authorization;
