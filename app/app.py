@@ -3475,9 +3475,16 @@ def render_compare_llms():
             f"{INFORMATION_CLASSES.get(class_value, {}).get('label', class_value)}"
         )
 
-        if selected_analysis.get("analysis_objective"):
-            st.markdown("**Objective / question**")
-            st.write(selected_analysis["analysis_objective"])
+        if selected_analysis.get("analysis_description"):
+            st.markdown("**Description**")
+            st.write(selected_analysis["analysis_description"])
+        elif selected_analysis.get("legacy_analysis_objective"):
+            st.markdown("**Legacy analysis objective**")
+            st.write(selected_analysis["legacy_analysis_objective"])
+            st.caption(
+                "This analysis predates the separation of document analysis "
+                "from Ask / Compare LLMs."
+            )
 
         c1, c2 = st.columns(2)
         with c1:
@@ -3729,8 +3736,9 @@ def render_compare_llms():
                         "## Side-by-side model comparison"
                     )
                     st.caption(
-                        "Both models analysed the same evidence passages and "
-                        "the same investigation question independently."
+                        "Both models analysed the same evidence passages "
+                        "independently. New free-text questions belong to "
+                        "Ask / Compare LLMs rather than document ingestion."
                     )
                     columns = st.columns(
                         len(model_runs)
@@ -3746,29 +3754,6 @@ def render_compare_llms():
                                 model_run["model_key"],
                             )
             else:
-                if selected_analysis.get("analysis_objective"):
-                    st.markdown("### Question / objective")
-                    st.write(selected_analysis["analysis_objective"])
-
-                    if result_meta.get("answer_to_question"):
-                        st.markdown("### Answer")
-                        st.info(result_meta["answer_to_question"])
-                        answer_refs = (
-                            result_meta.get("answer_references")
-                            or []
-                        )
-                        if answer_refs:
-                            st.caption(
-                                "Evidence: "
-                                + " · ".join(answer_refs)
-                            )
-                    else:
-                        st.warning(
-                            "This analysis was created before the explicit "
-                            "question-answer output was introduced, or no "
-                            "grounded answer was produced."
-                        )
-
                 if result_meta.get("overview"):
                     st.markdown("### Analysis summary")
                     st.write(result_meta["overview"])
@@ -4003,8 +3988,9 @@ with tab_graph:
         if knowledge_elements["nodes"]:
             st.markdown("### Evidence sheet")
             st.caption(
-                "Select the original question, a finding, event, concept or "
-                "relationship to inspect its evidence and source page."
+                "Select a finding, event, concept or relationship to inspect "
+                "its evidence and source page. Answers asked later in "
+                "Ask / Compare LLMs will use the same citation/viewer pattern."
             )
 
             evidence_items = []
@@ -4014,32 +4000,6 @@ with tab_graph:
             knowledge_meta = knowledge_by_id[
                 knowledge_analysis_id
             ]
-
-            if (
-                knowledge_meta.get("analysis_objective")
-                and knowledge_result.get("answer_to_question")
-            ):
-                evidence_items.append(
-                    {
-                        "kind": "Answer",
-                        "label": "Answer to analysis question / objective",
-                        "description": knowledge_result[
-                            "answer_to_question"
-                        ],
-                        "references": (
-                            knowledge_result.get("answer_references")
-                            or []
-                        ),
-                        "locations": (
-                            knowledge_result.get("answer_locations")
-                            or []
-                        ),
-                        "passage_ids": (
-                            knowledge_result.get("answer_passage_ids")
-                            or []
-                        ),
-                    }
-                )
 
             for node in knowledge_graph["nodes"]:
                 evidence_items.append(
@@ -4111,16 +4071,7 @@ with tab_graph:
             )
 
             with evidence_left:
-                if selected_evidence["kind"] == "Answer":
-                    st.markdown("**Analysis question / objective**")
-                    st.write(
-                        knowledge_meta.get("analysis_objective")
-                        or "—"
-                    )
-                    st.markdown("**Grounded answer**")
-                else:
-                    st.markdown("**Description**")
-
+                st.markdown("**Description**")
                 st.write(selected_evidence["description"])
 
                 st.markdown("**Source reference**")
@@ -4160,8 +4111,8 @@ with tab_graph:
                 if not parsed_locations:
                     st.info(
                         "No source-page location is available for this "
-                        "item. New analyses created with analysis version "
-                        "V0.6 or later include viewer locations."
+                        "item. Analyses created with the newer citation-enabled "
+                        "pipeline include viewer locations and page references."
                     )
                 else:
                     location_index = st.selectbox(
