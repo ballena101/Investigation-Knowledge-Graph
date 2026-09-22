@@ -93,3 +93,5 @@ a safety classification.
   MAIRA reuse, EMCIP/query/relationship governance, selective Bosuil-derived
   design experiments, Directive/IMO reference context, human review, Class D
   safeguards and SHIELD sequencing.
+
+- [25 — Implementation status and roadmap](25_implementation_status_and_roadmap.md) — current operational DONE / NEXT / PENDING tracker.
