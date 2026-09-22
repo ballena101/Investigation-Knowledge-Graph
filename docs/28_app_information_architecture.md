@@ -410,3 +410,31 @@ The distinction is therefore:
 - **Findings & Evidence** = qualitative item-level content + provenance.
 
 This separation avoids showing the same extracted content twice.
+
+
+## Findings & Evidence content index
+
+Added on 2026-09-22.
+
+The top of Findings & Evidence now contains a compact **Analysis content
+index** with separate counts for:
+
+- Events;
+- Contributing Factors;
+- Findings;
+- Safety Issues;
+- Safety Recommendations;
+- Analytical Relationships.
+
+The index is not an official investigation-report classification. It is a
+navigation/index layer over the AI-derived analytical content of the active
+analysis.
+
+The investigator can select a category and the Evidence sheet is filtered to
+that family only.
+
+Analytical Relationships excludes structural graph links so that the category
+contains investigation-analysis relationships rather than graph plumbing.
+
+Detailed item text, source references and cited-page rendering remain in the
+Evidence sheet below the index.
