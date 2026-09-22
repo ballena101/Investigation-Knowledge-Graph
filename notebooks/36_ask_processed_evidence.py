@@ -450,6 +450,31 @@ if governed_query_id is not None:
             "selected evidence scope."
         )
 
+        snapshot_payload = {
+            "analysis_id": analysis_id,
+            "question_sha256": hashlib.sha256(
+                question_text.encode("utf-8")
+            ).hexdigest(),
+            "scope_mode": scope_mode,
+            "scope_document_ids": sorted(
+                scope_document_ids
+            ),
+            "retrieval_mode": "GOVERNED_RELATIONSHIP_EVIDENCE",
+            "governed_query_id": governed_query_id,
+            "governed_query_spec_id": governed_query_spec_id,
+            "retrieval_passage_ids": [],
+        }
+        retrieval_snapshot_id = (
+            "snapshot_"
+            + hashlib.sha256(
+                json.dumps(
+                    snapshot_payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()[:32]
+        )
+
         with driver.session() as session:
             session.run(
                 """
@@ -462,16 +487,20 @@ if governed_query_id is not None:
                     q.retrieval_mode = 'GOVERNED_RELATIONSHIP_EVIDENCE',
                     q.deterministic_answer = $deterministic_answer,
                     q.insufficient_evidence = true,
+                    q.retrieval_snapshot_id = $retrieval_snapshot_id,
+                    q.retrieval_passage_ids = [],
                     q.completed_at = datetime(),
                     q.updated_at = datetime()
                 """,
                 question_run_id=question_run_id,
                 deterministic_answer=deterministic_answer,
+                retrieval_snapshot_id=retrieval_snapshot_id,
             ).consume()
 
         print("")
         print("QUESTION RUN: COMPLETED — NO GOVERNED SUPPORT")
         print("governed_query_id:", governed_query_id)
+        print("retrieval_snapshot_id:", retrieval_snapshot_id)
         driver.close()
         dbutils.notebook.exit(
             "COMPLETED_NO_GOVERNED_SUPPORT"
