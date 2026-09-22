@@ -49,7 +49,7 @@ from databricks.sdk.service.serving import (
 from neo4j import GraphDatabase
 from pyspark.sql import functions as F
 
-QUESTION_RUN_VERSION = "IKF_QUESTION_RUN_V0.4_REFERENCE_CORPUS"
+QUESTION_RUN_VERSION = "IKF_QUESTION_RUN_V0.5_DIRECT_REFERENCE"
 ANALYSIS_PASSAGE_TABLE = "bdw_analysis_prod.kg_poc.analysis_passage"
 REFERENCE_DOCUMENT_TABLE = "bdw_analysis_prod.kg_poc.reference_document"
 REFERENCE_PASSAGE_TABLE = "bdw_analysis_prod.kg_poc.reference_passage"
@@ -162,10 +162,15 @@ except ModuleNotFoundError as exc:
 with driver.session() as session:
     record = session.run(
         """
-        MATCH (a:AnalysisGroup)-[:HAS_QUESTION_RUN]->(
-            q:QuestionRun {question_run_id: $question_run_id}
+        MATCH (q:QuestionRun {
+            question_run_id: $question_run_id
+        })
+        OPTIONAL MATCH (
+            a:AnalysisGroup
+        )-[:HAS_QUESTION_RUN]->(q)
+        OPTIONAL MATCH (a)-[:HAS_SOURCE]->(
+            d:SourceDocument
         )
-        OPTIONAL MATCH (a)-[:HAS_SOURCE]->(d:SourceDocument)
         WITH a, q, collect({
             document_id: d.document_id,
             filename: d.filename,
@@ -178,12 +183,33 @@ with driver.session() as session:
         RETURN
             a.analysis_id AS analysis_id,
             a.analysis_title AS analysis_title,
-            properties(a)["information_class"] AS information_class,
-            a.output_language AS output_language,
+            coalesce(
+                properties(a)["information_class"],
+                q.information_class,
+                "A"
+            ) AS information_class,
+            coalesce(
+                a.output_language,
+                "English"
+            ) AS output_language,
             properties(a)["input_mode"] AS input_mode,
+            coalesce(
+                q.interaction_surface,
+                "ASK_COMPARE"
+            ) AS interaction_surface,
             q.scope_mode AS scope_mode,
-            coalesce(q.scope_document_ids, []) AS scope_document_ids,
-            coalesce(q.include_reference_context, false) AS include_reference_context,
+            coalesce(
+                q.scope_document_ids,
+                []
+            ) AS scope_document_ids,
+            coalesce(
+                q.direct_reference_document_ids,
+                []
+            ) AS direct_reference_document_ids,
+            coalesce(
+                q.include_reference_context,
+                false
+            ) AS include_reference_context,
             q.model_keys AS model_keys,
             q.model_services AS model_services,
             q.question_text AS question_text,
@@ -201,27 +227,74 @@ if record is None:
     )
 
 question_run = record.data()
-analysis_id = question_run["analysis_id"]
+analysis_id = question_run.get(
+    "analysis_id"
+)
+interaction_surface = (
+    question_run.get(
+        "interaction_surface"
+    )
+    or "ASK_COMPARE"
+)
+direct_document_ask = (
+    interaction_surface
+    == "DIRECT_DOCUMENT_ASK"
+)
 information_class = (
     question_run.get("information_class")
-    or "B"
+    or "A"
 )
-scope_mode = question_run.get("scope_mode") or "WHOLE_CASE"
+scope_mode = (
+    question_run.get("scope_mode")
+    or "WHOLE_CASE"
+)
 scope_document_ids = list(
-    question_run.get("scope_document_ids")
+    question_run.get(
+        "scope_document_ids"
+    )
+    or []
+)
+direct_reference_document_ids = list(
+    question_run.get(
+        "direct_reference_document_ids"
+    )
     or []
 )
 include_reference_context = bool(
-    question_run.get("include_reference_context")
+    question_run.get(
+        "include_reference_context"
+    )
 )
 model_keys = list(
-    question_run.get("model_keys")
+    question_run.get(
+        "model_keys"
+    )
     or []
 )
 model_services = list(
-    question_run.get("model_services")
+    question_run.get(
+        "model_services"
+    )
     or []
 )
+
+if (
+    not direct_document_ask
+    and not analysis_id
+):
+    driver.close()
+    raise ValueError(
+        "Non-direct QuestionRun is not linked to an AnalysisGroup."
+    )
+
+if (
+    direct_document_ask
+    and not direct_reference_document_ids
+):
+    driver.close()
+    raise ValueError(
+        "Direct document QuestionRun has no selected reference documents."
+    )
 
 if not model_keys or len(model_keys) != len(model_services):
     driver.close()
@@ -344,50 +417,119 @@ if (
 
 # COMMAND ----------
 
-passages = (
-    spark.table(ANALYSIS_PASSAGE_TABLE)
-    .filter(F.col("analysis_id") == analysis_id)
-)
+if direct_document_ask:
+    passage_rows = []
+    retrieval_mode = "DIRECT_REFERENCE_ONLY"
+    retrieval_passage_ids = []
+    retrieval_snapshot_id = None
 
-if scope_mode in {
-    "ONE_DOCUMENT",
-    "SELECTED_DOCUMENTS",
-}:
-    if not scope_document_ids:
-        driver.close()
-        raise ValueError(
-            "Document-scoped QuestionRun has no document IDs."
+    with driver.session() as session:
+        session.run(
+            """
+            MATCH (q:QuestionRun {
+                question_run_id: $question_run_id
+            })
+            SET
+                q.retrieval_mode = 'DIRECT_REFERENCE_ONLY',
+                q.retrieval_passage_ids = [],
+                q.updated_at = datetime()
+            """,
+            question_run_id=question_run_id,
+        ).consume()
+
+    print(
+        "Primary case retrieval: skipped "
+        "(direct governed reference-document question)"
+    )
+else:
+    passages = (
+        spark.table(ANALYSIS_PASSAGE_TABLE)
+        .filter(F.col("analysis_id") == analysis_id)
+    )
+    
+    if scope_mode in {
+        "ONE_DOCUMENT",
+        "SELECTED_DOCUMENTS",
+    }:
+        if not scope_document_ids:
+            driver.close()
+            raise ValueError(
+                "Document-scoped QuestionRun has no document IDs."
+            )
+    
+        passages = passages.filter(
+            F.col("document_id").isin(scope_document_ids)
         )
-
-    passages = passages.filter(
-        F.col("document_id").isin(scope_document_ids)
-    )
-
-passage_rows = (
-    passages
-    .select(
-        "document_id",
-        "passage_id",
-        "page_start",
-        "page_end",
-        "passage_order",
-        "detected_language",
-        "passage_text",
-    )
-    .orderBy(
-        "document_id",
-        "passage_order",
-    )
-    .collect()
-)
-
-if governed_query_id is not None:
-    if maira_import_error is not None:
-        message = (
-            "An exact governed MAIRA query was recognized, but the MAIRA "
-            "runtime package is not importable by the Ask Job. The governed "
-            "path fails closed rather than falling back to an ungoverned answer."
+    
+    passage_rows = (
+        passages
+        .select(
+            "document_id",
+            "passage_id",
+            "page_start",
+            "page_end",
+            "passage_order",
+            "detected_language",
+            "passage_text",
         )
+        .orderBy(
+            "document_id",
+            "passage_order",
+        )
+        .collect()
+    )
+    
+    if governed_query_id is not None:
+        if maira_import_error is not None:
+            message = (
+                "An exact governed MAIRA query was recognized, but the MAIRA "
+                "runtime package is not importable by the Ask Job. The governed "
+                "path fails closed rather than falling back to an ungoverned answer."
+            )
+            with driver.session() as session:
+                session.run(
+                    """
+                    MATCH (q:QuestionRun {
+                        question_run_id: $question_run_id
+                    })
+                    SET
+                        q.status = 'FAILED',
+                        q.processing_stage = 'GOVERNED_RUNTIME_UNAVAILABLE',
+                        q.processing_error = $message,
+                        q.governed_query_id = $governed_query_id,
+                        q.governed_query_spec_id = $governed_query_spec_id,
+                        q.updated_at = datetime()
+                    """,
+                    question_run_id=question_run_id,
+                    message=message,
+                    governed_query_id=governed_query_id,
+                    governed_query_spec_id=governed_query_spec_id,
+                ).consume()
+            driver.close()
+            raise RuntimeError(message)
+    
+        from ikf.query_runner import run_query
+    
+        scoped_document_ids = sorted(
+            {
+                row["document_id"]
+                for row in passage_rows
+            }
+        )
+    
+        governed_results = run_query(
+            spark,
+            governed_query_id,
+            document_ids=scoped_document_ids,
+        )
+    
+        governed_passage_ids = sorted(
+            {
+                item["passage_id"]
+                for item in governed_results
+            }
+        )
+    
         with driver.session() as session:
             session.run(
                 """
@@ -395,175 +537,93 @@ if governed_query_id is not None:
                     question_run_id: $question_run_id
                 })
                 SET
-                    q.status = 'FAILED',
-                    q.processing_stage = 'GOVERNED_RUNTIME_UNAVAILABLE',
-                    q.processing_error = $message,
                     q.governed_query_id = $governed_query_id,
                     q.governed_query_spec_id = $governed_query_spec_id,
+                    q.governed_relationship = $governed_relationship,
+                    q.governed_retrieval_result_count = $result_count,
+                    q.retrieval_mode = $retrieval_mode,
                     q.updated_at = datetime()
                 """,
                 question_run_id=question_run_id,
-                message=message,
                 governed_query_id=governed_query_id,
                 governed_query_spec_id=governed_query_spec_id,
+                governed_relationship=governed_relationship,
+                result_count=len(governed_results),
+                retrieval_mode="GOVERNED_RELATIONSHIP_EVIDENCE",
             ).consume()
-        driver.close()
-        raise RuntimeError(message)
-
-    from ikf.query_runner import run_query
-
-    scoped_document_ids = sorted(
-        {
-            row["document_id"]
+    
+        if not governed_passage_ids:
+            deterministic_answer = (
+                "No explicit source-language evidence supporting the governed "
+                f"{governed_relationship} relationship was found within the "
+                "selected evidence scope."
+            )
+    
+            snapshot_payload = {
+                "analysis_id": analysis_id,
+                "question_sha256": hashlib.sha256(
+                    question_text.encode("utf-8")
+                ).hexdigest(),
+                "scope_mode": scope_mode,
+                "scope_document_ids": sorted(
+                    scope_document_ids
+                ),
+                "retrieval_mode": "GOVERNED_RELATIONSHIP_EVIDENCE",
+                "governed_query_id": governed_query_id,
+                "governed_query_spec_id": governed_query_spec_id,
+                "retrieval_passage_ids": [],
+            }
+            retrieval_snapshot_id = (
+                "snapshot_"
+                + hashlib.sha256(
+                    json.dumps(
+                        snapshot_payload,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()[:32]
+            )
+    
+            with driver.session() as session:
+                session.run(
+                    """
+                    MATCH (q:QuestionRun {
+                        question_run_id: $question_run_id
+                    })
+                    SET
+                        q.status = 'COMPLETED',
+                        q.processing_stage = 'COMPLETED',
+                        q.retrieval_mode = 'GOVERNED_RELATIONSHIP_EVIDENCE',
+                        q.deterministic_answer = $deterministic_answer,
+                        q.insufficient_evidence = true,
+                        q.retrieval_snapshot_id = $retrieval_snapshot_id,
+                        q.retrieval_passage_ids = [],
+                        q.completed_at = datetime(),
+                        q.updated_at = datetime()
+                    """,
+                    question_run_id=question_run_id,
+                    deterministic_answer=deterministic_answer,
+                    retrieval_snapshot_id=retrieval_snapshot_id,
+                ).consume()
+    
+            print("")
+            print("QUESTION RUN: COMPLETED — NO GOVERNED SUPPORT")
+            print("governed_query_id:", governed_query_id)
+            print("retrieval_snapshot_id:", retrieval_snapshot_id)
+            driver.close()
+            dbutils.notebook.exit(
+                "COMPLETED_NO_GOVERNED_SUPPORT"
+            )
+    
+        passage_rows = [
+            row
             for row in passage_rows
-        }
-    )
-
-    governed_results = run_query(
-        spark,
-        governed_query_id,
-        document_ids=scoped_document_ids,
-    )
-
-    governed_passage_ids = sorted(
-        {
-            item["passage_id"]
-            for item in governed_results
-        }
-    )
-
-    with driver.session() as session:
-        session.run(
-            """
-            MATCH (q:QuestionRun {
-                question_run_id: $question_run_id
-            })
-            SET
-                q.governed_query_id = $governed_query_id,
-                q.governed_query_spec_id = $governed_query_spec_id,
-                q.governed_relationship = $governed_relationship,
-                q.governed_retrieval_result_count = $result_count,
-                q.retrieval_mode = $retrieval_mode,
-                q.updated_at = datetime()
-            """,
-            question_run_id=question_run_id,
-            governed_query_id=governed_query_id,
-            governed_query_spec_id=governed_query_spec_id,
-            governed_relationship=governed_relationship,
-            result_count=len(governed_results),
-            retrieval_mode="GOVERNED_RELATIONSHIP_EVIDENCE",
-        ).consume()
-
-    if not governed_passage_ids:
-        deterministic_answer = (
-            "No explicit source-language evidence supporting the governed "
-            f"{governed_relationship} relationship was found within the "
-            "selected evidence scope."
-        )
-
-        snapshot_payload = {
-            "analysis_id": analysis_id,
-            "question_sha256": hashlib.sha256(
-                question_text.encode("utf-8")
-            ).hexdigest(),
-            "scope_mode": scope_mode,
-            "scope_document_ids": sorted(
-                scope_document_ids
-            ),
-            "retrieval_mode": "GOVERNED_RELATIONSHIP_EVIDENCE",
-            "governed_query_id": governed_query_id,
-            "governed_query_spec_id": governed_query_spec_id,
-            "retrieval_passage_ids": [],
-        }
-        retrieval_snapshot_id = (
-            "snapshot_"
-            + hashlib.sha256(
-                json.dumps(
-                    snapshot_payload,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-            ).hexdigest()[:32]
-        )
-
-        with driver.session() as session:
-            session.run(
-                """
-                MATCH (q:QuestionRun {
-                    question_run_id: $question_run_id
-                })
-                SET
-                    q.status = 'COMPLETED',
-                    q.processing_stage = 'COMPLETED',
-                    q.retrieval_mode = 'GOVERNED_RELATIONSHIP_EVIDENCE',
-                    q.deterministic_answer = $deterministic_answer,
-                    q.insufficient_evidence = true,
-                    q.retrieval_snapshot_id = $retrieval_snapshot_id,
-                    q.retrieval_passage_ids = [],
-                    q.completed_at = datetime(),
-                    q.updated_at = datetime()
-                """,
-                question_run_id=question_run_id,
-                deterministic_answer=deterministic_answer,
-                retrieval_snapshot_id=retrieval_snapshot_id,
-            ).consume()
-
-        print("")
-        print("QUESTION RUN: COMPLETED — NO GOVERNED SUPPORT")
-        print("governed_query_id:", governed_query_id)
-        print("retrieval_snapshot_id:", retrieval_snapshot_id)
-        driver.close()
-        dbutils.notebook.exit(
-            "COMPLETED_NO_GOVERNED_SUPPORT"
-        )
-
-    passage_rows = [
-        row
-        for row in passage_rows
-        if row["passage_id"]
-        in set(governed_passage_ids)
-    ]
-    retrieval_mode = "GOVERNED_RELATIONSHIP_EVIDENCE"
-
-if not passage_rows:
-    with driver.session() as session:
-        session.run(
-            """
-            MATCH (q:QuestionRun {
-                question_run_id: $question_run_id
-            })
-            SET
-                q.status = 'FAILED',
-                q.processing_stage = 'NO_SCOPED_EVIDENCE',
-                q.processing_error = 'No persisted evidence passages matched the selected scope.',
-                q.updated_at = datetime()
-            """,
-            question_run_id=question_run_id,
-        ).consume()
-
-    driver.close()
-    raise ValueError(
-        "No persisted evidence passages matched the selected scope."
-    )
-
-scope_chars = sum(
-    len(row["passage_text"] or "")
-    for row in passage_rows
-)
-
-if (
-    governed_query_id is None
-    and (
-        len(passage_rows) > MAX_SCOPE_PASSAGES
-        or scope_chars > MAX_SCOPE_CHARS
-    )
-):
-    if maira_import_error is not None:
-        message = (
-            "The selected evidence scope requires deterministic retrieval, "
-            "but the reusable MAIRA retrieval package is not importable by "
-            "the Ask Job."
-        )
+            if row["passage_id"]
+            in set(governed_passage_ids)
+        ]
+        retrieval_mode = "GOVERNED_RELATIONSHIP_EVIDENCE"
+    
+    if not passage_rows:
         with driver.session() as session:
             session.run(
                 """
@@ -572,272 +632,311 @@ if (
                 })
                 SET
                     q.status = 'FAILED',
-                    q.processing_stage = 'RETRIEVAL_RUNTIME_UNAVAILABLE',
-                    q.processing_error = $message,
+                    q.processing_stage = 'NO_SCOPED_EVIDENCE',
+                    q.processing_error = 'No persisted evidence passages matched the selected scope.',
                     q.updated_at = datetime()
                 """,
                 question_run_id=question_run_id,
-                message=message,
             ).consume()
+    
         driver.close()
-        raise RuntimeError(message)
-
-    from maira.retrieval import retrieve_free_text
-
-    expansion_map = {}
-
-    if (
-        information_class == "B"
-        and spark.catalog.tableExists(
-            "bdw_analysis_prod.maira.terminology_normalisations"
+        raise ValueError(
+            "No persisted evidence passages matched the selected scope."
         )
-        and spark.catalog.tableExists(
-            "bdw_analysis_prod.maira.emcip_operational_registry"
-        )
-    ):
-        validated_terms = (
-            spark.table(
-                "bdw_analysis_prod.maira.terminology_normalisations"
-            )
-            .filter(
-                F.col("review_status") == "HUMAN_VALIDATED"
-            )
-            .select(
-                "source_expression",
-                "target_code_idcode",
-            )
-        )
-
-        registry_values = (
-            spark.table(
-                "bdw_analysis_prod.maira.emcip_operational_registry"
-            )
-            .select(
-                F.col("code_idcode").alias(
-                    "target_code_idcode"
-                ),
-                "code_value",
-            )
-            .filter(
-                F.col("target_code_idcode").isNotNull()
-                & F.col("code_value").isNotNull()
-            )
-            .dropDuplicates()
-        )
-
-        governed_expansions = (
-            validated_terms
-            .join(
-                registry_values,
-                on="target_code_idcode",
-                how="inner",
-            )
-            .select(
-                "source_expression",
-                "code_value",
-            )
-            .dropDuplicates()
-            .collect()
-        )
-
-        for expansion in governed_expansions:
-            source_expression = str(
-                expansion["source_expression"] or ""
-            ).strip()
-            code_value = str(
-                expansion["code_value"] or ""
-            ).strip()
-
-            if not source_expression or not code_value:
-                continue
-
-            expansion_map.setdefault(
-                source_expression,
-                set(),
-            ).add(code_value)
-
-            expansion_map.setdefault(
-                code_value,
-                set(),
-            ).add(source_expression)
-
-    retrieval = retrieve_free_text(
-        [
-            {
-                "document_id": row["document_id"],
-                "passage_id": row["passage_id"],
-                "passage_number": row["passage_order"],
-                "start_page": row["page_start"],
-                "end_page": row["page_end"],
-                "passage_text": row["passage_text"],
-                "report_package_id": None,
-            }
-            for row in passage_rows
-        ],
-        question_text,
-        expansions=expansion_map,
-        max_passages=RETRIEVAL_MAX_PASSAGES,
-        max_characters=RETRIEVAL_MAX_CHARS,
-    )
-
-    retrieved_ids = {
-        hit.passage_id
-        for hit in retrieval.hits
-    }
-
-    retrieval_mode = retrieval.method
-
-    with driver.session() as session:
-        session.run(
-            """
-            MATCH (q:QuestionRun {
-                question_run_id: $question_run_id
-            })
-            SET
-                q.retrieval_mode = $retrieval_mode,
-                q.retrieval_candidate_count = $candidate_count,
-                q.retrieval_selected_count = $selected_count,
-                q.retrieval_selected_characters = $selected_characters,
-                q.retrieval_query_terms = $query_terms,
-                q.retrieval_activated_expansions = $activated_expansions,
-                q.updated_at = datetime()
-            """,
-            question_run_id=question_run_id,
-            retrieval_mode=retrieval.method,
-            candidate_count=retrieval.candidate_count,
-            selected_count=retrieval.selected_count,
-            selected_characters=retrieval.selected_characters,
-            query_terms=list(retrieval.query_terms),
-            activated_expansions=list(
-                retrieval.activated_expansions
-            ),
-        ).consume()
-
-    if not retrieved_ids:
-        deterministic_answer = (
-            "The deterministic lexical retrieval found no passage matching "
-            "the substantive terms of this question within the selected "
-            "evidence scope. No LLM answer was generated."
-        )
-
-        snapshot_payload = {
-            "analysis_id": analysis_id,
-            "question_sha256": hashlib.sha256(
-                question_text.encode("utf-8")
-            ).hexdigest(),
-            "scope_mode": scope_mode,
-            "scope_document_ids": sorted(
-                scope_document_ids
-            ),
-            "retrieval_mode": retrieval.method,
-            "retrieval_passage_ids": [],
-        }
-        retrieval_snapshot_id = (
-            "snapshot_"
-            + hashlib.sha256(
-                json.dumps(
-                    snapshot_payload,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-            ).hexdigest()[:32]
-        )
-
-        with driver.session() as session:
-            session.run(
-                """
-                MATCH (q:QuestionRun {
-                    question_run_id: $question_run_id
-                })
-                SET
-                    q.status = 'COMPLETED',
-                    q.processing_stage = 'COMPLETED',
-                    q.deterministic_answer = $deterministic_answer,
-                    q.insufficient_evidence = true,
-                    q.retrieval_snapshot_id = $retrieval_snapshot_id,
-                    q.retrieval_passage_ids = [],
-                    q.completed_at = datetime(),
-                    q.updated_at = datetime()
-                """,
-                question_run_id=question_run_id,
-                deterministic_answer=deterministic_answer,
-                retrieval_snapshot_id=retrieval_snapshot_id,
-            ).consume()
-
-        print("")
-        print("QUESTION RUN: COMPLETED — NO LEXICAL MATCH")
-        print("retrieval_mode:", retrieval.method)
-        print("retrieval_snapshot_id:", retrieval_snapshot_id)
-        driver.close()
-        dbutils.notebook.exit(
-            "COMPLETED_NO_LEXICAL_MATCH"
-        )
-
-    passage_rows = [
-        row
-        for row in passage_rows
-        if row["passage_id"] in retrieved_ids
-    ]
-
+    
     scope_chars = sum(
         len(row["passage_text"] or "")
         for row in passage_rows
     )
+    
+    if (
+        governed_query_id is None
+        and (
+            len(passage_rows) > MAX_SCOPE_PASSAGES
+            or scope_chars > MAX_SCOPE_CHARS
+        )
+    ):
+        if maira_import_error is not None:
+            message = (
+                "The selected evidence scope requires deterministic retrieval, "
+                "but the reusable MAIRA retrieval package is not importable by "
+                "the Ask Job."
+            )
+            with driver.session() as session:
+                session.run(
+                    """
+                    MATCH (q:QuestionRun {
+                        question_run_id: $question_run_id
+                    })
+                    SET
+                        q.status = 'FAILED',
+                        q.processing_stage = 'RETRIEVAL_RUNTIME_UNAVAILABLE',
+                        q.processing_error = $message,
+                        q.updated_at = datetime()
+                    """,
+                    question_run_id=question_run_id,
+                    message=message,
+                ).consume()
+            driver.close()
+            raise RuntimeError(message)
+    
+        from maira.retrieval import retrieve_free_text
+    
+        expansion_map = {}
+    
+        if (
+            information_class == "B"
+            and spark.catalog.tableExists(
+                "bdw_analysis_prod.maira.terminology_normalisations"
+            )
+            and spark.catalog.tableExists(
+                "bdw_analysis_prod.maira.emcip_operational_registry"
+            )
+        ):
+            validated_terms = (
+                spark.table(
+                    "bdw_analysis_prod.maira.terminology_normalisations"
+                )
+                .filter(
+                    F.col("review_status") == "HUMAN_VALIDATED"
+                )
+                .select(
+                    "source_expression",
+                    "target_code_idcode",
+                )
+            )
+    
+            registry_values = (
+                spark.table(
+                    "bdw_analysis_prod.maira.emcip_operational_registry"
+                )
+                .select(
+                    F.col("code_idcode").alias(
+                        "target_code_idcode"
+                    ),
+                    "code_value",
+                )
+                .filter(
+                    F.col("target_code_idcode").isNotNull()
+                    & F.col("code_value").isNotNull()
+                )
+                .dropDuplicates()
+            )
+    
+            governed_expansions = (
+                validated_terms
+                .join(
+                    registry_values,
+                    on="target_code_idcode",
+                    how="inner",
+                )
+                .select(
+                    "source_expression",
+                    "code_value",
+                )
+                .dropDuplicates()
+                .collect()
+            )
+    
+            for expansion in governed_expansions:
+                source_expression = str(
+                    expansion["source_expression"] or ""
+                ).strip()
+                code_value = str(
+                    expansion["code_value"] or ""
+                ).strip()
+    
+                if not source_expression or not code_value:
+                    continue
+    
+                expansion_map.setdefault(
+                    source_expression,
+                    set(),
+                ).add(code_value)
+    
+                expansion_map.setdefault(
+                    code_value,
+                    set(),
+                ).add(source_expression)
+    
+        retrieval = retrieve_free_text(
+            [
+                {
+                    "document_id": row["document_id"],
+                    "passage_id": row["passage_id"],
+                    "passage_number": row["passage_order"],
+                    "start_page": row["page_start"],
+                    "end_page": row["page_end"],
+                    "passage_text": row["passage_text"],
+                    "report_package_id": None,
+                }
+                for row in passage_rows
+            ],
+            question_text,
+            expansions=expansion_map,
+            max_passages=RETRIEVAL_MAX_PASSAGES,
+            max_characters=RETRIEVAL_MAX_CHARS,
+        )
+    
+        retrieved_ids = {
+            hit.passage_id
+            for hit in retrieval.hits
+        }
+    
+        retrieval_mode = retrieval.method
+    
+        with driver.session() as session:
+            session.run(
+                """
+                MATCH (q:QuestionRun {
+                    question_run_id: $question_run_id
+                })
+                SET
+                    q.retrieval_mode = $retrieval_mode,
+                    q.retrieval_candidate_count = $candidate_count,
+                    q.retrieval_selected_count = $selected_count,
+                    q.retrieval_selected_characters = $selected_characters,
+                    q.retrieval_query_terms = $query_terms,
+                    q.retrieval_activated_expansions = $activated_expansions,
+                    q.updated_at = datetime()
+                """,
+                question_run_id=question_run_id,
+                retrieval_mode=retrieval.method,
+                candidate_count=retrieval.candidate_count,
+                selected_count=retrieval.selected_count,
+                selected_characters=retrieval.selected_characters,
+                query_terms=list(retrieval.query_terms),
+                activated_expansions=list(
+                    retrieval.activated_expansions
+                ),
+            ).consume()
+    
+        if not retrieved_ids:
+            deterministic_answer = (
+                "The deterministic lexical retrieval found no passage matching "
+                "the substantive terms of this question within the selected "
+                "evidence scope. No LLM answer was generated."
+            )
+    
+            snapshot_payload = {
+                "analysis_id": analysis_id,
+                "question_sha256": hashlib.sha256(
+                    question_text.encode("utf-8")
+                ).hexdigest(),
+                "scope_mode": scope_mode,
+                "scope_document_ids": sorted(
+                    scope_document_ids
+                ),
+                "retrieval_mode": retrieval.method,
+                "retrieval_passage_ids": [],
+            }
+            retrieval_snapshot_id = (
+                "snapshot_"
+                + hashlib.sha256(
+                    json.dumps(
+                        snapshot_payload,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()[:32]
+            )
+    
+            with driver.session() as session:
+                session.run(
+                    """
+                    MATCH (q:QuestionRun {
+                        question_run_id: $question_run_id
+                    })
+                    SET
+                        q.status = 'COMPLETED',
+                        q.processing_stage = 'COMPLETED',
+                        q.deterministic_answer = $deterministic_answer,
+                        q.insufficient_evidence = true,
+                        q.retrieval_snapshot_id = $retrieval_snapshot_id,
+                        q.retrieval_passage_ids = [],
+                        q.completed_at = datetime(),
+                        q.updated_at = datetime()
+                    """,
+                    question_run_id=question_run_id,
+                    deterministic_answer=deterministic_answer,
+                    retrieval_snapshot_id=retrieval_snapshot_id,
+                ).consume()
+    
+            print("")
+            print("QUESTION RUN: COMPLETED — NO LEXICAL MATCH")
+            print("retrieval_mode:", retrieval.method)
+            print("retrieval_snapshot_id:", retrieval_snapshot_id)
+            driver.close()
+            dbutils.notebook.exit(
+                "COMPLETED_NO_LEXICAL_MATCH"
+            )
+    
+        passage_rows = [
+            row
+            for row in passage_rows
+            if row["passage_id"] in retrieved_ids
+        ]
+    
+        scope_chars = sum(
+            len(row["passage_text"] or "")
+            for row in passage_rows
+        )
+    
+    print("Evidence passages sent to answer stage:", len(passage_rows))
+    print("Evidence characters sent to answer stage:", scope_chars)
+    
+    # Reproducible retrieval snapshot for every model-answering run.
+    retrieval_passage_ids = sorted(
+        row["passage_id"]
+        for row in passage_rows
+    )
+    
+    snapshot_payload = {
+        "analysis_id": analysis_id,
+        "question_sha256": hashlib.sha256(
+            question_text.encode("utf-8")
+        ).hexdigest(),
+        "scope_mode": scope_mode,
+        "scope_document_ids": sorted(
+            scope_document_ids
+        ),
+        "retrieval_mode": retrieval_mode,
+        "governed_query_id": governed_query_id,
+        "governed_query_spec_id": governed_query_spec_id,
+        "retrieval_passage_ids": retrieval_passage_ids,
+    }
+    
+    retrieval_snapshot_id = (
+        "snapshot_"
+        + hashlib.sha256(
+            json.dumps(
+                snapshot_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()[:32]
+    )
+    
+    with driver.session() as session:
+        session.run(
+            """
+            MATCH (q:QuestionRun {
+                question_run_id: $question_run_id
+            })
+            SET
+                q.retrieval_snapshot_id = $retrieval_snapshot_id,
+                q.retrieval_passage_ids = $retrieval_passage_ids,
+                q.retrieval_mode = $retrieval_mode,
+                q.updated_at = datetime()
+            """,
+            question_run_id=question_run_id,
+            retrieval_snapshot_id=retrieval_snapshot_id,
+            retrieval_passage_ids=retrieval_passage_ids,
+            retrieval_mode=retrieval_mode,
+        ).consume()
+    
+    print("Retrieval snapshot:", retrieval_snapshot_id)
 
-print("Evidence passages sent to answer stage:", len(passage_rows))
-print("Evidence characters sent to answer stage:", scope_chars)
-
-# Reproducible retrieval snapshot for every model-answering run.
-retrieval_passage_ids = sorted(
-    row["passage_id"]
-    for row in passage_rows
-)
-
-snapshot_payload = {
-    "analysis_id": analysis_id,
-    "question_sha256": hashlib.sha256(
-        question_text.encode("utf-8")
-    ).hexdigest(),
-    "scope_mode": scope_mode,
-    "scope_document_ids": sorted(
-        scope_document_ids
-    ),
-    "retrieval_mode": retrieval_mode,
-    "governed_query_id": governed_query_id,
-    "governed_query_spec_id": governed_query_spec_id,
-    "retrieval_passage_ids": retrieval_passage_ids,
-}
-
-retrieval_snapshot_id = (
-    "snapshot_"
-    + hashlib.sha256(
-        json.dumps(
-            snapshot_payload,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-    ).hexdigest()[:32]
-)
-
-with driver.session() as session:
-    session.run(
-        """
-        MATCH (q:QuestionRun {
-            question_run_id: $question_run_id
-        })
-        SET
-            q.retrieval_snapshot_id = $retrieval_snapshot_id,
-            q.retrieval_passage_ids = $retrieval_passage_ids,
-            q.retrieval_mode = $retrieval_mode,
-            q.updated_at = datetime()
-        """,
-        question_run_id=question_run_id,
-        retrieval_snapshot_id=retrieval_snapshot_id,
-        retrieval_passage_ids=retrieval_passage_ids,
-        retrieval_mode=retrieval_mode,
-    ).consume()
-
-print("Retrieval snapshot:", retrieval_snapshot_id)
 
 # REFERENCE_CONTEXT retrieval is deliberately separate from primary case
 # retrieval. Reference passages can explain framework/methodology but are never
@@ -848,7 +947,7 @@ reference_retrieval_mode = "NONE"
 reference_retrieval_passage_ids = []
 reference_retrieval_snapshot_id = None
 
-if include_reference_context:
+if include_reference_context or direct_document_ask:
     if maira_import_error is not None:
         message = (
             "Reference context requires MAIRA's deterministic free-text "
@@ -925,6 +1024,17 @@ if include_reference_context:
         )
     }
 
+    if direct_document_ask:
+        reference_documents = {
+            document_id: item
+            for document_id, item
+            in reference_documents.items()
+            if document_id
+            in set(
+                direct_reference_document_ids
+            )
+        }
+
     reference_document_names = {
         document_id: (
             item.get("reference_code")
@@ -936,7 +1046,7 @@ if include_reference_context:
         in reference_documents.items()
     }
 
-    reference_candidates = (
+    reference_candidates_df = (
         spark.table(
             REFERENCE_PASSAGE_TABLE
         )
@@ -944,6 +1054,22 @@ if include_reference_context:
             F.col("source_layer")
             == "REFERENCE_CONTEXT"
         )
+    )
+
+    if direct_document_ask:
+        reference_candidates_df = (
+            reference_candidates_df
+            .filter(
+                F.col(
+                    "reference_document_id"
+                ).isin(
+                    direct_reference_document_ids
+                )
+            )
+        )
+
+    reference_candidates = (
+        reference_candidates_df
         .select(
             F.col(
                 "reference_document_id"
@@ -1497,7 +1623,9 @@ CONTROLLED_TAXONOMY is not supplied here as occurrence evidence.
 Rules:
 1. Do not use general maritime knowledge to fill gaps.
 2. A case-specific factual claim must be supported by SOURCE_EVIDENCE.
-3. REFERENCE_CONTEXT may support framework/context statements only.
+3. REFERENCE_CONTEXT may support framework/context statements. For a
+   DIRECT_DOCUMENT_ASK it is the sole governed source and may directly support
+   answers about what the selected reference document says, defines or requires.
 4. Never transform a general rule, technical possibility or legal requirement
    into a case fact.
 5. Return passage IDs in the correct source-layer array only.
@@ -1537,8 +1665,21 @@ reference_context_text = "\n\n---\n\n".join(
 )
 
 user_prompt = (
-    f"Case / analysis: {question_run['analysis_title']}\n"
-    f"Evidence scope: {scope_mode}\n"
+    (
+        "Direct governed reference-document question\n"
+        if direct_document_ask
+        else (
+            "Case / analysis: "
+            + str(
+                question_run.get(
+                    "analysis_title"
+                )
+                or analysis_id
+            )
+            + "\n"
+        )
+    )
+    + f"Evidence scope: {scope_mode}\n"
     f"Output language: {question_run.get('output_language') or 'English'}\n"
     f"Question: {question_text}\n\n"
     "SOURCE_EVIDENCE passages:\n\n"
