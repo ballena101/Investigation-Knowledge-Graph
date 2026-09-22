@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import streamlit as st
+import streamlit.components.v1 as components
 from cryptography.fernet import Fernet
 from databricks.sdk import WorkspaceClient
 from neo4j import GraphDatabase
@@ -31,6 +32,7 @@ CLASS_D_CONTENT_RETENTION_HOURS = 24
 OTHER_CONTENT_RETENTION_HOURS = 72
 LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "5"))
 QUOTA_TIMEZONE = "Europe/Lisbon"
+NEWS_DASHBOARD_EMBED_URL = os.getenv("NEWS_DASHBOARD_EMBED_URL", "").strip()
 
 PUBLIC_MODEL_SERVICE = "system.ai.meta-llama-3-3-70b-instruct"
 INTERNAL_MODEL_SERVICE = "system.ai.gpt-oss-120b"
@@ -92,7 +94,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-simple-capability-navigation-v2"
+APP_BUILD = "2026-09-22-news-dashboard-embed-v1"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -2256,31 +2258,45 @@ with tab_home:
 with tab_news:
     st.subheader("News & Alerts")
     st.caption(
-        "A simple entry point for the existing country news dashboard. "
-        "The dashboard and governed read-only news view will be connected here."
+        "Existing Databricks AI/BI dashboard for maritime-safety news and "
+        "country-level alerts."
     )
 
-    n1, n2, n3 = st.columns(3)
-    n1.metric("Country dashboard", "To connect")
-    n2.metric("News table access", "Read-only")
-    n3.metric("LLM questions", "Preview")
+    if NEWS_DASHBOARD_EMBED_URL:
+        n1, n2, n3 = st.columns(3)
+        n1.metric("Country dashboard", "Connected")
+        n2.metric("News table access", "Read-only")
+        n3.metric("LLM questions", "Next step")
 
-    st.info(
-        "News is treated as external, unvalidated information. It will not be "
-        "mixed silently with validated investigation findings."
-    )
+        st.info(
+            "News is treated as external, unvalidated information. It is not "
+            "mixed silently with validated investigation findings."
+        )
 
-    news_question = st.text_input(
-        "Ask about the news",
-        placeholder="Example: What relevant ferry alerts were reported this week?",
-        disabled=True,
-        key="news_question_preview",
-    )
-    st.button(
-        "Ask the news assistant — coming soon",
-        disabled=True,
-        key="news_assistant_preview",
-    )
+        components.iframe(
+            NEWS_DASHBOARD_EMBED_URL,
+            height=850,
+            scrolling=True,
+        )
+        st.caption(
+            "Dashboard access follows Databricks dashboard sharing and data "
+            "permissions."
+        )
+    else:
+        n1, n2, n3 = st.columns(3)
+        n1.metric("Country dashboard", "Ready to connect")
+        n2.metric("News table access", "Read-only")
+        n3.metric("LLM questions", "Later")
+
+        st.info(
+            "The App is ready to display the dashboard. Configure the published "
+            "Databricks dashboard embed URL in NEWS_DASHBOARD_EMBED_URL."
+        )
+        st.write(
+            "In the dashboard: Share → Embed dashboard → copy the generated "
+            "embed URL. The LLM connection to the governed news tables remains "
+            "a separate later capability."
+        )
 
 with tab_new_analysis:
     st.subheader("Analyse Documents")
