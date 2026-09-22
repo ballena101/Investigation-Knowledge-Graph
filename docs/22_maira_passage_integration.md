@@ -199,3 +199,35 @@ ID binds the query specification to the selected passage IDs and text hashes.
 This validates the governed retrieval hand-off for the controlled case. It does
 not validate either model's interpretation accuracy. The snapshot remains a
 temporary view and is not yet a persisted benchmark result.
+
+
+## Operational MAIRA-first document routing — 2026-09-22
+
+Notebook 15 now applies the canonical ownership boundary during normal App
+document analyses.
+
+For each selected document:
+
+1. resolve the full source SHA-256 against `bdw_analysis_prod.maira.documents`;
+2. when there is exactly one MAIRA match, load
+   `bdw_analysis_prod.maira.passages`;
+3. validate every passage through the installed
+   `MAIRA_IKF_PASSAGE_V0.1` executable contract;
+4. preserve the MAIRA `passage_id`, exact passage text, text SHA-256, page
+   bounds and passage order when materialising the analysis-scoped evidence;
+5. record the MAIRA document/package identifiers on the Neo4j SourceDocument;
+6. if no MAIRA SHA match exists, temporarily use the existing IKF local
+   extraction path;
+7. if more than one MAIRA document matches the same SHA, fail closed;
+8. if a document already exists in MAIRA but the MAIRA contract package cannot
+   be imported, fail rather than create a second passage identity.
+
+The AnalysisGroup records `evidence_source_mode` as one of:
+
+- `MAIRA_CANONICAL`;
+- `MAIRA_FIRST_MIXED`;
+- `IKF_LOCAL_FALLBACK`;
+- `IKF_DIRECT_TEXT`.
+
+The App exposes this value under Technical details. Direct text remains an
+IKF-specific ingress at this stage.
