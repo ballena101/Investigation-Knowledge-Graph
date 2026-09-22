@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -66,6 +67,135 @@ CLASS_D_MODEL_OPTIONS = {
     "Both models": "BOTH",
 }
 
+
+APP_PRESCREEN_VERSION = "IKF_APP_PRESCREEN_V0.1"
+
+_APP_PROTECTED_TEXT_RULES = (
+    (
+        "DIRECT_EMAIL_IDENTIFIER",
+        re.compile(
+            r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "PERSONAL_ID_RECORD",
+        re.compile(
+            r"\b(?:passport|national\s+id|identity\s+card|id\s+number)"
+            r"\s*[:#-]?\s*[A-Z0-9-]{4,}\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "WITNESS_RECORD",
+        re.compile(
+            r"\b(?:witness\s+(?:statement|interview|testimony)|"
+            r"statement\s+of\s+witness)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "VDR_RAW_RECORD",
+        re.compile(
+            r"\b(?:(?:vdr|voyage\s+data\s+recorder)\s+"
+            r"(?:audio|recording|transcript|conversation)|"
+            r"(?:audio|recording|transcript)\s+from\s+(?:the\s+)?vdr)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "VTS_RAW_RECORD",
+        re.compile(
+            r"\b(?:vts|vessel\s+traffic\s+service)\s+"
+            r"(?:audio|recording|transcript|conversation)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "INVESTIGATOR_WORKING_RECORD",
+        re.compile(
+            r"\b(?:investigator(?:'s)?\s+(?:notes?|draft)|"
+            r"investigation\s+working\s+notes?|"
+            r"draft\s+(?:investigation\s+)?report)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "MEDICAL_RECORD",
+        re.compile(
+            r"\b(?:medical\s+(?:record|report|history)|"
+            r"health\s+record|patient\s+record)\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
+
+_APP_PROTECTED_METADATA_RULES = (
+    (
+        "WITNESS_RECORD_METADATA",
+        re.compile(
+            r"(?:witness[_\s-]*(?:statement|interview)|"
+            r"statement[_\s-]*of[_\s-]*witness)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "VDR_RAW_RECORD_METADATA",
+        re.compile(
+            r"(?:vdr|voyage[_\s-]*data[_\s-]*recorder)"
+            r".*(?:audio|recording|transcript)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "VTS_RAW_RECORD_METADATA",
+        re.compile(
+            r"(?:vts|vessel[_\s-]*traffic[_\s-]*service)"
+            r".*(?:audio|recording|transcript)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "INVESTIGATOR_WORKING_RECORD_METADATA",
+        re.compile(
+            r"(?:investigator[_\s-]*notes?|"
+            r"investigation[_\s-]*working[_\s-]*notes?|"
+            r"draft[_\s-]*(?:investigation[_\s-]*)?report)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "MEDICAL_RECORD_METADATA",
+        re.compile(
+            r"(?:medical|health|patient)[_\s-]*(?:record|report|history)",
+            re.IGNORECASE,
+        ),
+    ),
+)
+
+
+def app_protected_prescreen(
+    *,
+    text=None,
+    metadata_values=None,
+):
+    """Return rule IDs only; never return or log matched protected text."""
+
+    found = set()
+
+    if text:
+        for rule_id, pattern in _APP_PROTECTED_TEXT_RULES:
+            if pattern.search(text):
+                found.add(rule_id)
+
+    for value in metadata_values or []:
+        value = str(value or "")
+        for rule_id, pattern in _APP_PROTECTED_METADATA_RULES:
+            if pattern.search(value):
+                found.add(rule_id)
+
+    return sorted(found)
+
 INFORMATION_CLASSES = {
     "A": {
         "label": "A — Public / technical",
@@ -112,7 +242,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-reference-context-v15"
+APP_BUILD = "2026-09-22-class-d-prescreen-v16"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -4144,6 +4274,47 @@ with tab_new_analysis:
             if not DIRECT_TEXT_ENCRYPTION_KEY:
                 errors.append(
                     "Secure direct-text encryption is not configured."
+                )
+
+        # Early UI pre-screen. Backend notebook 15 repeats the authoritative
+        # content check after extraction, so bypassing this UI cannot bypass
+        # the fail-closed routing control.
+        if (
+            information_class != "D"
+            and not (
+                information_class == "B"
+                and input_mode == "Documents"
+            )
+        ):
+            if input_mode == "DIRECT_TEXT":
+                prescreen_rule_ids = app_protected_prescreen(
+                    text=direct_text,
+                )
+            else:
+                prescreen_metadata_values = []
+                for document_id in selected_document_ids:
+                    document = documents_by_id.get(
+                        document_id,
+                        {},
+                    )
+                    prescreen_metadata_values.extend(
+                        [
+                            document.get("filename"),
+                            document.get("relative_path"),
+                            document.get("report_title"),
+                        ]
+                    )
+
+                prescreen_rule_ids = app_protected_prescreen(
+                    metadata_values=prescreen_metadata_values,
+                )
+
+            if prescreen_rule_ids:
+                errors.append(
+                    "Protected-record indicators were detected before "
+                    "processing (" + ", ".join(prescreen_rule_ids) + "). "
+                    "This input must use Class D or be reviewed before "
+                    "continuing."
                 )
 
         if errors:
