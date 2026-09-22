@@ -148,19 +148,19 @@ The substantive PoC capabilities in this workstream are now implemented in
 source. The next milestone is to validate them together in one controlled
 Databricks session rather than continuing to add unvalidated layers.
 
-Prepare one release-preflight validator that checks:
+The release-preflight validator is implemented as notebook 55.
 
-- required Git-backed Lakeflow Jobs exist;
-- required App resources are attached;
-- Databricks Apps user scopes remain correct;
-- required MAIRA / IKF Delta tables are present;
-- governed source volumes/folders are available;
-- Neo4j is reachable;
-- no source-layer boundary has been collapsed;
-- accumulated validation notebooks can be run in the required order.
+Next execution step, when the user chooses to spend the Databricks runtime
+cost:
 
-Then perform one consolidated deployment/run when the user chooses to spend the
-Databricks runtime cost.
+1. pull current GitHub `main` for IKF and MAIRA;
+2. run notebook 55 and resolve any FAIL items;
+3. complete any NOT_INDEXED governed-corpus setup warnings;
+4. create/update and attach the accumulated Jobs/resources;
+5. redeploy the App once;
+6. execute the consolidated feature-validation sequence in
+   `docs/26_consolidated_runtime_validation.md`;
+7. record the observed PASS/FAIL results in this tracker.
 
 ### Consolidated runtime validation sequence
 
@@ -195,8 +195,8 @@ News/dashboard integration remains outside this conversation.
 
 ### P1 — consolidated production-readiness validation
 
-- one source-level release/preflight validator;
-- one consolidated Databricks deployment/test session;
+- release/preflight validator: **DONE in source (notebook 55)**;
+- one consolidated Databricks deployment/test session: **PENDING**;
 - reproducible benchmark/retrieval snapshots;
 - permissions/scopes validation;
 - retention validation;
@@ -564,3 +564,23 @@ Implemented in source:
 - transient similar-case matched evidence follows analysis retention cleanup.
 
 Status: **code complete; runtime validation deferred**.
+
+
+### Consolidated release preflight
+
+Implemented in source:
+
+- notebook `55_validate_consolidated_release_preflight.py`;
+- no LLM/model calls and no Job triggers;
+- checks required Lakeflow Job names;
+- checks App resource keys and effective user scopes `files` / `sql`;
+- checks core MAIRA / IKF Delta tables;
+- reports REFERENCE_CONTEXT / SHIELD indexing readiness;
+- checks governed source roots;
+- checks Neo4j connectivity;
+- verifies REFERENCE_CONTEXT is not mixed into ordinary SourceDocument;
+- verifies SHIELD is not exposed as an ordinary AVAILABLE document;
+- added `docs/26_consolidated_runtime_validation.md` as the one-shot
+  deployment/validation checklist.
+
+Status: **code/documentation complete; execution pending**.
