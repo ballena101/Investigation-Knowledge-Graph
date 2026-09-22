@@ -558,3 +558,10 @@ Implementation rule:
 
 This preserves the previously agreed product separation: news/alerts are an
 IKF capability, while MAIRA remains the investigation-evidence layer.
+
+
+Access-control assumption:
+- the IKF App is intended to be accessible only to authorised users;
+- opening the News & Alerts dashboard does not bypass Databricks permissions;
+- dashboard access remains restricted to users authorised for that dashboard
+  and its underlying data.
