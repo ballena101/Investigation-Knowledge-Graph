@@ -49,7 +49,7 @@ from databricks.sdk.service.serving import (
 from neo4j import GraphDatabase
 from pyspark.sql import functions as F
 
-QUESTION_RUN_VERSION = "IKF_QUESTION_RUN_V0.2_RETRIEVAL"
+QUESTION_RUN_VERSION = "IKF_QUESTION_RUN_V0.3_REFERENCE_CONTEXT"
 ANALYSIS_PASSAGE_TABLE = "bdw_analysis_prod.kg_poc.analysis_passage"
 
 MAX_SCOPE_PASSAGES = 80
@@ -1495,33 +1495,63 @@ def redact_direct_identifiers(value):
 # COMMAND ----------
 
 SYSTEM_PROMPT = """
-You answer an investigator's question using ONLY the supplied evidence
-passages.
+You answer an investigator's question using ONLY the supplied passages.
+
+Every passage is explicitly labelled with one SOURCE_LAYER.
+
+SOURCE_EVIDENCE:
+- occurrence-specific investigation evidence;
+- may support statements about what happened in the selected case.
+
+REFERENCE_CONTEXT:
+- legal, methodological or technical context from separately processed
+  Class-A material;
+- may explain requirements, definitions, methods or technical background;
+- MUST NOT be used as proof that an event, condition, cause or factor occurred
+  in the selected case.
+
+CONTROLLED_TAXONOMY is not supplied here as occurrence evidence.
 
 Rules:
-1. Do not use general maritime knowledge to fill evidence gaps.
-2. Every substantive answer must be supported by one or more supplied
-   passage_ids.
-3. Return only passage_ids that actually appear in the supplied evidence.
-4. Distinguish chronology from causality. Sequence alone does not establish
+1. Do not use general maritime knowledge to fill gaps.
+2. A case-specific factual claim must be supported by SOURCE_EVIDENCE.
+3. REFERENCE_CONTEXT may support framework/context statements only.
+4. Never transform a general rule, technical possibility or legal requirement
+   into a case fact.
+5. Return passage IDs in the correct source-layer array only.
+6. Distinguish chronology from causality. Sequence alone does not establish
    RESULTED_IN or CONTRIBUTED_TO.
-5. If the selected evidence does not support an answer, say so explicitly.
-6. Preserve uncertainty and conflicting source statements.
-7. Do not expose unnecessary personal identifiers in the answer.
-8. Return JSON only.
+7. If the supplied material does not support an answer, say so explicitly.
+8. Preserve uncertainty and conflicting statements.
+9. Do not expose unnecessary personal identifiers.
+10. Return JSON only.
 
 Required JSON:
 {
-  "answer": "concise evidence-grounded answer",
-  "passage_ids": ["passage_..."],
+  "answer": "concise grounded answer",
+  "source_evidence_passage_ids": ["passage_..."],
+  "reference_context_passage_ids": ["passage_..."],
   "insufficient_evidence": false,
   "limitations": ["..."]
 }
 """
 
-evidence_text = "\n\n---\n\n".join(
-    passage_block(row)
+source_evidence_text = "\n\n---\n\n".join(
+    passage_block(
+        row,
+        source_layer="SOURCE_EVIDENCE",
+        name_by_document_id=document_names,
+    )
     for row in passage_rows
+)
+
+reference_context_text = "\n\n---\n\n".join(
+    passage_block(
+        row,
+        source_layer="REFERENCE_CONTEXT",
+        name_by_document_id=reference_document_names,
+    )
+    for row in reference_rows
 )
 
 user_prompt = (
@@ -1529,8 +1559,16 @@ user_prompt = (
     f"Evidence scope: {scope_mode}\n"
     f"Output language: {question_run.get('output_language') or 'English'}\n"
     f"Question: {question_text}\n\n"
-    "Evidence passages:\n\n"
-    + evidence_text
+    "SOURCE_EVIDENCE passages:\n\n"
+    + source_evidence_text
+    + (
+        "\n\n==============================\n\n"
+        "REFERENCE_CONTEXT passages:\n\n"
+        + reference_context_text
+        if reference_context_text
+        else
+        "\n\nREFERENCE_CONTEXT passages: none selected/retrieved."
+    )
 )
 
 # COMMAND ----------
@@ -1628,15 +1666,41 @@ for model_key, model_service in zip(
             result.get("answer") or ""
         ).strip()
 
-        valid_ids = sorted(
-            {
-                str(value)
-                for value in result.get(
-                    "passage_ids",
-                    [],
-                )
-                if str(value) in passage_by_id
-            }
+        raw_source_ids = {
+            str(value)
+            for value in result.get(
+                "source_evidence_passage_ids",
+                [],
+            )
+        }
+        raw_reference_ids = {
+            str(value)
+            for value in result.get(
+                "reference_context_passage_ids",
+                [],
+            )
+        }
+
+        source_valid_ids = sorted(
+            passage_id
+            for passage_id in raw_source_ids
+            if passage_id
+            in source_evidence_by_id
+        )
+        reference_valid_ids = sorted(
+            passage_id
+            for passage_id in raw_reference_ids
+            if passage_id
+            in reference_context_by_id
+        )
+
+        invalid_source_ids = sorted(
+            raw_source_ids
+            - set(source_valid_ids)
+        )
+        invalid_reference_ids = sorted(
+            raw_reference_ids
+            - set(reference_valid_ids)
         )
 
         insufficient = bool(
@@ -1651,31 +1715,68 @@ for model_key, model_service in zip(
             if str(item).strip()
         ]
 
-        if answer_raw and not valid_ids:
+        if invalid_source_ids:
+            limitations.append(
+                "One or more returned SOURCE_EVIDENCE passage IDs were "
+                "not valid for the selected case-evidence layer."
+            )
+
+        if invalid_reference_ids:
+            limitations.append(
+                "One or more returned REFERENCE_CONTEXT passage IDs were "
+                "not valid for the selected reference layer."
+            )
+
+        if (
+            answer_raw
+            and not source_valid_ids
+            and not reference_valid_ids
+        ):
             insufficient = True
             limitations.append(
-                "The model returned no valid supporting passage IDs."
+                "The model returned no valid supporting passage IDs in "
+                "either source layer."
             )
             answer_raw = (
-                "The selected evidence does not contain a sufficiently "
+                "The supplied material does not contain a sufficiently "
                 "grounded answer with valid source references."
             )
 
         if not answer_raw:
             insufficient = True
             answer_raw = (
-                "The selected evidence does not provide a supported answer "
+                "The supplied material does not provide a supported answer "
                 "to this question."
             )
 
         answer = redact_direct_identifiers(
             answer_raw
         )
-        references = evidence_references(
-            valid_ids
+
+        source_references = evidence_references(
+            source_valid_ids
         )
-        locations = evidence_locations(
-            valid_ids
+        source_locations = evidence_locations(
+            source_valid_ids
+        )
+        reference_refs = reference_references(
+            reference_valid_ids
+        )
+        reference_locs = reference_locations(
+            reference_valid_ids
+        )
+
+        valid_ids = sorted(
+            set(source_valid_ids)
+            | set(reference_valid_ids)
+        )
+        references = (
+            source_references
+            + reference_refs
+        )
+        locations = (
+            source_locations
+            + reference_locs
         )
         duration = round(
             time.perf_counter() - started,
@@ -1694,6 +1795,12 @@ for model_key, model_service in zip(
                     m.passage_ids = $passage_ids,
                     m.evidence_references = $evidence_references,
                     m.evidence_locations = $evidence_locations,
+                    m.source_evidence_passage_ids = $source_evidence_passage_ids,
+                    m.source_evidence_references = $source_evidence_references,
+                    m.source_evidence_locations = $source_evidence_locations,
+                    m.reference_context_passage_ids = $reference_context_passage_ids,
+                    m.reference_context_references = $reference_context_references,
+                    m.reference_context_locations = $reference_context_locations,
                     m.insufficient_evidence = $insufficient_evidence,
                     m.limitations = $limitations,
                     m.duration_seconds = $duration_seconds,
@@ -1713,6 +1820,12 @@ for model_key, model_service in zip(
                 passage_ids=valid_ids,
                 evidence_references=references,
                 evidence_locations=locations,
+                source_evidence_passage_ids=source_valid_ids,
+                source_evidence_references=source_references,
+                source_evidence_locations=source_locations,
+                reference_context_passage_ids=reference_valid_ids,
+                reference_context_references=reference_refs,
+                reference_context_locations=reference_locs,
                 insufficient_evidence=insufficient,
                 limitations=limitations,
                 duration_seconds=duration,
