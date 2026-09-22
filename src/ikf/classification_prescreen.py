@@ -51,14 +51,6 @@ _RULES: tuple[
     tuple[str, str, re.Pattern[str]], ...
 ] = (
     (
-        "DIRECT_EMAIL_IDENTIFIER",
-        "direct personal email identifier",
-        re.compile(
-            r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
         "PERSONAL_ID_RECORD",
         "passport/national identity record",
         re.compile(
