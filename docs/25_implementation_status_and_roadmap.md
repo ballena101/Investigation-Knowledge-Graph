@@ -737,3 +737,22 @@ Implemented in source on 2026-09-22:
   `2026-09-22-findings-index-v25`.
 
 Status: **code/documentation complete; runtime validation pending redeploy**.
+
+
+### Simplified supporting evidence viewer
+
+Implemented in source on 2026-09-22:
+
+- Findings & Evidence now uses
+  Description → Supporting evidence → Source page;
+- one evidence location renders directly with no selector;
+- multiple evidence locations use a Supporting evidence selector;
+- PDF rendering is driven by structured document/page evidence locations;
+- passage IDs and raw provenance are hidden under Technical details;
+- source-reference-only legacy items are handled explicitly;
+- backup branch:
+  `backup/pre-evidence-viewer-simplification-2026-09-22`;
+- App build:
+  `2026-09-22-evidence-viewer-v26`.
+
+Status: **code/documentation complete; runtime validation pending redeploy**.
