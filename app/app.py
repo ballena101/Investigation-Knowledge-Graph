@@ -92,7 +92,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-21-capability-home-v1"
+APP_BUILD = "2026-09-22-simple-capability-navigation-v2"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -2132,75 +2132,99 @@ analysis_edge_styles = [
 ]
 
 
-tab_home, tab_new_analysis, tab_analyses, tab_review, tab_mapping_review, tab_graph, tab_about = st.tabs(
+(
+    tab_home,
+    tab_news,
+    tab_new_analysis,
+    tab_analyses,
+    tab_review,
+    tab_graph,
+    tab_about,
+) = st.tabs(
     [
         "Home",
-        "New analysis",
-        "Analyses",
-        "Relationship review",
-        "EMCIP mapping review",
-        "Reference graph",
+        "News & Alerts",
+        "Analyse Documents",
+        "Compare LLMs",
+        "Review & Validate",
+        "Findings & Knowledge",
         "Terms of reference",
     ]
 )
 
+# Relationship and EMCIP reviews are deliberately presented in one capability.
+# Re-entering the same Streamlit tab later appends the mapping-review section.
+tab_mapping_review = tab_review
+
 with tab_home:
-    st.subheader("IKF capabilities")
+    st.subheader("What would you like to do?")
     st.caption(
-        "The PoC is being built capability by capability. Stable backend "
-        "functions are moved into the App as soon as they have passed their "
-        "controlled validation checkpoint."
+        "Choose one capability. The full evidence and validation pipeline "
+        "remains available underneath, but you do not need to follow every "
+        "step when you only want to perform one task."
     )
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
 
     with c1:
-        st.markdown("### Investigation analysis")
+        st.markdown("### News & Alerts")
+        st.info("Preview")
+        st.write(
+            "Open the existing country news dashboard and, when connected, "
+            "ask the LLM questions about the governed news tables."
+        )
+        st.caption(
+            "News remains an external signal, not validated investigation "
+            "knowledge."
+        )
+
+    with c2:
+        st.markdown("### Analyse Documents")
         st.success("Active PoC")
         st.write(
-            "Analyse investigation documents, preserve evidence provenance, "
-            "compare model outputs and support investigator review."
+            "Start and follow an evidence-grounded analysis of investigation "
+            "documents or protected direct text."
         )
         st.caption(
             "Current focus: integrate the validated MAIRA governed-retrieval "
             "and dual-model review path into this App workflow."
         )
 
-    with c2:
-        st.markdown("### Knowledge graph")
+    with c3:
+        st.markdown("### Compare LLMs")
         st.success("Active PoC")
         st.write(
-            "Explore evidence-grounded concepts and relationships while "
-            "keeping machine-generated candidates separate from human review."
+            "Compare independent model answers against the same question and "
+            "evidence without having to use the graph."
         )
         st.caption(
-            "Only reviewed analytical knowledge should become authoritative "
-            "validated graph knowledge."
+            "Currently available for completed Class D dual-model analyses."
         )
 
-    with c3:
-        st.markdown("### SHIELD classification")
-        st.info("Next capability")
-        st.write(
-            "After a contributing factor is human validated, let the LLM suggest "
-            "a SHIELD classification; the SHIELD suggestion then requires "
-            "separate human validation."
-        )
-        st.caption(
-            "SHIELD reference material remains separate from investigation "
-            "input documents."
-        )
+    c4, c5 = st.columns(2)
 
     with c4:
-        st.markdown("### News & alerts")
-        st.info("Planned")
+        st.markdown("### Review & Validate")
+        st.success("Active PoC")
         st.write(
-            "Surface relevant maritime-safety developments and alerts through "
-            "the Databricks-supported monitoring capability."
+            "Review relationships and EMCIP mappings. SHIELD suggestions will "
+            "also appear here after contributing factors are validated."
         )
         st.caption(
-            "This capability will be added after the core investigation "
-            "analysis workflow is operational in the App."
+            "AI suggestions never become validated knowledge without a human "
+            "decision."
+        )
+
+    with c5:
+        st.markdown("### Findings & Knowledge")
+        st.success("Graph available")
+        st.write(
+            "Search findings, ask the LLM about processed knowledge and open "
+            "the relationship graph only when it helps."
+        )
+        st.caption(
+            "LLM search and assisted relationship correction are shown as "
+            "previews."
         )
 
     st.divider()
@@ -2229,12 +2253,42 @@ with tab_home:
             "evidence assessments."
         )
 
-with tab_new_analysis:
-    st.subheader("New analysis")
+with tab_news:
+    st.subheader("News & Alerts")
     st.caption(
-        "Create one evidence-grounded knowledge graph from either indexed "
-        "documents or text you provide directly. The information class controls "
-        "the permitted model path."
+        "A simple entry point for the existing country news dashboard. "
+        "The dashboard and governed read-only news view will be connected here."
+    )
+
+    n1, n2, n3 = st.columns(3)
+    n1.metric("Country dashboard", "To connect")
+    n2.metric("News table access", "Read-only")
+    n3.metric("LLM questions", "Preview")
+
+    st.info(
+        "News is treated as external, unvalidated information. It will not be "
+        "mixed silently with validated investigation findings."
+    )
+
+    news_question = st.text_input(
+        "Ask about the news",
+        placeholder="Example: What relevant ferry alerts were reported this week?",
+        disabled=True,
+        key="news_question_preview",
+    )
+    st.button(
+        "Ask the news assistant — coming soon",
+        disabled=True,
+        key="news_assistant_preview",
+    )
+
+with tab_new_analysis:
+    st.subheader("Analyse Documents")
+    st.caption(
+        "Start an evidence-grounded analysis from indexed documents or text "
+        "you provide directly. The knowledge graph is produced underneath, "
+        "but you do not need to open it to analyse a document. The information "
+        "class controls the permitted model path."
     )
 
     try:
@@ -2676,11 +2730,16 @@ with tab_new_analysis:
         st.exception(exc)
 
 with tab_analyses:
-    st.subheader("Analyses")
+    st.subheader("Compare LLMs")
     st.caption(
-        "Select an analysis group to inspect its source documents and "
-        "processing status. Analytical outputs will appear here as the "
-        "generic processing pipeline is connected."
+        "Select an analysis to inspect its status and results. Completed Class D "
+        "runs using both models are shown side by side against the same evidence. "
+        "A graph is not required for model comparison."
+    )
+
+    st.info(
+        "Direct question-and-passage comparison will be added here after its "
+        "validated MAIRA benchmark route is connected to the App."
     )
 
     if st.button(
@@ -3239,7 +3298,33 @@ with tab_analyses:
 
 
 with tab_graph:
-    st.subheader("Commodore Clipper reference demonstrator")
+    st.subheader("Findings & Knowledge")
+    st.caption(
+        "Search and ask about processed findings. Open the graph when the "
+        "relationships are useful; it is a view of the knowledge, not a "
+        "mandatory workflow step."
+    )
+
+    knowledge_question = st.text_input(
+        "Search or ask about findings and relationships",
+        placeholder=(
+            "Example: Which events preceded the fire, and what evidence supports them?"
+        ),
+        disabled=True,
+        key="knowledge_question_preview",
+    )
+    st.button(
+        "Ask the knowledge assistant — coming soon",
+        disabled=True,
+        key="knowledge_assistant_preview",
+    )
+    st.caption(
+        "The assistant will answer from processed sources with citations and "
+        "will distinguish candidate relationships from human-validated knowledge."
+    )
+
+    st.divider()
+    st.markdown("### Commodore Clipper reference demonstrator")
     st.caption(
         "The existing controlled case remains available while the generic "
         "document-group workflow is being implemented."
@@ -3264,8 +3349,32 @@ with tab_graph:
         key="commodore_clipper_graph",
     )
 
+    with st.expander("Review a graph relationship with the LLM — preview"):
+        st.write(
+            "Select a relationship, ask the LLM to check it against the source "
+            "evidence, and inspect the proposed change before deciding."
+        )
+        st.text_area(
+            "What should the LLM review?",
+            placeholder=(
+                "Example: Check whether this should be FOLLOWED_BY rather than CAUSED_BY."
+            ),
+            disabled=True,
+            key="graph_llm_review_preview",
+        )
+        st.button(
+            "Review selected relationship — coming soon",
+            disabled=True,
+            key="graph_llm_review_button_preview",
+        )
+        st.caption(
+            "The LLM will create a proposal with evidence. It will not directly "
+            "change the validated graph; a human must approve or reject it."
+        )
+
 with tab_review:
-    st.subheader("Relationship review")
+    st.subheader("Review & Validate")
+    st.markdown("### Relationship review")
     st.caption(
         "Human review is stored as a separate append-only review record. "
         "The original graph relationship and assistant review are not overwritten."
@@ -3428,7 +3537,8 @@ with tab_review:
 
 
 with tab_mapping_review:
-    st.subheader("EMCIP mapping review")
+    st.divider()
+    st.markdown("### EMCIP mapping review")
     st.caption(
         "Review the analytical mapping between a case concept and an EMCIP "
         "taxonomy value. Human review is appended separately; the original "
@@ -3627,6 +3737,14 @@ with tab_mapping_review:
                     "The EMCIP mapping review could not be saved to Neo4j."
                 )
                 st.exception(exc)
+
+    st.divider()
+    st.markdown("### SHIELD classification review")
+    st.info(
+        "Coming next: after a contributing factor has been human validated, "
+        "the LLM may suggest a SHIELD classification here. The suggestion will "
+        "require a separate human validation before acceptance."
+    )
 
 with tab_about:
     st.markdown(
