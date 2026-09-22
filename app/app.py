@@ -5520,6 +5520,9 @@ with tab_new_analysis:
 
                 load_recent_analyses.clear()
                 load_analysis_groups.clear()
+                st.session_state[
+                    "active_analysis_id"
+                ] = analysis_id
 
                 st.success(f"Analysis created: {analysis_id}")
                 st.write(f"Input: {source_description}")
@@ -5645,19 +5648,24 @@ with tab_new_analysis:
             for item in result_analyses
         }
 
-        result_analysis_id = st.selectbox(
-            "Analysis result",
-            options=list(result_by_id),
-            format_func=lambda value: (
-                f"{result_by_id[value]['analysis_title']} · "
-                f"Class {result_by_id[value].get('information_class') or '—'} · "
-                f"{result_by_id[value].get('status') or 'UNKNOWN'}"
-            ),
-            key="analyse_result_selector",
+        result_analysis_id = (
+            active_analysis_id
+            if active_analysis_id
+            in result_by_id
+            else list(result_by_id)[0]
         )
         result_meta = result_by_id[
             result_analysis_id
         ]
+        st.caption(
+            "Using active analysis: "
+            + str(
+                result_meta.get(
+                    "analysis_title"
+                )
+                or result_analysis_id
+            )
+        )
 
         if result_meta.get("status") != "COMPLETED":
             st.info(
@@ -5967,14 +5975,22 @@ def render_compare_llms():
                 f"{analysis['status']}"
             )
 
-        selected_analysis_id = st.selectbox(
-            "Analysis",
-            options=list(analyses_by_id),
-            format_func=analysis_label,
-            key="analysis_results_selector",
+        selected_analysis_id = (
+            active_analysis_id
+            if active_analysis_id
+            in analyses_by_id
+            else list(analyses_by_id)[0]
         )
 
-        selected_analysis = analyses_by_id[selected_analysis_id]
+        selected_analysis = analyses_by_id[
+            selected_analysis_id
+        ]
+        st.caption(
+            "Using active analysis: "
+            + analysis_label(
+                selected_analysis_id
+            )
+        )
 
         st.markdown("### Ask this evidence set")
 
@@ -7070,14 +7086,22 @@ with tab_graph:
             item["analysis_id"]: item
             for item in knowledge_analyses
         }
-        knowledge_analysis_id = st.selectbox(
-            "Analysis to explore",
-            options=list(knowledge_by_id),
-            format_func=lambda value: (
-                f"{knowledge_by_id[value]['analysis_title']} · "
-                f"{knowledge_by_id[value]['status']}"
-            ),
-            key="knowledge_analysis_selector",
+        knowledge_analysis_id = (
+            active_analysis_id
+            if active_analysis_id
+            in knowledge_by_id
+            else list(knowledge_by_id)[0]
+        )
+        st.caption(
+            "Using active analysis: "
+            + str(
+                knowledge_by_id[
+                    knowledge_analysis_id
+                ].get(
+                    "analysis_title"
+                )
+                or knowledge_analysis_id
+            )
         )
         knowledge_graph = load_analysis_graph(
             knowledge_analysis_id
@@ -7701,16 +7725,33 @@ with tab_review:
         item["analysis_id"]: item
         for item in review_analyses
     }
-    selected_review_analysis_id = st.selectbox(
-        "Analysis to review",
-        options=list(review_by_id),
-        format_func=lambda value: (
-            f"{review_by_id[value]['analysis_title']} · "
-            f"{review_by_id[value]['status']}"
-        ),
-        key="review_analysis_selector",
-        disabled=not review_by_id,
-    ) if review_by_id else None
+    selected_review_analysis_id = (
+        active_analysis_id
+        if (
+            active_analysis_id
+            and active_analysis_id
+            in review_by_id
+        )
+        else None
+    )
+
+    if selected_review_analysis_id:
+        st.caption(
+            "Using active analysis: "
+            + str(
+                review_by_id[
+                    selected_review_analysis_id
+                ].get(
+                    "analysis_title"
+                )
+                or selected_review_analysis_id
+            )
+        )
+    elif active_analysis_id:
+        st.info(
+            "The active analysis is not yet completed, so human review "
+            "controls are not available."
+        )
 
     st.markdown("### Relationship review")
     st.caption(
@@ -8519,18 +8560,19 @@ with tab_mapping_review:
     }
 
     mapping_analysis_id = (
-        st.selectbox(
-            "Analysis for EMCIP mapping",
-            options=list(mapping_analysis_by_id),
-            format_func=lambda value: (
-                f"{mapping_analysis_by_id[value]['analysis_title']} · "
-                f"Class {mapping_analysis_by_id[value].get('information_class') or '—'}"
-            ),
-            key="mapping_analysis_selector",
+        active_analysis_id
+        if (
+            active_analysis_id
+            and active_analysis_id
+            in mapping_analysis_by_id
         )
-        if mapping_analysis_by_id
         else None
     )
+
+    if mapping_analysis_id:
+        st.caption(
+            "EMCIP and SHIELD review use the same active analysis."
+        )
 
     mapping_model_run_id = None
     mapping_model_run = None
