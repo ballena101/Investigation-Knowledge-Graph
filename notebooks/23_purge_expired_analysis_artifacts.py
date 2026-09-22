@@ -236,6 +236,30 @@ for item in expired:
             analysis_id=analysis_id,
         ).consume()
 
+
+        session.run(
+            """
+            MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+            OPTIONAL MATCH (a)-[:HAS_SIMILAR_CASE_RUN]->(
+                run:SimilarCaseRun
+            )
+            OPTIONAL MATCH (run)-[:HAS_SIMILAR_CASE_CANDIDATE]->(
+                c:SimilarCaseCandidate
+            )
+            REMOVE
+                run.focus_labels,
+                c.matched_query_terms,
+                c.matched_expansion_terms,
+                c.evidence_passage_ids,
+                c.evidence_references,
+                c.evidence_locations
+            SET
+                run.derived_content_purged_at = datetime(),
+                c.derived_content_purged_at = datetime()
+            """,
+            analysis_id=analysis_id,
+        ).consume()
+
         session.run(
             """
             MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
