@@ -6604,6 +6604,92 @@ with tab_findings:
             "Use Knowledge Graph for diagram exploration and graph-scoped questions."
         )
 
+        findings_nodes_by_kind = {}
+        for node in knowledge_graph["nodes"]:
+            findings_nodes_by_kind.setdefault(
+                node.get("node_kind")
+                or "Other",
+                [],
+            ).append(node)
+
+        findings_event_nodes = findings_nodes_by_kind.get(
+            "Event",
+            [],
+        )
+        findings_contributing_nodes = findings_nodes_by_kind.get(
+            "ContributingFactor",
+            [],
+        )
+        findings_finding_nodes = findings_nodes_by_kind.get(
+            "Finding",
+            [],
+        )
+        findings_safety_issue_nodes = findings_nodes_by_kind.get(
+            "SafetyIssue",
+            [],
+        )
+        findings_recommendation_nodes = findings_nodes_by_kind.get(
+            "Recommendation",
+            [],
+        )
+        findings_relationships = [
+            edge
+            for edge in knowledge_graph["edges"]
+            if edge.get("edge_class") != "STRUCTURAL"
+        ]
+
+        st.markdown("### Analysis content index")
+        st.caption(
+            "Quick index of the distinct analytical content available for "
+            "the active analysis. These are AI-derived candidate outputs until "
+            "human validation is recorded where required."
+        )
+
+        index_cols = st.columns(6)
+        index_cols[0].metric(
+            "Events",
+            len(findings_event_nodes),
+        )
+        index_cols[1].metric(
+            "Contributing factors",
+            len(findings_contributing_nodes),
+        )
+        index_cols[2].metric(
+            "Findings",
+            len(findings_finding_nodes),
+        )
+        index_cols[3].metric(
+            "Safety issues",
+            len(findings_safety_issue_nodes),
+        )
+        index_cols[4].metric(
+            "Safety recommendations",
+            len(findings_recommendation_nodes),
+        )
+        index_cols[5].metric(
+            "Relationships",
+            len(findings_relationships),
+        )
+
+        findings_category_options = [
+            "All",
+            "Events",
+            "Contributing factors",
+            "Findings",
+            "Safety issues",
+            "Safety recommendations",
+            "Relationships",
+        ]
+        findings_category = st.radio(
+            "Browse category",
+            options=findings_category_options,
+            horizontal=True,
+            key=(
+                "findings_category_"
+                + knowledge_analysis_id
+            ),
+        )
+
         knowledge_elements = {
             "nodes": [
                 {
@@ -6664,6 +6750,18 @@ with tab_findings:
                 evidence_items.append(
                     {
                         "kind": "Node",
+                        "category": (
+                            {
+                                "Event": "Events",
+                                "ContributingFactor": "Contributing factors",
+                                "Finding": "Findings",
+                                "SafetyIssue": "Safety issues",
+                                "Recommendation": "Safety recommendations",
+                            }.get(
+                                node.get("node_kind"),
+                                "Other",
+                            )
+                        ),
                         "label": (
                             f"{node['node_kind']}: {node['label']}"
                         ),
@@ -6690,6 +6788,7 @@ with tab_findings:
                 evidence_items.append(
                     {
                         "kind": "Relationship",
+                        "category": "Relationships",
                         "label": (
                             f"{edge['source_label']} — "
                             f"{edge['relationship']} → "
@@ -6714,176 +6813,200 @@ with tab_findings:
                     }
                 )
 
-            selected_evidence_index = st.selectbox(
-                "Finding / event / concept / relationship",
-                options=list(range(len(evidence_items))),
-                format_func=lambda index: evidence_items[index]["label"],
-                key="knowledge_evidence_selector",
-            )
-
-            selected_evidence = evidence_items[
-                selected_evidence_index
-            ]
-
-            evidence_left, evidence_right = st.columns(
-                [1.0, 1.2]
-            )
-
-            with evidence_left:
-                st.markdown("**Description**")
-                st.write(selected_evidence["description"])
-
-                st.markdown("**Source reference**")
-                if selected_evidence["references"]:
-                    for reference in selected_evidence["references"]:
-                        st.write(f"• {reference}")
-                else:
-                    st.write(
-                        "No page-level source reference is available for "
-                        "this item in an older analysis."
-                    )
-
-                with st.expander("Technical evidence IDs"):
-                    for passage_id in selected_evidence["passage_ids"]:
-                        st.code(passage_id, language=None)
-
-            with evidence_right:
-                st.markdown("**Source document**")
-
-                parsed_locations = [
-                    parsed
-                    for parsed in (
-                        parse_evidence_location(value)
-                        for value in selected_evidence["locations"]
-                    )
-                    if parsed is not None
+            if findings_category != "All":
+                evidence_items = [
+                    item
+                    for item in evidence_items
+                    if item.get("category")
+                    == findings_category
                 ]
 
-                analysis_sources = load_analysis_sources(
-                    knowledge_analysis_id
+            if not evidence_items:
+                st.info(
+                    "No items are available in this category for the active analysis."
                 )
-                source_by_id = {
-                    source["document_id"]: source
-                    for source in analysis_sources
-                }
+            else:
+                selected_evidence_index = st.selectbox(
+                    "Select item",
+                    options=list(
+                        range(
+                            len(evidence_items)
+                        )
+                    ),
+                    format_func=lambda index: (
+                        evidence_items[index][
+                            "label"
+                        ]
+                    ),
+                    key=(
+                        "knowledge_evidence_selector_"
+                        + findings_category
+                    ),
+                )
 
-                if not parsed_locations:
-                    st.info(
-                        "No source-page location is available for this "
-                        "item. Analyses created with the newer citation-enabled "
-                        "pipeline include viewer locations and page references."
-                    )
-                else:
-                    location_index = st.selectbox(
-                        "Evidence page",
-                        options=list(range(len(parsed_locations))),
-                        format_func=lambda index: format_evidence_location(
-                            parsed_locations[index],
-                            source_by_id.get(
-                                parsed_locations[index]["document_id"]
-                            ),
-                        ),
-                        key=(
-                            "knowledge_source_page_"
-                            + str(selected_evidence_index)
-                        ),
-                    )
+                selected_evidence = evidence_items[
+                    selected_evidence_index
+                ]
 
-                    location = parsed_locations[
-                        location_index
+                evidence_left, evidence_right = st.columns(
+                    [1.0, 1.2]
+                )
+
+                with evidence_left:
+                    st.markdown("**Description**")
+                    st.write(selected_evidence["description"])
+
+                    st.markdown("**Source reference**")
+                    if selected_evidence["references"]:
+                        for reference in selected_evidence["references"]:
+                            st.write(f"• {reference}")
+                    else:
+                        st.write(
+                            "No page-level source reference is available for "
+                            "this item in an older analysis."
+                        )
+
+                    with st.expander("Technical evidence IDs"):
+                        for passage_id in selected_evidence["passage_ids"]:
+                            st.code(passage_id, language=None)
+
+                with evidence_right:
+                    st.markdown("**Source document**")
+
+                    parsed_locations = [
+                        parsed
+                        for parsed in (
+                            parse_evidence_location(value)
+                            for value in selected_evidence["locations"]
+                        )
+                        if parsed is not None
                     ]
-                    source = source_by_id.get(
-                        location["document_id"]
-                    )
 
-                    if source is None:
-                        st.warning(
-                            "The evidence reference exists, but its source "
-                            "document is not linked to this analysis."
+                    analysis_sources = load_analysis_sources(
+                        knowledge_analysis_id
+                    )
+                    source_by_id = {
+                        source["document_id"]: source
+                        for source in analysis_sources
+                    }
+
+                    if not parsed_locations:
+                        st.info(
+                            "No source-page location is available for this "
+                            "item. Analyses created with the newer citation-enabled "
+                            "pipeline include viewer locations and page references."
                         )
                     else:
-                        source_path = source.get(
-                            "viewer_source_path"
+                        location_index = st.selectbox(
+                            "Evidence page",
+                            options=list(range(len(parsed_locations))),
+                            format_func=lambda index: format_evidence_location(
+                                parsed_locations[index],
+                                source_by_id.get(
+                                    parsed_locations[index]["document_id"]
+                                ),
+                            ),
+                            key=(
+                                "knowledge_source_page_"
+                                + str(selected_evidence_index)
+                            ),
                         )
-                        source_type = str(
-                            source.get("source_type") or ""
-                        ).upper()
 
-                        if source_type != "PDF":
-                            st.info(
-                                "The source reference is available, but the "
-                                "embedded viewer currently supports PDF "
-                                "documents only."
-                            )
-                        elif not source_path:
+                        location = parsed_locations[
+                            location_index
+                        ]
+                        source = source_by_id.get(
+                            location["document_id"]
+                        )
+
+                        if source is None:
                             st.warning(
-                                "No governed source-document path is "
-                                "registered for this evidence."
+                                "The evidence reference exists, but its source "
+                                "document is not linked to this analysis."
                             )
                         else:
-                            try:
-                                pdf_bytes = download_source_file_as_user(
-                                    source_path
-                                )
-                                excerpt_bytes = pdf_page_range_bytes(
-                                    pdf_bytes,
-                                    location.get("page_start"),
-                                    location.get("page_end"),
-                                )
+                            source_path = source.get(
+                                "viewer_source_path"
+                            )
+                            source_type = str(
+                                source.get("source_type") or ""
+                            ).upper()
 
-                                st.caption(
-                                    format_evidence_location(
-                                        location,
-                                        source,
+                            if source_type != "PDF":
+                                st.info(
+                                    "The source reference is available, but the "
+                                    "embedded viewer currently supports PDF "
+                                    "documents only."
+                                )
+                            elif not source_path:
+                                st.warning(
+                                    "No governed source-document path is "
+                                    "registered for this evidence."
+                                )
+                            else:
+                                try:
+                                    pdf_bytes = download_source_file_as_user(
+                                        source_path
                                     )
-                                )
-                                st.pdf(
-                                    excerpt_bytes,
-                                    height=720,
-                                    key=(
-                                        "evidence_pdf_"
-                                        + hashlib.sha256(
-                                            (
-                                                source_path
-                                                + "|"
-                                                + str(location.get("page_start"))
-                                                + "|"
-                                                + str(location.get("page_end"))
-                                            ).encode("utf-8")
-                                        ).hexdigest()[:16]
-                                    ),
-                                )
-
-                                with st.expander(
-                                    "View full source report",
-                                    expanded=False,
-                                ):
-                                    st.pdf(
+                                    excerpt_bytes = pdf_page_range_bytes(
                                         pdf_bytes,
-                                        height=800,
+                                        location.get("page_start"),
+                                        location.get("page_end"),
+                                    )
+
+                                    st.caption(
+                                        format_evidence_location(
+                                            location,
+                                            source,
+                                        )
+                                    )
+                                    st.pdf(
+                                        excerpt_bytes,
+                                        height=720,
                                         key=(
-                                            "full_pdf_"
+                                            "evidence_pdf_"
                                             + hashlib.sha256(
-                                                source_path.encode("utf-8")
+                                                (
+                                                    source_path
+                                                    + "|"
+                                                    + str(location.get("page_start"))
+                                                    + "|"
+                                                    + str(location.get("page_end"))
+                                                ).encode("utf-8")
                                             ).hexdigest()[:16]
                                         ),
                                     )
 
-                            except PermissionError as exc:
-                                st.warning(str(exc))
-                                st.caption(
-                                    "The viewer uses your Databricks user "
-                                    "authorization, so Unity Catalog access "
-                                    "is not bypassed."
-                                )
-                            except FileNotFoundError as exc:
-                                st.warning(str(exc))
-                            except Exception as exc:
-                                st.error(
-                                    "The source document could not be "
-                                    "rendered."
-                                )
-                                st.caption(str(exc))
+                                    with st.expander(
+                                        "View full source report",
+                                        expanded=False,
+                                    ):
+                                        st.pdf(
+                                            pdf_bytes,
+                                            height=800,
+                                            key=(
+                                                "full_pdf_"
+                                                + hashlib.sha256(
+                                                    source_path.encode("utf-8")
+                                                ).hexdigest()[:16]
+                                            ),
+                                        )
+
+                                except PermissionError as exc:
+                                    st.warning(str(exc))
+                                    st.caption(
+                                        "The viewer uses your Databricks user "
+                                        "authorization, so Unity Catalog access "
+                                        "is not bypassed."
+                                    )
+                                except FileNotFoundError as exc:
+                                    st.warning(str(exc))
+                                except Exception as exc:
+                                    st.error(
+                                        "The source document could not be "
+                                        "rendered."
+                                    )
+                                    st.caption(str(exc))
 
             st.info(
                 "Relationship validation and optional assistant correction "
