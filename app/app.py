@@ -2161,6 +2161,7 @@ def load_question_runs(analysis_id):
         q.scope_mode AS scope_mode,
         coalesce(q.scope_document_ids, []) AS scope_document_ids,
         q.model_selection AS model_selection,
+        coalesce(q.interaction_surface, 'ASK_COMPARE') AS interaction_surface,
         coalesce(q.include_reference_context, false) AS include_reference_context,
         coalesce(q.model_keys, []) AS model_keys,
         q.question_text AS question_text,
@@ -6558,9 +6559,22 @@ def render_compare_llms():
                         )
                         st.exception(exc)
 
-            question_runs = load_question_runs(
-                selected_analysis_id
-            )
+            question_runs = [
+                item
+                for item in load_question_runs(
+                    selected_analysis_id
+                )
+                if (
+                    item.get(
+                        "interaction_surface"
+                    )
+                    in {
+                        None,
+                        "",
+                        "ASK_COMPARE",
+                    }
+                )
+            ]
 
             if question_runs:
                 st.markdown("### Question history")
