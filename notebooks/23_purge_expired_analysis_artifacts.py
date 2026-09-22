@@ -167,10 +167,18 @@ for item in expired:
                 q.question_text,
                 q.encrypted_question_text,
                 q.processing_error,
+                q.retrieval_passage_ids,
+                q.reference_retrieval_passage_ids,
                 qm.answer,
                 qm.passage_ids,
                 qm.evidence_references,
                 qm.evidence_locations,
+                qm.source_evidence_passage_ids,
+                qm.source_evidence_references,
+                qm.source_evidence_locations,
+                qm.reference_context_passage_ids,
+                qm.reference_context_references,
+                qm.reference_context_locations,
                 qm.limitations,
                 qm.processing_error
             SET
