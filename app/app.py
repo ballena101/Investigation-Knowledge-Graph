@@ -4762,18 +4762,18 @@ analysis_edge_styles = [
     tab_home,
     tab_news,
     tab_new_analysis,
+    tab_graph,
     tab_analyses,
     tab_review,
-    tab_graph,
     tab_about,
 ) = st.tabs(
     [
         "Home",
         "News & Alerts",
         "Analyse Documents",
+        "Findings & Knowledge",
         "Ask / Compare LLMs",
         "Review & Validate",
-        "Findings & Knowledge",
         "Terms of reference",
     ]
 )
