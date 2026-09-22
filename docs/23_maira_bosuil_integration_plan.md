@@ -647,3 +647,17 @@ The subject vessel is connected only to the first supported event. Explicit
 source times may be used deterministically to establish FOLLOWED_BY chronology,
 but never causality. When a vessel name is supported by the source, the named
 Vessel node is retained; `Subject vessel` is only the unnamed fallback.
+
+
+### MAIRA-first document evidence routing implemented
+
+The first operational Phase-B migration slice is implemented in notebook 15.
+Normal App document analyses now use canonical MAIRA passages whenever the
+selected source document matches MAIRA by full SHA-256. MAIRA passage identity,
+exact text and text hash are preserved. Unmatched documents continue through a
+temporary IKF fallback so the PoC remains usable during migration.
+
+This does not yet retire the fallback parser and does not change the direct-text
+ingress. The next integration step is to connect governed MAIRA query/retrieval
+logic to normal App analyses where the investigator's question can be expressed
+by a governed query specification.
