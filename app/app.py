@@ -31,6 +31,9 @@ SHIELD_PROPOSAL_JOB_ID = os.getenv("SHIELD_PROPOSAL_JOB_ID")
 RELATIONSHIP_CORRECTION_JOB_ID = os.getenv(
     "RELATIONSHIP_CORRECTION_JOB_ID"
 )
+SIMILAR_CASES_JOB_ID = os.getenv(
+    "SIMILAR_CASES_JOB_ID"
+)
 DIRECT_TEXT_ENCRYPTION_KEY = os.getenv("DIRECT_TEXT_ENCRYPTION_KEY")
 IKG_ADMIN_USERS = {
     item.strip().lower()
@@ -305,7 +308,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-knowledge-assistant-v20"
+APP_BUILD = "2026-09-22-similar-maira-cases-v21"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -3528,6 +3531,172 @@ def save_relationship_correction_review(
         "applied_relationship":
             applied_relationship,
     }
+
+
+def trigger_similar_cases_job(
+    analysis_id,
+):
+    if not SIMILAR_CASES_JOB_ID:
+        raise RuntimeError(
+            "No Similar MAIRA Cases Job is attached to the App. "
+            "Create notebook 53's Job, attach it with resource key "
+            "'similar_cases_job', and redeploy."
+        )
+
+    response = get_workspace_client().api_client.do(
+        "POST",
+        "/api/2.2/jobs/run-now",
+        body={
+            "job_id": int(
+                SIMILAR_CASES_JOB_ID
+            ),
+            "job_parameters": {
+                "analysis_id":
+                    analysis_id,
+            },
+        },
+    )
+
+    run_id = response.get(
+        "run_id"
+    )
+
+    if not run_id:
+        raise RuntimeError(
+            "Databricks accepted the Similar MAIRA Cases Job "
+            "but returned no run_id."
+        )
+
+    with get_driver().session() as session:
+        session.run(
+            """
+            MATCH (a:AnalysisGroup {
+                analysis_id: $analysis_id
+            })
+            SET
+                a.similar_cases_status = 'QUEUED',
+                a.similar_cases_job_run_id = $job_run_id,
+                a.similar_cases_error = NULL,
+                a.similar_cases_updated_at = datetime()
+            """,
+            analysis_id=analysis_id,
+            job_run_id=str(
+                run_id
+            ),
+        ).consume()
+
+    return str(
+        run_id
+    )
+
+
+@st.cache_data(ttl=30)
+def load_similar_case_candidates(
+    analysis_id,
+):
+    query = """
+    MATCH (a:AnalysisGroup {
+        analysis_id: $analysis_id
+    })-[:HAS_SIMILAR_CASE_RUN]->(
+        run:SimilarCaseRun
+    )-[:HAS_SIMILAR_CASE_CANDIDATE]->(
+        c:SimilarCaseCandidate
+    )
+    WITH
+        run,
+        c
+    ORDER BY
+        run.updated_at DESC,
+        c.rank ASC
+    WITH
+        collect({
+            run_id:
+                run.similar_case_run_id,
+            retrieval_method:
+                run.retrieval_method,
+            retrieval_snapshot_id:
+                run.retrieval_snapshot_id,
+            run_updated_at:
+                toString(
+                    run.updated_at
+                ),
+            candidate_id:
+                c.candidate_id,
+            rank:
+                c.rank,
+            report_package_id:
+                c.report_package_id,
+            report_title:
+                c.report_title,
+            vessel_name:
+                c.vessel_name,
+            source_filename:
+                c.source_filename,
+            publication_date:
+                c.publication_date,
+            investigation_body:
+                c.investigation_body,
+            matched_query_terms:
+                coalesce(
+                    c.matched_query_terms,
+                    []
+                ),
+            matched_expansion_terms:
+                coalesce(
+                    c.matched_expansion_terms,
+                    []
+                ),
+            total_score:
+                c.total_score,
+            max_passage_score:
+                c.max_passage_score,
+            evidence_passage_ids:
+                coalesce(
+                    c.evidence_passage_ids,
+                    []
+                ),
+            evidence_references:
+                coalesce(
+                    c.evidence_references,
+                    []
+                ),
+            evidence_locations:
+                coalesce(
+                    c.evidence_locations,
+                    []
+                )
+        }) AS rows
+    RETURN rows
+    """
+
+    with get_driver().session() as session:
+        record = session.run(
+            query,
+            analysis_id=analysis_id,
+        ).single()
+
+    if record is None:
+        return []
+
+    rows = record[
+        "rows"
+    ] or []
+
+    if not rows:
+        return []
+
+    latest_run_id = rows[0][
+        "run_id"
+    ]
+
+    return [
+        row
+        for row in rows
+        if row[
+            "run_id"
+        ]
+        == latest_run_id
+    ]
 
 
 def trigger_shield_proposal_job(
