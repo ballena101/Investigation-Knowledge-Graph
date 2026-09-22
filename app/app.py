@@ -8261,14 +8261,16 @@ with tab_knowledge_graph:
                     load_question_runs.clear()
                     load_question_model_runs.clear()
 
+                    st.session_state[
+                        (
+                            "graph_question_job_run_"
+                            + graph_analysis_id
+                        )
+                    ] = graph_question_job_run_id
+
                     st.success(
-                        "Graph question queued."
-                    )
-                    st.caption(
-                        "Question run: "
-                        + graph_question_run_id
-                        + " · Databricks run: "
-                        + graph_question_job_run_id
+                        "Graph question queued. Use Refresh graph question "
+                        "status to update the answer."
                     )
 
                 except Exception as exc:
@@ -8296,6 +8298,33 @@ with tab_knowledge_graph:
                     st.exception(
                         exc
                     )
+
+        graph_status_left, graph_status_right = st.columns(
+            [1.2, 2.8]
+        )
+        with graph_status_left:
+            if st.button(
+                "Refresh graph question status",
+                key=(
+                    "refresh_graph_question_"
+                    + graph_analysis_id
+                ),
+                use_container_width=True,
+            ):
+                load_question_runs.clear()
+                load_question_model_runs.clear()
+                st.rerun()
+
+        with graph_status_right:
+            render_async_job_status(
+                st.session_state.get(
+                    (
+                        "graph_question_job_run_"
+                        + graph_analysis_id
+                    )
+                ),
+                "Graph question",
+            )
 
         graph_question_runs = [
             item
