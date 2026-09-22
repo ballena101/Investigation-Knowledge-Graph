@@ -110,7 +110,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-question-separation-and-citations-v8"
+APP_BUILD = "2026-09-22-scoped-ask-backend-v9"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -3784,9 +3784,10 @@ def render_compare_llms():
     )
 
     st.info(
-        "The scoped free-text question runner is the next backend slice. "
-        "Current completed dual-model analyses remain available below for "
-        "comparison. Questions will not be stored on Analyse Documents."
+        "Questions are separate from document analysis. Select a processed "
+        "evidence set, choose the scope, ask in free text, and receive an "
+        "answer with document/page citations. Model comparison is optional "
+        "where the information-class policy allows it."
     )
 
     if st.button(
@@ -3802,6 +3803,8 @@ def render_compare_llms():
         load_analysis_graph.clear()
         load_model_runs.clear()
         load_model_run_graph.clear()
+        load_question_runs.clear()
+        load_question_model_runs.clear()
         st.toast("Status refreshed")
 
     try:
@@ -3844,6 +3847,388 @@ def render_compare_llms():
         )
 
         selected_analysis = analyses_by_id[selected_analysis_id]
+
+        st.markdown("### Ask this evidence set")
+
+        if selected_analysis.get("status") != "COMPLETED":
+            st.info(
+                "Questioning is enabled after the selected evidence set has "
+                "completed processing."
+            )
+        else:
+            ask_sources = load_analysis_sources(
+                selected_analysis_id
+            )
+            ask_source_by_id = {
+                source["document_id"]: source
+                for source in ask_sources
+            }
+
+            input_mode_value_for_ask = (
+                selected_analysis.get("input_mode")
+                or "DOCUMENTS"
+            )
+            class_for_ask = (
+                selected_analysis.get("information_class")
+                or "B"
+            )
+
+            if input_mode_value_for_ask == "DIRECT_TEXT":
+                scope_label = "Entire evidence set"
+                scope_mode = "WHOLE_CASE"
+                scope_document_ids = []
+            else:
+                scope_options = {
+                    "Entire case / analysis": "WHOLE_CASE",
+                    "One document": "ONE_DOCUMENT",
+                    "Selected documents": "SELECTED_DOCUMENTS",
+                }
+                scope_label = st.radio(
+                    "Evidence scope",
+                    options=list(scope_options),
+                    horizontal=True,
+                    key=(
+                        "ask_scope_"
+                        + selected_analysis_id
+                    ),
+                )
+                scope_mode = scope_options[
+                    scope_label
+                ]
+
+                def ask_source_label(document_id):
+                    source = ask_source_by_id[
+                        document_id
+                    ]
+                    repository = (
+                        source.get(
+                            "viewer_source_repository"
+                        )
+                        or "IKF"
+                    )
+                    return (
+                        f"[{repository}] "
+                        f"{source.get('viewer_source_filename') or source.get('filename')}"
+                    )
+
+                if scope_mode == "ONE_DOCUMENT":
+                    one_document_id = st.selectbox(
+                        "Document",
+                        options=list(
+                            ask_source_by_id
+                        ),
+                        format_func=ask_source_label,
+                        key=(
+                            "ask_one_document_"
+                            + selected_analysis_id
+                        ),
+                    )
+                    scope_document_ids = [
+                        one_document_id
+                    ]
+                elif scope_mode == "SELECTED_DOCUMENTS":
+                    scope_document_ids = st.multiselect(
+                        "Documents",
+                        options=list(
+                            ask_source_by_id
+                        ),
+                        format_func=ask_source_label,
+                        max_selections=MAX_DOCUMENTS_PER_ANALYSIS,
+                        filter_mode="contains",
+                        key=(
+                            "ask_selected_documents_"
+                            + selected_analysis_id
+                        ),
+                    )
+                else:
+                    scope_document_ids = []
+
+            if class_for_ask == "D":
+                ask_model_label = st.radio(
+                    "Model mode",
+                    options=list(
+                        CLASS_D_MODEL_OPTIONS
+                    ),
+                    horizontal=True,
+                    key=(
+                        "ask_model_mode_"
+                        + selected_analysis_id
+                    ),
+                    help=(
+                        "Protected/Class D questions use only the dedicated "
+                        "approved model routes. Both models receive exactly "
+                        "the same scoped evidence and question."
+                    ),
+                )
+                ask_model_selection = (
+                    CLASS_D_MODEL_OPTIONS[
+                        ask_model_label
+                    ]
+                )
+
+                if ask_model_selection in {
+                    "LLAMA70",
+                    "BOTH",
+                }:
+                    llama_used = get_llama_daily_usage()
+                    llama_remaining = max(
+                        LLAMA_DAILY_QUESTION_LIMIT
+                        - llama_used,
+                        0,
+                    )
+                    st.caption(
+                        "Llama 3.3 70B questions remaining today: "
+                        f"{llama_remaining}"
+                    )
+            else:
+                ask_model_selection = "DEFAULT"
+                ask_policy = resolve_model_policy(
+                    class_for_ask
+                )
+                st.caption(
+                    "Model: "
+                    + (
+                        ask_policy.get("model_name")
+                        or ask_policy.get("model")
+                        or "default class model"
+                    )
+                )
+
+            with st.form(
+                (
+                    "ask_question_form_"
+                    + selected_analysis_id
+                ),
+                clear_on_submit=False,
+            ):
+                ask_question_text = st.text_area(
+                    "Question",
+                    placeholder=(
+                        "Example: What factors contributed to the contact "
+                        "with the quay?"
+                    ),
+                    height=120,
+                )
+                ask_submitted = st.form_submit_button(
+                    "Ask",
+                    type="primary",
+                )
+
+            if ask_submitted:
+                ask_errors = []
+
+                if not ask_question_text.strip():
+                    ask_errors.append(
+                        "Enter a question."
+                    )
+
+                if (
+                    scope_mode
+                    == "SELECTED_DOCUMENTS"
+                    and not scope_document_ids
+                ):
+                    ask_errors.append(
+                        "Select at least one document."
+                    )
+
+                if class_for_ask == "D":
+                    if (
+                        ask_model_selection
+                        in {"LLAMA70", "BOTH"}
+                        and get_llama_daily_usage()
+                        >= LLAMA_DAILY_QUESTION_LIMIT
+                    ):
+                        ask_errors.append(
+                            "The daily Llama 3.3 70B question limit has been reached."
+                        )
+
+                if not ASK_JOB_ID:
+                    ask_errors.append(
+                        "The Ask Job has not yet been attached to this App deployment."
+                    )
+
+                if ask_errors:
+                    for error in ask_errors:
+                        st.error(error)
+                else:
+                    question_run_id = None
+                    try:
+                        question_run_id = create_question_run(
+                            analysis=selected_analysis,
+                            question_text=ask_question_text.strip(),
+                            scope_mode=scope_mode,
+                            scope_document_ids=scope_document_ids,
+                            model_selection=ask_model_selection,
+                        )
+
+                        if (
+                            class_for_ask == "D"
+                            and ask_model_selection
+                            in {"LLAMA70", "BOTH"}
+                        ):
+                            consumed = consume_llama_daily_usage()
+                            if consumed is None:
+                                raise RuntimeError(
+                                    "The Llama daily quota could not be reserved."
+                                )
+
+                        run_id = trigger_question_job(
+                            question_run_id
+                        )
+
+                        load_question_runs.clear()
+                        load_question_model_runs.clear()
+
+                        st.success(
+                            "Question queued."
+                        )
+                        st.caption(
+                            f"Question run: {question_run_id} · "
+                            f"Databricks run: {run_id}"
+                        )
+
+                    except Exception as exc:
+                        if question_run_id:
+                            with get_driver().session() as session:
+                                session.run(
+                                    """
+                                    MATCH (q:QuestionRun {
+                                        question_run_id: $question_run_id
+                                    })
+                                    SET
+                                        q.status = 'FAILED',
+                                        q.processing_stage = 'JOB_TRIGGER_FAILED',
+                                        q.processing_error = $error_message,
+                                        q.updated_at = datetime()
+                                    """,
+                                    question_run_id=question_run_id,
+                                    error_message=(
+                                        f"{type(exc).__name__}: {exc}"
+                                    ),
+                                ).consume()
+                        st.error(
+                            "The question could not be queued."
+                        )
+                        st.exception(exc)
+
+            question_runs = load_question_runs(
+                selected_analysis_id
+            )
+
+            if question_runs:
+                st.markdown("### Question history")
+
+                question_by_id = {
+                    item["question_run_id"]: item
+                    for item in question_runs
+                }
+
+                selected_question_run_id = st.selectbox(
+                    "Question run",
+                    options=list(question_by_id),
+                    format_func=lambda value: (
+                        question_display_text(
+                            question_by_id[value]
+                        )[:100]
+                        + " · "
+                        + (
+                            question_by_id[value].get(
+                                "status"
+                            )
+                            or "UNKNOWN"
+                        )
+                    ),
+                    key=(
+                        "question_history_"
+                        + selected_analysis_id
+                    ),
+                )
+
+                selected_question = question_by_id[
+                    selected_question_run_id
+                ]
+
+                st.markdown("**Question**")
+                st.write(
+                    question_display_text(
+                        selected_question
+                    )
+                )
+                st.caption(
+                    "Scope: "
+                    + (
+                        selected_question.get(
+                            "scope_mode"
+                        )
+                        or "WHOLE_CASE"
+                    )
+                    + " · Status: "
+                    + (
+                        selected_question.get(
+                            "status"
+                        )
+                        or "UNKNOWN"
+                    )
+                )
+
+                question_status = (
+                    selected_question.get("status")
+                    or "UNKNOWN"
+                )
+
+                if question_status in {
+                    "PENDING",
+                    "QUEUED",
+                    "RUNNING",
+                }:
+                    st.info(
+                        "The question is being processed. Use Refresh status "
+                        "to update this view."
+                    )
+                elif question_status == "FAILED":
+                    st.error(
+                        selected_question.get(
+                            "processing_error"
+                        )
+                        or "Question processing failed."
+                    )
+                elif question_status == "COMPLETED":
+                    answer_runs = load_question_model_runs(
+                        selected_question_run_id
+                    )
+
+                    if len(answer_runs) == 1:
+                        render_question_answer(
+                            analysis_id=selected_analysis_id,
+                            question_run=selected_question,
+                            model_run=answer_runs[0],
+                            render_key=answer_runs[0]["model_key"],
+                        )
+                    elif answer_runs:
+                        st.markdown(
+                            "### Model comparison"
+                        )
+                        st.caption(
+                            "Same question and same scoped evidence were used "
+                            "for each model."
+                        )
+                        answer_columns = st.columns(
+                            len(answer_runs)
+                        )
+                        for answer_column, answer_run in zip(
+                            answer_columns,
+                            answer_runs,
+                        ):
+                            with answer_column:
+                                render_question_answer(
+                                    analysis_id=selected_analysis_id,
+                                    question_run=selected_question,
+                                    model_run=answer_run,
+                                    render_key=answer_run["model_key"],
+                                )
+
+        st.divider()
+        st.markdown("### Processed evidence status and existing outputs")
 
         if selected_analysis.get("job_run_id"):
             run_info = get_analysis_job_run(
