@@ -8051,6 +8051,331 @@ with tab_review:
             st.exception(exc)
 
 
+with tab_review:
+    st.divider()
+    st.markdown("### Optional assistant relationship check")
+    st.caption(
+        "Use this only when you want the assistant to challenge or refine one "
+        "evidence-derived relationship. The proposal is advisory; the human "
+        "review remains authoritative and the graph edge is never overwritten."
+    )
+
+    correction_edges = [
+        edge
+        for edge in selected_review_graph.get(
+            "edges",
+            [],
+        )
+        if (
+            edge.get("edge_class")
+            != "STRUCTURAL"
+            and edge.get("model_run_id")
+        )
+    ]
+
+    if not selected_review_analysis_id:
+        st.info(
+            "Select a completed analysis above."
+        )
+    elif not correction_edges:
+        st.info(
+            "No evidence-derived relationship with model provenance is "
+            "available for an assistant check."
+        )
+    else:
+        correction_edge_by_id = {
+            edge["edge_id"]: edge
+            for edge in correction_edges
+        }
+
+        correction_edge_id = st.selectbox(
+            "Relationship to check",
+            options=list(
+                correction_edge_by_id
+            ),
+            format_func=lambda value: (
+                correction_edge_by_id[value][
+                    "source_label"
+                ]
+                + " — "
+                + correction_edge_by_id[value][
+                    "relationship"
+                ]
+                + " → "
+                + correction_edge_by_id[value][
+                    "target_label"
+                ]
+            ),
+            key=(
+                "review_correction_edge_"
+                + selected_review_analysis_id
+            ),
+        )
+
+        correction_edge = (
+            correction_edge_by_id[
+                correction_edge_id
+            ]
+        )
+        correction_model_run_id = (
+            correction_edge[
+                "model_run_id"
+            ]
+        )
+
+        current_human_review = (
+            load_latest_relationship_reviews(
+                selected_review_analysis_id
+            ).get(
+                correction_edge_id
+            )
+        )
+
+        if current_human_review:
+            st.caption(
+                "Current human relationship review: "
+                + (
+                    current_human_review.get(
+                        "status"
+                    )
+                    or current_human_review.get(
+                        "decision"
+                    )
+                    or "reviewed"
+                )
+            )
+        else:
+            st.caption(
+                "This relationship has not yet received a human review."
+            )
+
+        generate_correction = st.button(
+            "Generate evidence-bounded assistant proposal",
+            key=(
+                "review_generate_relationship_correction_"
+                + selected_review_analysis_id
+                + "_"
+                + correction_edge_id
+            ),
+            disabled=(
+                not RELATIONSHIP_CORRECTION_JOB_ID
+            ),
+        )
+
+        if not RELATIONSHIP_CORRECTION_JOB_ID:
+            st.caption(
+                "The Relationship Correction Job is not attached to this "
+                "App deployment."
+            )
+
+        if generate_correction:
+            try:
+                correction_run_id = (
+                    trigger_relationship_correction_job(
+                        selected_review_analysis_id,
+                        correction_model_run_id,
+                        correction_edge_id,
+                    )
+                )
+                load_relationship_correction_proposals.clear()
+                st.success(
+                    "Assistant relationship check queued."
+                )
+                st.caption(
+                    "Databricks run: "
+                    + correction_run_id
+                )
+            except Exception as exc:
+                st.error(
+                    "The relationship check could not be queued."
+                )
+                st.exception(exc)
+
+        correction_proposals = (
+            load_relationship_correction_proposals(
+                selected_review_analysis_id,
+                correction_model_run_id,
+                correction_edge_id,
+            )
+        )
+
+        if correction_proposals:
+            proposal = correction_proposals[0]
+
+            st.markdown(
+                "**Assistant proposal**"
+            )
+            st.write(
+                "Action: "
+                + (
+                    proposal.get(
+                        "action"
+                    )
+                    or "—"
+                )
+            )
+
+            if proposal.get(
+                "proposed_relationship"
+            ):
+                st.write(
+                    "Proposed relationship: "
+                    + proposal[
+                        "proposed_relationship"
+                    ]
+                )
+
+            st.write(
+                proposal.get(
+                    "rationale"
+                )
+                or "No rationale was returned."
+            )
+
+            references = (
+                proposal.get(
+                    "evidence_references"
+                )
+                or []
+            )
+            if references:
+                st.markdown(
+                    "**Source pages**"
+                )
+                for reference in references:
+                    st.write(
+                        "• " + str(reference)
+                    )
+
+            if not proposal.get(
+                "base_review_is_current"
+            ):
+                st.warning(
+                    "This proposal is stale because a newer human "
+                    "relationship review exists. Generate a new proposal "
+                    "before acting on it."
+                )
+
+            correction_reviews = (
+                load_latest_relationship_correction_reviews(
+                    selected_review_analysis_id,
+                    correction_model_run_id,
+                )
+            )
+            latest_correction_review = (
+                correction_reviews.get(
+                    proposal[
+                        "proposal_id"
+                    ]
+                )
+            )
+
+            if latest_correction_review:
+                st.success(
+                    "Latest decision on this assistant proposal: "
+                    + (
+                        latest_correction_review.get(
+                            "decision"
+                        )
+                        or "—"
+                    )
+                )
+
+            if (
+                proposal.get(
+                    "assistant_status"
+                )
+                == "ASSISTANT_PROPOSED"
+                and proposal.get(
+                    "base_review_is_current"
+                )
+            ):
+                with st.form(
+                    "review_relationship_correction_"
+                    + proposal[
+                        "proposal_id"
+                    ]
+                ):
+                    correction_decision = st.radio(
+                        "Human decision on assistant proposal",
+                        options=[
+                            "APPROVED",
+                            "DISMISSED",
+                            "APPLIED_WITH_AMENDMENT",
+                        ],
+                        format_func=lambda value: {
+                            "APPROVED":
+                                "Approve assistant proposal",
+                            "DISMISSED":
+                                "Dismiss assistant proposal",
+                            "APPLIED_WITH_AMENDMENT":
+                                "Apply a different human outcome",
+                        }[value],
+                    )
+
+                    amended_outcome = None
+
+                    if (
+                        correction_decision
+                        == "APPLIED_WITH_AMENDMENT"
+                    ):
+                        amended_outcome = st.selectbox(
+                            "Final human outcome",
+                            options=[
+                                "KEEP_CURRENT",
+                                "REJECT_RELATIONSHIP",
+                                "FOLLOWED_BY",
+                                "CONTRIBUTED_TO",
+                                "RESULTED_IN",
+                                "AFFECTED",
+                                "SUPPORTS",
+                            ],
+                        )
+
+                    correction_comment = st.text_area(
+                        "Review comment",
+                        height=80,
+                    )
+
+                    correction_submit = (
+                        st.form_submit_button(
+                            "Save human decision",
+                            type="primary",
+                        )
+                    )
+
+                if correction_submit:
+                    try:
+                        correction_result = (
+                            save_relationship_correction_review(
+                                proposal,
+                                decision=correction_decision,
+                                amended_outcome=amended_outcome,
+                                comment=correction_comment,
+                            )
+                        )
+                        load_relationship_correction_proposals.clear()
+                        load_latest_relationship_correction_reviews.clear()
+                        st.success(
+                            "Human decision saved. The graph edge itself "
+                            "was not overwritten."
+                        )
+                        if correction_result.get(
+                            "relationship_review_id"
+                        ):
+                            st.caption(
+                                "Authoritative review ID: "
+                                + correction_result[
+                                    "relationship_review_id"
+                                ]
+                            )
+                    except Exception as exc:
+                        st.error(
+                            "The human correction decision could not be saved."
+                        )
+                        st.exception(exc)
+
+
 with tab_mapping_review:
     st.divider()
     st.markdown("### EMCIP mapping review")
