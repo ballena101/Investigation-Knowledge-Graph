@@ -109,7 +109,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-unified-document-catalogue-v6"
+APP_BUILD = "2026-09-22-classification-driven-catalogue-v7"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -2777,10 +2777,11 @@ with tab_new_analysis:
         st.error("The document catalogue could not be loaded from Neo4j.")
         st.exception(exc)
 
-    documents_by_id = {
+    all_documents_by_id = {
         document["document_id"]: document
         for document in source_documents
     }
+    documents_by_id = dict(all_documents_by_id)
 
     def source_document_label(document_id):
         document = documents_by_id[document_id]
@@ -2835,6 +2836,32 @@ with tab_new_analysis:
         ),
     )
 
+    # CLASSIFICATION_DRIVEN_CATALOGUE
+    #
+    # Source ownership follows the actual project architecture:
+    # - Class B (published investigation material) is sourced from MAIRA.
+    # - Classes A/C/D use IKF-managed documents only.
+    # Direct text remains independent of this catalogue filter.
+    if information_class == "B":
+        available_documents = [
+            document
+            for document in source_documents
+            if document.get("source_managed_by") == "MAIRA"
+        ]
+        catalogue_scope_label = "MAIRA published investigation material"
+    else:
+        available_documents = [
+            document
+            for document in source_documents
+            if document.get("source_managed_by") != "MAIRA"
+        ]
+        catalogue_scope_label = "IKF document library"
+
+    documents_by_id = {
+        document["document_id"]: document
+        for document in available_documents
+    }
+
     policy = resolve_model_policy(information_class)
 
     st.markdown("**Processing disclosure**")
@@ -2843,6 +2870,18 @@ with tab_new_analysis:
     if policy["model"]:
         st.code(policy["model"], language=None)
     st.caption(policy["data_flow"])
+
+    if input_mode == "Documents":
+        if information_class == "B":
+            st.caption(
+                "Document catalogue: Published investigation material is "
+                "selected from the MAIRA investigation repository."
+            )
+        else:
+            st.caption(
+                "Document catalogue: This information class uses the "
+                "IKF-managed document library."
+            )
 
     class_d_model_selection = None
 
@@ -2968,16 +3007,10 @@ with tab_new_analysis:
         direct_text = ""
 
         if input_mode == "Documents":
-            maira_available = sum(
-                1
-                for document in source_documents
-                if document.get("source_managed_by") == "MAIRA"
-            )
-            ikf_available = len(source_documents) - maira_available
-
             st.caption(
-                f"Available catalogue: {maira_available} MAIRA investigation "
-                f"document(s) · {ikf_available} IKF input document(s). "
+                f"Document source for Class {information_class}: "
+                f"{catalogue_scope_label}. "
+                f"{len(available_documents)} document(s) available. "
                 f"Select 1–{MAX_DOCUMENTS_PER_ANALYSIS}."
             )
             selected_document_ids = st.multiselect(
@@ -2985,11 +3018,22 @@ with tab_new_analysis:
                 options=list(documents_by_id),
                 format_func=source_document_label,
                 max_selections=MAX_DOCUMENTS_PER_ANALYSIS,
+                help=(
+                    "Class B lists MAIRA published investigation material. "
+                    "Classes A, C and D list IKF-managed documents only."
+                ),
             )
-            if not source_documents:
-                st.warning(
-                    "No indexed documents are currently available."
-                )
+            if not available_documents:
+                if information_class == "B":
+                    st.warning(
+                        "No MAIRA published investigation documents are "
+                        "currently available in the catalogue."
+                    )
+                else:
+                    st.warning(
+                        "No IKF-managed documents are currently available "
+                        "for this information class."
+                    )
         else:
             if information_class == "D":
                 st.warning(
