@@ -164,3 +164,22 @@ Immediate priorities are:
 5. add versioned Directive/IMO reference-context retrieval;
 6. add Class-D pre-flight fail-closed detection;
 7. after human validation of a contributing factor, let the LLM suggest SHIELD classification and require a separate human validation of that SHIELD mapping.
+
+## Capability-based App interface — 2026-09-22
+
+The App now presents five direct user capabilities rather than requiring a
+linear traversal of the whole pipeline:
+
+1. News & Alerts;
+2. Analyse Documents;
+3. Compare LLMs;
+4. Review & Validate;
+5. Findings & Knowledge.
+
+The knowledge graph remains central underneath and available as an optional
+view. The LLM will be embedded contextually in News & Alerts and Findings &
+Knowledge. Any LLM-assisted graph correction must remain a proposal until a
+human approves it. Functions that are not connected yet are presented only as
+disabled, clearly labelled previews.
+
+See `docs/24_simple_capability_ui.md`.
