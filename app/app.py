@@ -28,6 +28,9 @@ CLASS_D_ANALYSIS_JOB_ID = os.getenv("CLASS_D_ANALYSIS_JOB_ID")
 ASK_JOB_ID = os.getenv("ASK_JOB_ID")
 EMCIP_MAPPING_JOB_ID = os.getenv("EMCIP_MAPPING_JOB_ID")
 SHIELD_PROPOSAL_JOB_ID = os.getenv("SHIELD_PROPOSAL_JOB_ID")
+RELATIONSHIP_CORRECTION_JOB_ID = os.getenv(
+    "RELATIONSHIP_CORRECTION_JOB_ID"
+)
 DIRECT_TEXT_ENCRYPTION_KEY = os.getenv("DIRECT_TEXT_ENCRYPTION_KEY")
 IKG_ADMIN_USERS = {
     item.strip().lower()
@@ -302,7 +305,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-shield-two-gate-v18"
+APP_BUILD = "2026-09-22-relationship-correction-v19"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -3044,6 +3047,484 @@ def load_latest_relationship_reviews(analysis_id):
             )
         }
 
+
+
+def trigger_relationship_correction_job(
+    analysis_id,
+    model_run_id,
+    edge_id,
+):
+    if not RELATIONSHIP_CORRECTION_JOB_ID:
+        raise RuntimeError(
+            "No relationship-correction Job is attached to the App. "
+            "Create notebook 50's Job, attach it with resource key "
+            "'relationship_correction_job', and redeploy."
+        )
+
+    response = get_workspace_client().api_client.do(
+        "POST",
+        "/api/2.2/jobs/run-now",
+        body={
+            "job_id": int(
+                RELATIONSHIP_CORRECTION_JOB_ID
+            ),
+            "job_parameters": {
+                "analysis_id": analysis_id,
+                "model_run_id": model_run_id,
+                "edge_id": edge_id,
+            },
+        },
+    )
+
+    run_id = response.get("run_id")
+    if not run_id:
+        raise RuntimeError(
+            "Databricks accepted the relationship-correction Job "
+            "but returned no run_id."
+        )
+
+    with get_driver().session() as session:
+        session.run(
+            """
+            MATCH (a:AnalysisGroup {
+                analysis_id: $analysis_id
+            })
+            SET
+                a.relationship_correction_status = 'QUEUED',
+                a.relationship_correction_model_run_id = $model_run_id,
+                a.relationship_correction_edge_id = $edge_id,
+                a.relationship_correction_job_run_id = $job_run_id,
+                a.relationship_correction_error = NULL,
+                a.relationship_correction_updated_at = datetime()
+            """,
+            analysis_id=analysis_id,
+            model_run_id=model_run_id,
+            edge_id=edge_id,
+            job_run_id=str(run_id),
+        ).consume()
+
+    return str(run_id)
+
+
+@st.cache_data(ttl=30)
+def load_relationship_correction_proposals(
+    analysis_id,
+    model_run_id,
+    edge_id=None,
+):
+    query = """
+    MATCH (a:AnalysisGroup {
+        analysis_id: $analysis_id
+    })-[:HAS_RELATIONSHIP_CORRECTION_PROPOSAL]->(
+        p:RelationshipCorrectionProposal {
+            model_run_id: $model_run_id
+        }
+    )
+    WHERE $edge_id IS NULL
+       OR p.edge_id = $edge_id
+    OPTIONAL MATCH (
+        latest:RelationshipReview {
+            analysis_id: $analysis_id,
+            model_run_id: $model_run_id,
+            edge_id: p.edge_id
+        }
+    )
+    WITH a, p, latest
+    ORDER BY latest.reviewed_at DESC
+    WITH
+        a,
+        p,
+        head(collect(latest)) AS latest_review
+    RETURN
+        p.proposal_id AS proposal_id,
+        p.analysis_id AS analysis_id,
+        p.model_run_id AS model_run_id,
+        p.edge_id AS edge_id,
+        p.source_node_id AS source_node_id,
+        p.source_label AS source_label,
+        p.target_node_id AS target_node_id,
+        p.target_label AS target_label,
+        p.original_relationship AS original_relationship,
+        p.base_relationship_review_id AS base_review_id,
+        p.assistant_status AS assistant_status,
+        p.action AS action,
+        p.proposed_relationship AS proposed_relationship,
+        p.rationale AS rationale,
+        coalesce(
+            p.evidence_passage_ids,
+            []
+        ) AS evidence_passage_ids,
+        coalesce(
+            p.evidence_references,
+            []
+        ) AS evidence_references,
+        coalesce(
+            p.evidence_locations,
+            []
+        ) AS evidence_locations,
+        p.proposal_version AS proposal_version,
+        p.model_service AS model_service,
+        CASE
+            WHEN p.base_relationship_review_id IS NULL
+                 AND latest_review IS NULL
+            THEN true
+            WHEN latest_review IS NOT NULL
+                 AND latest_review.review_id
+                     = p.base_relationship_review_id
+            THEN true
+            ELSE false
+        END AS base_review_is_current,
+        CASE
+            WHEN latest_review IS NULL
+            THEN NULL
+            ELSE latest_review.review_id
+        END AS current_relationship_review_id,
+        toString(p.updated_at) AS updated_at
+    ORDER BY p.updated_at DESC, p.proposal_id
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(
+                query,
+                analysis_id=analysis_id,
+                model_run_id=model_run_id,
+                edge_id=edge_id,
+            )
+        ]
+
+
+@st.cache_data(ttl=30)
+def load_latest_relationship_correction_reviews(
+    analysis_id,
+    model_run_id,
+):
+    query = """
+    MATCH (review:RelationshipCorrectionReview {
+        analysis_id: $analysis_id,
+        model_run_id: $model_run_id
+    })
+    WITH review
+    ORDER BY review.reviewed_at DESC
+    WITH
+        review.proposal_id AS proposal_id,
+        collect(review)[0] AS latest
+    RETURN
+        proposal_id,
+        latest.review_id AS review_id,
+        latest.human_decision AS decision,
+        latest.applied_relationship_decision AS applied_relationship_decision,
+        latest.applied_relationship AS applied_relationship,
+        latest.authoritative_relationship_review_id AS authoritative_relationship_review_id,
+        latest.reviewer_email AS reviewer_email,
+        latest.reviewer_username AS reviewer_username,
+        latest.review_comment AS review_comment,
+        toString(latest.reviewed_at) AS reviewed_at
+    """
+
+    with get_driver().session() as session:
+        return {
+            record["proposal_id"]: record.data()
+            for record in session.run(
+                query,
+                analysis_id=analysis_id,
+                model_run_id=model_run_id,
+            )
+        }
+
+
+def save_relationship_correction_review(
+    proposal,
+    *,
+    decision,
+    amended_outcome=None,
+    comment="",
+):
+    if not proposal.get("base_review_is_current"):
+        raise ValueError(
+            "The human relationship review changed after this proposal was "
+            "generated. Regenerate the correction proposal first."
+        )
+
+    if (
+        proposal.get("assistant_status")
+        != "ASSISTANT_PROPOSED"
+    ):
+        raise ValueError(
+            "Only a grounded relationship-correction proposal can be reviewed."
+        )
+
+    allowed_relationships = {
+        "FOLLOWED_BY",
+        "CONTRIBUTED_TO",
+        "RESULTED_IN",
+        "AFFECTED",
+        "SUPPORTS",
+    }
+
+    if decision not in {
+        "APPROVED",
+        "DISMISSED",
+        "APPLIED_WITH_AMENDMENT",
+    }:
+        raise ValueError(
+            "Unsupported relationship-correction review decision."
+        )
+
+    assistant_action = proposal.get(
+        "action"
+    )
+    original_relationship = proposal.get(
+        "original_relationship"
+    )
+    proposed_relationship = proposal.get(
+        "proposed_relationship"
+    )
+
+    relationship_decision = None
+    applied_relationship = None
+
+    if decision == "APPROVED":
+        if assistant_action == "KEEP":
+            relationship_decision = "VALIDATED"
+        elif assistant_action == "REJECT_RELATIONSHIP":
+            relationship_decision = "REJECTED"
+        elif assistant_action == "CHANGE_RELATIONSHIP":
+            if (
+                proposed_relationship
+                not in allowed_relationships
+            ):
+                raise ValueError(
+                    "The proposal does not contain a valid replacement relationship."
+                )
+            relationship_decision = "AMENDED"
+            applied_relationship = proposed_relationship
+        else:
+            raise ValueError(
+                "This assistant proposal has no actionable correction to approve."
+            )
+
+    elif decision == "APPLIED_WITH_AMENDMENT":
+        outcome = str(
+            amended_outcome or ""
+        ).strip().upper()
+
+        if outcome == "KEEP_CURRENT":
+            relationship_decision = "VALIDATED"
+        elif outcome == "REJECT_RELATIONSHIP":
+            relationship_decision = "REJECTED"
+        elif outcome in allowed_relationships:
+            if outcome == original_relationship:
+                relationship_decision = "VALIDATED"
+            else:
+                relationship_decision = "AMENDED"
+                applied_relationship = outcome
+        else:
+            raise ValueError(
+                "Choose a valid final human relationship outcome."
+            )
+
+    # DISMISSED intentionally creates no authoritative RelationshipReview.
+    correction_review_id = (
+        "relationship_correction_review_"
+        + uuid.uuid4().hex
+    )
+    relationship_review_id = (
+        str(uuid.uuid4())
+        if relationship_decision
+        else None
+    )
+
+    reviewer = get_reviewer_identity()
+
+    def persist(tx):
+        current = tx.run(
+            """
+            MATCH (p:RelationshipCorrectionProposal {
+                proposal_id: $proposal_id,
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id,
+                edge_id: $edge_id
+            })
+            OPTIONAL MATCH (latest:RelationshipReview {
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id,
+                edge_id: $edge_id
+            })
+            WITH p, latest
+            ORDER BY latest.reviewed_at DESC
+            WITH p, head(collect(latest)) AS latest_review
+            RETURN
+                p.proposal_id AS proposal_id,
+                p.base_relationship_review_id AS base_review_id,
+                CASE
+                    WHEN p.base_relationship_review_id IS NULL
+                         AND latest_review IS NULL
+                    THEN true
+                    WHEN latest_review IS NOT NULL
+                         AND latest_review.review_id
+                             = p.base_relationship_review_id
+                    THEN true
+                    ELSE false
+                END AS is_current
+            """,
+            proposal_id=proposal["proposal_id"],
+            analysis_id=proposal["analysis_id"],
+            model_run_id=proposal["model_run_id"],
+            edge_id=proposal["edge_id"],
+        ).single()
+
+        if (
+            current is None
+            or not current["is_current"]
+        ):
+            raise ValueError(
+                "The correction proposal is stale because the relationship "
+                "has a newer human review."
+            )
+
+        tx.run(
+            """
+            MATCH (a:AnalysisGroup {
+                analysis_id: $analysis_id
+            })
+            MATCH (p:RelationshipCorrectionProposal {
+                proposal_id: $proposal_id
+            })
+            CREATE (review:RelationshipCorrectionReview {
+                review_id: $review_id,
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id,
+                proposal_id: $proposal_id,
+                edge_id: $edge_id,
+                human_decision: $human_decision,
+                assistant_action: $assistant_action,
+                assistant_proposed_relationship: $assistant_proposed_relationship,
+                applied_relationship_decision: $applied_relationship_decision,
+                applied_relationship: $applied_relationship,
+                authoritative_relationship_review_id: $authoritative_relationship_review_id,
+                reviewer_email: $reviewer_email,
+                reviewer_user_id: $reviewer_user_id,
+                reviewer_username: $reviewer_username,
+                reviewed_at: datetime(),
+                review_comment: $review_comment
+            })
+            CREATE (a)-[:HAS_RELATIONSHIP_CORRECTION_REVIEW]->(review)
+            CREATE (review)-[:REVIEWS_RELATIONSHIP_CORRECTION_PROPOSAL]->(p)
+            """,
+            review_id=correction_review_id,
+            analysis_id=proposal["analysis_id"],
+            model_run_id=proposal["model_run_id"],
+            proposal_id=proposal["proposal_id"],
+            edge_id=proposal["edge_id"],
+            human_decision=decision,
+            assistant_action=assistant_action,
+            assistant_proposed_relationship=proposed_relationship,
+            applied_relationship_decision=relationship_decision,
+            applied_relationship=applied_relationship,
+            authoritative_relationship_review_id=relationship_review_id,
+            reviewer_email=reviewer["email"],
+            reviewer_user_id=reviewer["user_id"],
+            reviewer_username=reviewer["username"],
+            review_comment=comment or None,
+        ).consume()
+
+        if not relationship_decision:
+            return
+
+        status_by_decision = {
+            "VALIDATED": "HUMAN_VALIDATED",
+            "REJECTED": "HUMAN_REJECTED",
+            "AMENDED": "HUMAN_AMENDED",
+        }
+
+        tx.run(
+            """
+            MATCH (a:AnalysisGroup {
+                analysis_id: $analysis_id
+            })
+            MATCH (source:KGNode {
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id,
+                node_id: $source_node_id
+            })
+            MATCH (target:KGNode {
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id,
+                node_id: $target_node_id
+            })
+            MATCH (p:RelationshipCorrectionProposal {
+                proposal_id: $proposal_id
+            })
+            MATCH (correction_review:RelationshipCorrectionReview {
+                review_id: $correction_review_id
+            })
+            CREATE (review:RelationshipReview {
+                review_id: $relationship_review_id,
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id,
+                edge_id: $edge_id,
+                source_node_id: $source_node_id,
+                source_label: $source_label,
+                original_relationship: $original_relationship,
+                target_node_id: $target_node_id,
+                target_label: $target_label,
+                assistant_review_status: 'LLM_CORRECTION_PROPOSAL',
+                human_review_decision: $human_review_decision,
+                human_review_status: $human_review_status,
+                amended_relationship: $amended_relationship,
+                correction_proposal_id: $proposal_id,
+                correction_review_id: $correction_review_id,
+                reviewer_email: $reviewer_email,
+                reviewer_user_id: $reviewer_user_id,
+                reviewer_username: $reviewer_username,
+                reviewed_at: datetime(),
+                review_comment: $review_comment
+            })
+            CREATE (a)-[:HAS_RELATIONSHIP_REVIEW]->(review)
+            CREATE (review)-[:REVIEWS_SOURCE]->(source)
+            CREATE (review)-[:REVIEWS_TARGET]->(target)
+            CREATE (review)-[:APPLIES_CORRECTION_PROPOSAL]->(p)
+            CREATE (correction_review)-[:CREATED_RELATIONSHIP_REVIEW]->(review)
+            """,
+            relationship_review_id=relationship_review_id,
+            correction_review_id=correction_review_id,
+            analysis_id=proposal["analysis_id"],
+            model_run_id=proposal["model_run_id"],
+            proposal_id=proposal["proposal_id"],
+            edge_id=proposal["edge_id"],
+            source_node_id=proposal["source_node_id"],
+            source_label=proposal["source_label"],
+            original_relationship=original_relationship,
+            target_node_id=proposal["target_node_id"],
+            target_label=proposal["target_label"],
+            human_review_decision=relationship_decision,
+            human_review_status=status_by_decision[
+                relationship_decision
+            ],
+            amended_relationship=applied_relationship,
+            reviewer_email=reviewer["email"],
+            reviewer_user_id=reviewer["user_id"],
+            reviewer_username=reviewer["username"],
+            review_comment=comment or None,
+        ).consume()
+
+    with get_driver().session() as session:
+        session.execute_write(
+            persist
+        )
+
+    return {
+        "correction_review_id":
+            correction_review_id,
+        "relationship_review_id":
+            relationship_review_id,
+        "relationship_decision":
+            relationship_decision,
+        "applied_relationship":
+            applied_relationship,
+    }
 
 
 def trigger_shield_proposal_job(
