@@ -158,6 +158,25 @@ Required marker:
 Also validate one exact persisted MAIRA governed query and confirm the retrieval
 mode identifies governed MAIRA relationship evidence.
 
+## 6A. Direct reference-document Q&A
+
+Use the **Direct reference documents** mode in Ask / Compare.
+
+Select one indexed authoritative REFERENCE_CONTEXT document and ask one factual
+question about what that document says/defines/requires.
+
+Verify:
+
+- no new AnalysisGroup is created;
+- no graph/node/relationship extraction is triggered;
+- QuestionRun records `DIRECT_DOCUMENT_ASK`;
+- retrieval is limited to the selected reference document(s);
+- answer citations use REFERENCE_CONTEXT only;
+- the cited PDF page renders;
+- the answer does not present the reference text as proof of a case occurrence.
+
+This is a focused route check, not a new model benchmark.
+
 ## 7. Human relationship and EMCIP review
 
 Validate/reject/amend one generic relationship.
