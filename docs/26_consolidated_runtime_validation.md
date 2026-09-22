@@ -261,3 +261,21 @@ The current PoC capability set is runtime-validated only after:
 
 News/dashboard integration is deliberately excluded from this checklist and
 remains in its separate workstream.
+
+
+## Runtime record — REFERENCE_CONTEXT
+
+Validated on 2026-09-22:
+
+- registry version: `IKF_REFERENCE_SOURCE_REGISTRY_V0.1`;
+- 4 authoritative URL sources;
+- 0 manual governed sources;
+- 4 indexed reference documents;
+- 81 indexed passages;
+- snapshot root:
+  `/Volumes/bdw_analysis_prod/kg_poc/reference_context/_snapshots`;
+- source layer: `REFERENCE_CONTEXT`;
+- observed marker:
+  `PASS — IKF AUTHORITATIVE REFERENCE_CONTEXT CORPUS INDEXED`.
+
+Result: **PASS**.
