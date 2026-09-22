@@ -24,6 +24,7 @@ PIPELINE_VERSION = "GROUP_ANALYSIS_V0.1"
 ANALYSIS_JOB_ID = os.getenv("ANALYSIS_JOB_ID")
 CLASS_D_ANALYSIS_JOB_ID = os.getenv("CLASS_D_ANALYSIS_JOB_ID")
 ASK_JOB_ID = os.getenv("ASK_JOB_ID")
+EMCIP_MAPPING_JOB_ID = os.getenv("EMCIP_MAPPING_JOB_ID")
 DIRECT_TEXT_ENCRYPTION_KEY = os.getenv("DIRECT_TEXT_ENCRYPTION_KEY")
 IKG_ADMIN_USERS = {
     item.strip().lower()
@@ -2633,6 +2634,346 @@ def load_latest_relationship_reviews(analysis_id):
             )
         }
 
+
+
+def trigger_emcip_mapping_job(
+    analysis_id,
+    model_run_id,
+):
+    if not EMCIP_MAPPING_JOB_ID:
+        raise RuntimeError(
+            "No EMCIP mapping proposal Job is attached to the App. "
+            "Create notebook 41's Job, attach it with resource key "
+            "'emcip_mapping_job', and redeploy."
+        )
+
+    response = get_workspace_client().api_client.do(
+        "POST",
+        "/api/2.2/jobs/run-now",
+        body={
+            "job_id": int(
+                EMCIP_MAPPING_JOB_ID
+            ),
+            "job_parameters": {
+                "analysis_id": analysis_id,
+                "model_run_id": model_run_id,
+            },
+        },
+    )
+
+    run_id = response.get("run_id")
+    if not run_id:
+        raise RuntimeError(
+            "Databricks accepted the EMCIP mapping Job but returned no run_id."
+        )
+
+    with get_driver().session() as session:
+        session.run(
+            """
+            MATCH (a:AnalysisGroup {
+                analysis_id: $analysis_id
+            })
+            SET
+                a.emcip_mapping_proposal_status = 'QUEUED',
+                a.emcip_mapping_proposal_model_run_id = $model_run_id,
+                a.emcip_mapping_job_run_id = $job_run_id,
+                a.emcip_mapping_proposal_error = NULL,
+                a.emcip_mapping_proposal_updated_at = datetime()
+            """,
+            analysis_id=analysis_id,
+            model_run_id=model_run_id,
+            job_run_id=str(run_id),
+        ).consume()
+
+    return str(run_id)
+
+
+@st.cache_data(ttl=30)
+def load_emcip_mapping_proposals(
+    analysis_id,
+    model_run_id,
+):
+    query = """
+    MATCH (a:AnalysisGroup {
+        analysis_id: $analysis_id
+    })-[:HAS_EMCIP_MAPPING_PROPOSAL]->(
+        p:EMCIPMappingProposal {
+            model_run_id: $model_run_id
+        }
+    )-[:MAPS_NODE]->(n:KGNode)
+    RETURN
+        p.proposal_id AS proposal_id,
+        p.analysis_id AS analysis_id,
+        p.model_run_id AS model_run_id,
+        p.node_id AS node_id,
+        p.node_label AS node_label,
+        p.node_kind AS node_kind,
+        p.assistant_mapping_status AS assistant_mapping_status,
+        p.proposal_method AS proposal_method,
+        p.proposed_entity AS proposed_entity,
+        p.proposed_entity_path AS proposed_entity_path,
+        p.proposed_attribute_name AS proposed_attribute_name,
+        p.proposed_attribute_idcode AS proposed_attribute_idcode,
+        p.proposed_code_value AS proposed_code_value,
+        p.proposed_code_idcode AS proposed_code_idcode,
+        p.candidate_options_json AS candidate_options_json,
+        p.rationale AS rationale,
+        coalesce(p.evidence_passage_ids, []) AS evidence_passage_ids,
+        coalesce(p.evidence_references, []) AS evidence_references,
+        coalesce(p.evidence_locations, []) AS evidence_locations,
+        coalesce(p.taxonomy_source_document_ids, []) AS taxonomy_source_document_ids,
+        coalesce(p.taxonomy_registry_versions, []) AS taxonomy_registry_versions,
+        p.mapping_version AS mapping_version,
+        p.model_service AS model_service,
+        toString(p.updated_at) AS updated_at
+    ORDER BY p.node_kind, p.node_label
+    """
+
+    with get_driver().session() as session:
+        rows = [
+            record.data()
+            for record in session.run(
+                query,
+                analysis_id=analysis_id,
+                model_run_id=model_run_id,
+            )
+        ]
+
+    for row in rows:
+        raw = row.get(
+            "candidate_options_json"
+        ) or "[]"
+        try:
+            row["candidate_options"] = json.loads(
+                raw
+            )
+        except Exception:
+            row["candidate_options"] = []
+
+    return rows
+
+
+@st.cache_data(ttl=30)
+def load_latest_analysis_mapping_reviews(
+    analysis_id,
+    model_run_id,
+):
+    query = """
+    MATCH (review:EMCIPMappingReview {
+        analysis_id: $analysis_id,
+        model_run_id: $model_run_id
+    })
+    WITH review
+    ORDER BY review.reviewed_at DESC
+    WITH review.proposal_id AS proposal_id,
+         collect(review)[0] AS latest
+    RETURN
+        proposal_id,
+        latest.review_id AS review_id,
+        latest.human_review_decision AS decision,
+        latest.human_review_status AS status,
+        latest.amended_entity_path AS amended_entity_path,
+        latest.amended_attribute_name AS amended_attribute_name,
+        latest.amended_code_value AS amended_code_value,
+        latest.amended_code_idcode AS amended_code_idcode,
+        latest.reviewer_email AS reviewer_email,
+        latest.reviewer_username AS reviewer_username,
+        toString(latest.reviewed_at) AS reviewed_at,
+        latest.review_comment AS review_comment
+    """
+
+    with get_driver().session() as session:
+        return {
+            record["proposal_id"]: record.data()
+            for record in session.run(
+                query,
+                analysis_id=analysis_id,
+                model_run_id=model_run_id,
+            )
+        }
+
+
+def emcip_mapping_text(mapping):
+    if (
+        not mapping.get("proposed_code_value")
+        or not mapping.get("proposed_code_idcode")
+    ):
+        return "NO_MAPPING"
+
+    parts = [
+        mapping.get(
+            "proposed_entity_path"
+        )
+        or mapping.get(
+            "proposed_entity"
+        )
+        or "EMCIP",
+        mapping.get(
+            "proposed_attribute_name"
+        )
+        or "",
+        mapping.get(
+            "proposed_code_value"
+        )
+        or "",
+    ]
+
+    return (
+        " → ".join(
+            part
+            for part in parts
+            if part
+        )
+        + " ["
+        + str(
+            mapping.get(
+                "proposed_code_idcode"
+            )
+        )
+        + "]"
+    )
+
+
+def save_analysis_mapping_review(
+    proposal,
+    decision,
+    amended_candidate,
+    comment,
+):
+    reviewer = get_reviewer_identity()
+
+    status_by_decision = {
+        "VALIDATED": "HUMAN_VALIDATED",
+        "REJECTED": "HUMAN_REJECTED",
+        "AMENDED": "HUMAN_AMENDED",
+    }
+
+    review_id = (
+        "emcip_review_"
+        + uuid.uuid4().hex
+    )
+
+    amended_candidate = (
+        amended_candidate
+        if decision == "AMENDED"
+        else None
+    )
+
+    with get_driver().session() as session:
+        record = session.run(
+            """
+            MATCH (a:AnalysisGroup {
+                analysis_id: $analysis_id
+            })
+            MATCH (p:EMCIPMappingProposal {
+                proposal_id: $proposal_id,
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id
+            })-[:MAPS_NODE]->(n:KGNode {
+                node_id: $node_id,
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id
+            })
+            CREATE (review:EMCIPMappingReview {
+                review_id: $review_id,
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id,
+                proposal_id: $proposal_id,
+                node_id: $node_id,
+                node_label: $node_label,
+                node_kind: $node_kind,
+                assistant_mapping_status: $assistant_mapping_status,
+                original_entity_path: $original_entity_path,
+                original_attribute_name: $original_attribute_name,
+                original_code_value: $original_code_value,
+                original_code_idcode: $original_code_idcode,
+                human_review_decision: $human_review_decision,
+                human_review_status: $human_review_status,
+                amended_entity_path: $amended_entity_path,
+                amended_attribute_name: $amended_attribute_name,
+                amended_code_value: $amended_code_value,
+                amended_code_idcode: $amended_code_idcode,
+                reviewer_email: $reviewer_email,
+                reviewer_user_id: $reviewer_user_id,
+                reviewer_username: $reviewer_username,
+                reviewed_at: datetime(),
+                review_comment: $review_comment
+            })
+            CREATE (a)-[:HAS_EMCIP_MAPPING_REVIEW]->(review)
+            CREATE (review)-[:REVIEWS_MAPPING_PROPOSAL]->(p)
+            CREATE (review)-[:REVIEWS_MAPPING_OF]->(n)
+            RETURN review.review_id AS review_id
+            """,
+            review_id=review_id,
+            analysis_id=proposal["analysis_id"],
+            model_run_id=proposal["model_run_id"],
+            proposal_id=proposal["proposal_id"],
+            node_id=proposal["node_id"],
+            node_label=proposal["node_label"],
+            node_kind=proposal["node_kind"],
+            assistant_mapping_status=proposal[
+                "assistant_mapping_status"
+            ],
+            original_entity_path=proposal.get(
+                "proposed_entity_path"
+            ),
+            original_attribute_name=proposal.get(
+                "proposed_attribute_name"
+            ),
+            original_code_value=proposal.get(
+                "proposed_code_value"
+            ),
+            original_code_idcode=proposal.get(
+                "proposed_code_idcode"
+            ),
+            human_review_decision=decision,
+            human_review_status=status_by_decision[
+                decision
+            ],
+            amended_entity_path=(
+                amended_candidate.get(
+                    "entity_path"
+                )
+                if amended_candidate
+                else None
+            ),
+            amended_attribute_name=(
+                amended_candidate.get(
+                    "attribute_name"
+                )
+                if amended_candidate
+                else None
+            ),
+            amended_code_value=(
+                amended_candidate.get(
+                    "code_value"
+                )
+                if amended_candidate
+                else None
+            ),
+            amended_code_idcode=(
+                amended_candidate.get(
+                    "code_idcode"
+                )
+                if amended_candidate
+                else None
+            ),
+            reviewer_email=reviewer["email"],
+            reviewer_user_id=reviewer[
+                "user_id"
+            ],
+            reviewer_username=reviewer[
+                "username"
+            ],
+            review_comment=comment or None,
+        ).single()
+
+    if record is None:
+        raise RuntimeError(
+            "The EMCIP mapping review was not persisted."
+        )
+
+    return record["review_id"]
 
 
 def mapping_key(node_id: str, original_mapping: str) -> str:
