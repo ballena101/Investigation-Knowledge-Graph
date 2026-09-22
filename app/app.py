@@ -5617,13 +5617,72 @@ with tab_new_analysis:
                     f"Databricks Job run ID: {run_id}"
                 )
                 st.info(
-                    "Stay in Analyse Documents and use Refresh analysis results to "
-                    "follow processing through to the structured outputs."
+                    "Stay in Analyse Documents and use Refresh status above to "
+                    "follow the four processing stages through to the structured outputs."
                 )
 
             except Exception as exc:
                 st.error("The analysis could not be created or started.")
                 st.exception(exc)
+
+    st.divider()
+    st.markdown("### Active analysis status")
+
+    if active_analysis_id and active_analysis:
+        refresh_col, status_col = st.columns(
+            [0.8, 3.2]
+        )
+        with refresh_col:
+            if st.button(
+                "Refresh status",
+                key="refresh_analyse_status",
+                use_container_width=True,
+            ):
+                load_analysis_groups.clear()
+                load_recent_analyses.clear()
+                load_analysis_evidence_counts.clear()
+                load_analysis_result.clear()
+                load_analysis_graph_counts.clear()
+                load_model_runs.clear()
+                load_model_run_graph.clear()
+                st.rerun()
+
+        with status_col:
+            st.caption(
+                "Tracking: "
+                + str(
+                    active_analysis.get(
+                        "analysis_title"
+                    )
+                    or active_analysis_id
+                )
+            )
+
+        active_evidence_counts = (
+            load_analysis_evidence_counts(
+                active_analysis_id
+            )
+        )
+        active_result_meta = (
+            load_analysis_result(
+                active_analysis_id
+            )
+        )
+
+        render_pipeline_status(
+            status=active_analysis.get(
+                "status"
+            ),
+            processing_stage=active_analysis.get(
+                "processing_stage"
+            ),
+            evidence_counts=active_evidence_counts,
+            result_meta=active_result_meta,
+        )
+    else:
+        st.info(
+            "Create an analysis to follow the four processing stages."
+        )
 
     st.divider()
     st.markdown("**Recent analyses**")
@@ -5660,17 +5719,6 @@ with tab_new_analysis:
         "These are model-derived analytical outputs with source provenance; "
         "relationships remain candidates until human review."
     )
-
-    if st.button(
-        "Refresh analysis results",
-        key="refresh_analyse_results",
-    ):
-        load_analysis_groups.clear()
-        load_model_runs.clear()
-        load_analysis_graph.clear()
-        load_model_run_graph.clear()
-        load_analysis_result.clear()
-        st.rerun()
 
     try:
         result_analyses = load_analysis_groups()
@@ -5709,7 +5757,7 @@ with tab_new_analysis:
         if result_meta.get("status") != "COMPLETED":
             st.info(
                 "Structured results become available after processing "
-                "completes. Use Refresh analysis results to update the status."
+                "completes. Use Refresh status above to update the four-stage view."
             )
         else:
             completed_model_runs = [
