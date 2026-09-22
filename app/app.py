@@ -6144,14 +6144,18 @@ def render_compare_llms():
                 ask_policy = resolve_model_policy(
                     class_for_ask
                 )
-                st.caption(
-                    "Model: "
-                    + (
-                        ask_policy.get("model_name")
-                        or ask_policy.get("model")
-                        or "default class model"
+                with st.expander(
+                    "Technical model details",
+                    expanded=False,
+                ):
+                    st.caption(
+                        "Model route: "
+                        + (
+                            ask_policy.get("model_name")
+                            or ask_policy.get("model")
+                            or "default class model"
+                        )
                     )
-                )
 
             available_reference_documents = load_reference_documents()
 
@@ -6162,10 +6166,9 @@ def render_compare_llms():
                     available_reference_documents
                 ),
                 help=(
-                    "Adds governed REFERENCE_CONTEXT passages separately from "
-                    "the casualty SOURCE_EVIDENCE. Reference material can guide "
-                    "legal/methodological interpretation but cannot prove what "
-                    "happened in the occurrence."
+                    "Adds governed legal, IMO and technical material separately "
+                    "from investigation evidence. It may support context or "
+                    "interpretation but cannot prove what happened in the occurrence."
                 ),
                 key=(
                     "ask_reference_context_"
@@ -6182,14 +6185,49 @@ def render_compare_llms():
                     }
                 )
                 st.caption(
-                    "Reference context available: "
+                    "Reference material available: "
                     + ", ".join(reference_families)
                 )
             elif not available_reference_documents:
                 st.caption(
-                    "No REFERENCE_CONTEXT documents are indexed yet. "
-                    "Notebook 44 indexes the governed reference_context volume."
+                    "No governed legal / IMO / technical reference material "
+                    "is currently available."
                 )
+
+            if scope_mode == "WHOLE_CASE":
+                ask_scope_summary = (
+                    "Entire prepared case / analysis"
+                )
+            elif (
+                scope_mode == "ONE_DOCUMENT"
+                and scope_document_ids
+            ):
+                ask_scope_summary = (
+                    ask_source_label(
+                        scope_document_ids[0]
+                    )
+                )
+            elif scope_mode == "SELECTED_DOCUMENTS":
+                ask_scope_summary = (
+                    str(
+                        len(scope_document_ids)
+                    )
+                    + " selected document(s)"
+                )
+            else:
+                ask_scope_summary = (
+                    "No document selected"
+                )
+
+            if include_reference_context:
+                ask_scope_summary += (
+                    " + legal / IMO / technical references"
+                )
+
+            st.info(
+                "Question scope: "
+                + ask_scope_summary
+            )
 
             with st.form(
                 (
