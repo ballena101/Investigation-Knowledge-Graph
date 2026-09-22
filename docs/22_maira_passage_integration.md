@@ -247,3 +247,18 @@ This keeps two identities distinct:
 
 The viewer therefore opens the same MAIRA source artifact from which the
 canonical passages were constructed, rather than relying on an IKF copy.
+
+
+## MAIRA catalogue exposure in the App
+
+MAIRA canonical evidence is now exposed upstream in the App document selector,
+not only consumed after an IKF document has already been selected.
+
+Notebook `33_sync_maira_investigation_catalogue.py` mirrors MAIRA registry
+metadata into Neo4j `SourceDocument` catalogue nodes while preserving MAIRA
+ownership and source paths. This is metadata synchronisation only; source PDFs
+remain in the MAIRA Unity Catalog volume.
+
+The normal App selector therefore supports both MAIRA investigation documents
+and IKF input documents. Duplicate files are resolved by SHA-256 in favour of
+the MAIRA canonical catalogue entry.
