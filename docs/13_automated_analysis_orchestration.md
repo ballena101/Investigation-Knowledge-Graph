@@ -265,3 +265,49 @@ another analysis.
 Deleting raw source storage does not imply deletion of Delta passages, model
 outputs, graph derivatives, logs or backups. Those have separate retention
 controls.
+
+
+## Ask / Compare orchestration
+
+Free-text investigator questions use a separate Lakeflow Job from document
+analysis.
+
+```text
+processed AnalysisGroup
+        ↓
+QuestionRun
+        ↓
+Investigation KG - Ask Processed Evidence
+        ↓
+36_ask_processed_evidence
+        ↓
+QuestionModelRun answer(s)
+        ↓
+document/page citations + passage IDs
+```
+
+The Ask Job:
+- does not rerun notebook 15;
+- does not rerun notebook 16;
+- does not modify the case knowledge graph;
+- reads only already-persisted analysis passages;
+- can scope evidence to the whole analysis, one document or selected documents;
+- stores each question separately so repeated questions do not overwrite the
+  case analysis.
+
+Databricks App resource:
+- resource key: `ask_job`;
+- environment variable: `ASK_JOB_ID`;
+- permission: `Can manage run`.
+
+Notebook `37_create_ask_processed_evidence_job.py` creates or updates the Job.
+
+For Class A/B/C, the Ask runner uses the model approved for that information
+class. Class D retains the dedicated GPT-OSS 20B / Llama 3.3 70B / Both policy.
+
+Class-D question text is Fernet-encrypted before persistence and is decrypted
+only in the question-processing Job. A/B/C question text may be stored as normal
+QuestionRun text with a SHA-256 audit hash.
+
+QuestionRun and QuestionModelRun substantive content follow the same analysis
+retention window and are purged/scrubbed by notebook 23.
