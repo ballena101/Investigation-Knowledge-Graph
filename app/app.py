@@ -305,7 +305,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-relationship-correction-v19"
+APP_BUILD = "2026-09-22-knowledge-assistant-v20"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -764,6 +764,7 @@ def create_question_run(
     scope_document_ids,
     model_selection,
     include_reference_context,
+    interaction_surface="ASK_COMPARE",
 ):
     if analysis.get("status") != "COMPLETED":
         raise ValueError(
@@ -863,6 +864,7 @@ def create_question_run(
                 scope_document_ids: $scope_document_ids,
                 model_selection: $model_selection,
                 include_reference_context: $include_reference_context,
+                interaction_surface: $interaction_surface,
                 model_keys: $model_keys,
                 model_services: $model_services,
                 question_text: $question_text,
@@ -886,6 +888,7 @@ def create_question_run(
             scope_document_ids=scope_document_ids,
             model_selection=model_selection,
             include_reference_context=bool(include_reference_context),
+            interaction_surface=interaction_surface,
             model_keys=model_keys,
             model_services=model_services,
             question_text=question_plain,
