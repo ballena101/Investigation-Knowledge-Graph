@@ -6,13 +6,13 @@
       "source_authority": "European Union / EUR-Lex",
       "reference_family": "EU_LEGISLATION",
       "reference_code": "Directive 2009/18/EC",
-      "reference_title": "Directive 2009/18/EC",
+      "reference_title": "Directive 2009/18/EC — consolidated text (26 December 2024)",
       "language": "EN",
-      "canonical_url": "https://eur-lex.europa.eu/eli/dir/2009/18/oj/eng",
-      "snapshot_url": "https://eur-lex.europa.eu/eli/dir/2009/18/oj/eng/pdf",
-      "snapshot_filename": "Directive_2009_18_EC_EN.pdf",
+      "canonical_url": "https://eur-lex.europa.eu/eli/dir/2009/18/2024-12-26/eng",
+      "snapshot_url": "https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=CELEX:02009L0018-20241226",
+      "snapshot_filename": "Directive_2009_18_EC_consolidated_2024-12-26_EN.pdf",
       "source_type": "PDF",
-      "note": "Canonical ELI page retained as authoritative provenance; official EUR-Lex PDF is snapshotted for deterministic page-level retrieval."
+      "note": "Current consolidated EUR-Lex text incorporating Directive (EU) 2024/3017. Canonical consolidated page retained as provenance; EUR-Lex consolidated PDF is snapshotted for deterministic page-level retrieval. Consolidated text is a documentation tool; authentic acts remain the Official Journal texts."
     },
     {
       "registry_key": "EU_DIR_2024_3017",
