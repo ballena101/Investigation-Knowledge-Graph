@@ -27,23 +27,25 @@ dbutils.widgets.text(
 
 # COMMAND ----------
 
-# MAGIC %pip install neo4j==6.3.1 pymupdf==1.26.4 python-docx==1.2.0 langdetect==1.0.9 cryptography==46.0.2
+import time
+
+extraction_notebook_started = time.perf_counter()
 
 # COMMAND ----------
 
-dbutils.library.restartPython()
+# MAGIC %pip install neo4j==6.3.1 langdetect==1.0.9 cryptography==46.0.2
 
 # COMMAND ----------
 
 import hashlib
 import os
 import re
+import subprocess
+import sys
 from collections import Counter
 from datetime import datetime, timezone
 
-import fitz  # PyMuPDF
 from cryptography.fernet import Fernet
-from docx import Document as DocxDocument
 from langdetect import DetectorFactory, LangDetectException, detect
 from neo4j import GraphDatabase
 from pyspark.sql import Row
@@ -51,7 +53,7 @@ from pyspark.sql import Row
 DetectorFactory.seed = 0
 
 ANALYSIS_PASSAGE_TABLE = "bdw_analysis_prod.kg_poc.analysis_passage"
-EXTRACTION_VERSION = "EVIDENCE_EXTRACTION_V0.1"
+EXTRACTION_VERSION = "EVIDENCE_EXTRACTION_V0.2"
 MAX_DOCUMENTS_PER_ANALYSIS = 5
 TARGET_PASSAGE_CHARS = 2400
 MAX_PASSAGE_CHARS = 3600
@@ -252,6 +254,26 @@ else:
             "→",
             document["volume_path"],
         )
+
+# Document-only extraction dependencies are deliberately deferred. Direct text
+# should not pay the PyMuPDF/python-docx installation cost.
+if input_mode == "DOCUMENTS":
+    subprocess.check_call(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--quiet",
+            "pymupdf==1.26.4",
+            "python-docx==1.2.0",
+        ]
+    )
+    import fitz  # PyMuPDF
+    from docx import Document as DocxDocument
+else:
+    fitz = None
+    DocxDocument = None
 
 # COMMAND ----------
 
@@ -811,6 +833,11 @@ try:
         else "UNKNOWN"
     )
 
+    extraction_duration_seconds = round(
+        time.perf_counter() - extraction_notebook_started,
+        3,
+    )
+
     with driver.session() as session:
         session.run(
             """
@@ -827,6 +854,7 @@ try:
                 a.passages_total = $passages_total,
                 a.detected_language = $detected_language,
                 a.extraction_version = $extraction_version,
+                a.extraction_duration_seconds = $extraction_duration_seconds,
                 a.evidence_ready_at = datetime(),
                 a.processing_updated_at = datetime(),
                 a.processing_error = NULL
@@ -839,6 +867,7 @@ try:
             passages_total=len(passage_rows),
             detected_language=dominant_language,
             extraction_version=EXTRACTION_VERSION,
+            extraction_duration_seconds=extraction_duration_seconds,
         ).consume()
 
     print("")
@@ -848,6 +877,7 @@ try:
     print("pages:", pages_processed, "/", pages_total)
     print("passages:", len(passage_rows))
     print("dominant passage language:", dominant_language)
+    print("extraction duration seconds:", extraction_duration_seconds)
 
 except Exception as exc:
     update_analysis_status(
