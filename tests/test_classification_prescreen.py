@@ -30,11 +30,11 @@ def test_vdr_transcript_is_protected_indicator():
     assert "VDR_RAW_RECORD" in result.rule_ids
 
 
-def test_email_identifier_requires_class_d():
+def test_generic_public_email_does_not_force_class_d():
     result = prescreen_text(
         "Contact: person@example.org"
     )
-    assert result.required_class == "D"
+    assert result.required_class is None
 
 
 def test_metadata_rules_are_strong_record_labels():
