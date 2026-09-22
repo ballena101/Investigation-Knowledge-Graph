@@ -106,3 +106,43 @@ Findings & Knowledge will search two sources separately:
 The LLM may support query formulation, ranking and short descriptions, but the
 result must retain source type and provenance. News must remain visibly
 separate from official investigation-report evidence.
+
+
+## Question-independent analysis and Ask / Compare
+
+The simplified capability model now distinguishes two user intents.
+
+### Analyse Documents
+
+This creates a reusable evidence/knowledge base. It contains:
+- classification;
+- source selection;
+- optional description;
+- processing progress;
+- evidence/graph outputs.
+
+It does not ask the investigator to formulate the analytical question.
+
+### Ask / Compare LLMs
+
+This is the interaction surface for free-text questions.
+
+Planned scope control:
+
+```text
+Evidence scope
+○ Entire processed case
+○ One document
+○ Selected documents
+
+Question
+[ free text ................................ ]
+
+Model mode
+○ Default model
+○ Compare models
+```
+
+The answer surface must always place evidence references close to the answer,
+using document/report name plus page/page range. Page citations must not be
+hidden only inside technical provenance fields.
