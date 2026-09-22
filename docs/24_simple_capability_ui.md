@@ -74,3 +74,35 @@ version:
 
 News is treated as external, unvalidated information and must not be silently
 merged with validated investigation knowledge.
+
+## Operational pages and the reference example
+
+The operational pages use a selected existing `analysis_id`:
+
+- **Analyse Documents** creates and runs an analysis;
+- **Compare LLMs** compares model outputs already produced for the same
+  analysis, question and evidence;
+- **Review & Validate** reviews candidates belonging to the selected analysis;
+- **Findings & Knowledge** explores the selected analysis and optionally opens
+  its graph.
+
+The Commodore Clipper is not the hidden dataset behind those pages. It has a
+separate **complete worked example** sheet that demonstrates document analysis,
+model-comparison status, review status, findings, graph, MAIRA similar-case
+retrieval status and news-alert status together.
+
+Graph colours encode node and relationship types consistently. The App also
+displays a colour key so colour is explanatory rather than decorative.
+
+## Similar-case retrieval
+
+Findings & Knowledge will search two sources separately:
+
+1. the MAIRA investigation-report/PDF repository, returning candidate similar
+   cases with a short evidence-grounded description and report provenance;
+2. the news tables, returning potentially related external alerts or an
+   explicit “no related news alerts identified” result.
+
+The LLM may support query formulation, ranking and short descriptions, but the
+result must retain source type and provenance. News must remain visibly
+separate from official investigation-report evidence.
