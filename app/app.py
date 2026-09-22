@@ -5697,31 +5697,70 @@ with tab_new_analysis:
         )
 
     st.divider()
-    st.markdown("**Recent analyses**")
-
-    try:
-        recent_analyses = load_recent_analyses()
-        if recent_analyses:
-            for analysis in recent_analyses:
-                source_label = (
-                    "text"
-                    if analysis.get("input_mode") == "DIRECT_TEXT"
-                    else f"{analysis['document_count']} document(s)"
+    with st.expander(
+        "Recent analyses",
+        expanded=False,
+    ):
+        try:
+            recent_analyses = (
+                load_recent_analyses()
+            )
+            if recent_analyses:
+                for analysis in recent_analyses:
+                    source_label = (
+                        "text"
+                        if analysis.get(
+                            "input_mode"
+                        )
+                        == "DIRECT_TEXT"
+                        else (
+                            str(
+                                analysis[
+                                    "document_count"
+                                ]
+                            )
+                            + " document(s)"
+                        )
+                    )
+                    class_label = (
+                        analysis.get(
+                            "information_class"
+                        )
+                        or "unclassified"
+                    )
+                    st.write(
+                        str(
+                            analysis[
+                                "analysis_title"
+                            ]
+                        )
+                        + " · "
+                        + source_label
+                        + " · Class "
+                        + class_label
+                        + " · "
+                        + str(
+                            analysis[
+                                "status"
+                            ]
+                        )
+                    )
+                    st.caption(
+                        analysis[
+                            "analysis_id"
+                        ]
+                    )
+            else:
+                st.caption(
+                    "No analysis groups have been created yet."
                 )
-                class_label = (
-                    analysis.get("information_class")
-                    or "unclassified"
-                )
-                st.write(
-                    f"{analysis['analysis_title']} · "
-                    f"{source_label} · Class {class_label} · "
-                    f"{analysis['status']} · {analysis['analysis_id']}"
-                )
-        else:
-            st.caption("No analysis groups have been created yet.")
-    except Exception as exc:
-        st.caption("Recent analyses could not be loaded.")
-        st.exception(exc)
+        except Exception as exc:
+            st.caption(
+                "Recent analyses could not be loaded."
+            )
+            st.exception(
+                exc
+            )
 
 
     st.divider()
