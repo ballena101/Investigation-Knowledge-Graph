@@ -99,3 +99,5 @@ a safety classification.
 - [26 — Generic EMCIP mapping review](26_generic_emcip_mapping_review.md) — MAIRA-registry shortlist, LLM proposal, human validation and provenance controls.
 
 - [27 — Reference-context retrieval](27_reference_context_retrieval.md) — separate SOURCE_EVIDENCE, REFERENCE_CONTEXT and controlled-taxonomy roles in Ask.
+
+- [29 — SHIELD two-gate classification workflow](29_shield_two_gate_workflow.md) — persistent SHIELD corpus, Gate-1 contributing-factor validation, grounded assistant proposal and Gate-2 human review.
