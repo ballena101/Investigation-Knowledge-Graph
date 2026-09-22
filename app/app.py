@@ -110,7 +110,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-governed-ask-v10"
+APP_BUILD = "2026-09-22-large-scope-retrieval-v11"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -1856,6 +1856,13 @@ def load_question_runs(analysis_id):
         q.processing_error AS processing_error,
         q.job_run_id AS job_run_id,
         q.retrieval_mode AS retrieval_mode,
+        q.retrieval_snapshot_id AS retrieval_snapshot_id,
+        coalesce(q.retrieval_passage_ids, []) AS retrieval_passage_ids,
+        coalesce(q.retrieval_candidate_count, 0) AS retrieval_candidate_count,
+        coalesce(q.retrieval_selected_count, 0) AS retrieval_selected_count,
+        coalesce(q.retrieval_selected_characters, 0) AS retrieval_selected_characters,
+        coalesce(q.retrieval_query_terms, []) AS retrieval_query_terms,
+        coalesce(q.retrieval_activated_expansions, []) AS retrieval_activated_expansions,
         q.governed_query_id AS governed_query_id,
         q.governed_query_spec_id AS governed_query_spec_id,
         q.governed_relationship AS governed_relationship,
@@ -4194,12 +4201,66 @@ def render_compare_llms():
                             else ""
                         )
                     )
+                elif retrieval_mode == "DETERMINISTIC_FREE_TEXT_LEXICAL_V0.1":
+                    st.caption(
+                        "Retrieval: deterministic free-text lexical ranking"
+                        + (
+                            " · "
+                            + str(
+                                selected_question.get(
+                                    "retrieval_selected_count"
+                                )
+                                or len(
+                                    selected_question.get(
+                                        "retrieval_passage_ids"
+                                    )
+                                    or []
+                                )
+                            )
+                            + " passage(s)"
+                        )
+                    )
+                    expansions = (
+                        selected_question.get(
+                            "retrieval_activated_expansions"
+                        )
+                        or []
+                    )
+                    if expansions:
+                        st.caption(
+                            "Governed terminology expansions: "
+                            + " · ".join(expansions)
+                        )
                 else:
                     st.caption(
-                        "Retrieval: scoped processed passages. "
-                        "Large scopes fail closed until governed retrieval "
-                        "covers the question."
+                        "Retrieval: complete selected evidence scope "
+                        "(small-scope all-passages path)."
                     )
+
+                if selected_question.get(
+                    "retrieval_snapshot_id"
+                ):
+                    with st.expander(
+                        "Retrieval provenance",
+                        expanded=False,
+                    ):
+                        st.code(
+                            selected_question[
+                                "retrieval_snapshot_id"
+                            ],
+                            language=None,
+                        )
+                        if selected_question.get(
+                            "retrieval_query_terms"
+                        ):
+                            st.write(
+                                "Query terms: "
+                                + ", ".join(
+                                    selected_question[
+                                        "retrieval_query_terms"
+                                    ]
+                                )
+                            )
 
                 question_status = (
                     selected_question.get("status")
