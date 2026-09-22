@@ -19,6 +19,9 @@ env:
   - name: CLASS_D_ANALYSIS_JOB_ID
     valueFrom: class_d_analysis_job
 
+  - name: ASK_JOB_ID
+    valueFrom: ask_job
+
   - name: CLASS_D_GPT20_ENDPOINT
     valueFrom: class_d_gpt20_endpoint
 
