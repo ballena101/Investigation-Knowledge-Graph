@@ -308,7 +308,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-evidence-and-action-followup-v26"
+APP_BUILD = "2026-09-22-compact-status-controls-v27"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -5708,8 +5708,9 @@ with tab_new_analysis:
         )
         with refresh_col:
             if st.button(
-                "Refresh status",
+                "↻",
                 key="refresh_analyse_status",
+                help="Refresh analysis status",
                 use_container_width=True,
             ):
                 load_analysis_groups.clear()
@@ -5973,8 +5974,9 @@ def render_compare_llms():
     )
 
     if st.button(
-        "Refresh status",
+        "↻",
         key="refresh_analysis_status",
+        help="Refresh question and analysis status",
     ):
         load_analysis_groups.clear()
         load_analysis_sources.clear()
@@ -7292,11 +7294,12 @@ with tab_findings:
 
             with similar_refresh:
                 refresh_similar = st.button(
-                    "Refresh similar-case status",
+                    "↻",
                     key=(
                         "refresh_similar_cases_"
                         + knowledge_analysis_id
                     ),
+                    help="Refresh similar-case retrieval status",
                     use_container_width=True,
                 )
 
@@ -8305,11 +8308,12 @@ with tab_knowledge_graph:
         )
         with graph_status_left:
             if st.button(
-                "Refresh graph question status",
+                "↻",
                 key=(
                     "refresh_graph_question_"
                     + graph_analysis_id
                 ),
+                help="Refresh graph-question status",
                 use_container_width=True,
             ):
                 load_question_runs.clear()
@@ -9148,13 +9152,14 @@ with tab_review:
 
         with correction_refresh:
             refresh_correction = st.button(
-                "Refresh proposal status",
+                "↻",
                 key=(
                     "refresh_relationship_correction_"
                     + selected_review_analysis_id
                     + "_"
                     + correction_edge_id
                 ),
+                help="Refresh relationship proposal status",
                 disabled=(
                     not RELATIONSHIP_CORRECTION_JOB_ID
                 ),
@@ -9479,7 +9484,8 @@ with tab_mapping_review:
 
     with action_right:
         refresh_mapping = st.button(
-            "Refresh mapping status",
+            "↻",
+            help="Refresh EMCIP mapping status",
             disabled=(
                 mapping_analysis_id is None
                 or mapping_model_run_id is None
@@ -10123,7 +10129,8 @@ with tab_mapping_review:
 
     with shield_action_right:
         refresh_shield = st.button(
-            "Refresh SHIELD status",
+            "↻",
+            help="Refresh SHIELD proposal status",
             disabled=(
                 not shield_analysis_id
                 or not shield_model_run_id
