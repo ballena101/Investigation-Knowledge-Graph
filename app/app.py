@@ -46,9 +46,13 @@ IKF_SOURCE_VOLUME_ROOT = (
 MAIRA_SOURCE_VOLUME_ROOT = (
     "/Volumes/bdw_analysis_prod/maira/source_documents"
 )
+IKF_REFERENCE_VOLUME_ROOT = (
+    "/Volumes/bdw_analysis_prod/kg_poc/reference_context"
+)
 ALLOWED_SOURCE_VOLUME_ROOTS = (
     IKF_SOURCE_VOLUME_ROOT,
     MAIRA_SOURCE_VOLUME_ROOT,
+    IKF_REFERENCE_VOLUME_ROOT,
 )
 
 PUBLIC_MODEL_SERVICE = "system.ai.meta-llama-3-3-70b-instruct"
@@ -793,6 +797,7 @@ def create_question_run(
                 scope_document_ids: $scope_document_ids,
                 reference_analysis_ids: $reference_analysis_ids,
                 model_selection: $model_selection,
+                include_reference_context: $include_reference_context,
                 model_keys: $model_keys,
                 model_services: $model_services,
                 question_text: $question_text,
@@ -816,6 +821,7 @@ def create_question_run(
             scope_document_ids=scope_document_ids,
             reference_analysis_ids=reference_analysis_ids,
             model_selection=model_selection,
+            include_reference_context=bool(include_reference_context),
             model_keys=model_keys,
             model_services=model_services,
             question_text=question_plain,
@@ -1967,6 +1973,41 @@ def load_model_runs(analysis_id):
         ]
 
 
+@st.cache_data(ttl=60)
+def load_reference_documents():
+    query = """
+    MATCH (d:ReferenceDocument)
+    WHERE coalesce(
+        d.catalogue_status,
+        'AVAILABLE'
+    ) = 'AVAILABLE'
+    RETURN
+        d.reference_document_id AS reference_document_id,
+        d.filename AS filename,
+        d.source_type AS source_type,
+        d.reference_family AS reference_family,
+        d.reference_code AS reference_code,
+        d.reference_title AS reference_title,
+        d.viewer_source_repository AS viewer_source_repository,
+        d.viewer_source_path AS viewer_source_path,
+        d.viewer_source_filename AS viewer_source_filename,
+        coalesce(d.page_count, 0) AS page_count
+    ORDER BY
+        d.reference_family,
+        coalesce(
+            d.reference_code,
+            d.reference_title,
+            d.filename
+        )
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(query)
+        ]
+
+
 @st.cache_data(ttl=30)
 def load_question_runs(analysis_id):
     query = """
@@ -1981,6 +2022,7 @@ def load_question_runs(analysis_id):
         coalesce(q.scope_document_ids, []) AS scope_document_ids,
         coalesce(q.reference_analysis_ids, []) AS reference_analysis_ids,
         q.model_selection AS model_selection,
+        coalesce(q.include_reference_context, false) AS include_reference_context,
         coalesce(q.model_keys, []) AS model_keys,
         q.question_text AS question_text,
         q.encrypted_question_text AS encrypted_question_text,
@@ -4715,6 +4757,44 @@ def render_compare_llms():
                     )
                 )
 
+            available_reference_documents = load_reference_documents()
+
+            include_reference_context = st.checkbox(
+                "Include legal / IMO / technical reference context",
+                value=False,
+                disabled=not bool(
+                    available_reference_documents
+                ),
+                help=(
+                    "Adds governed REFERENCE_CONTEXT passages separately from "
+                    "the casualty SOURCE_EVIDENCE. Reference material can guide "
+                    "legal/methodological interpretation but cannot prove what "
+                    "happened in the occurrence."
+                ),
+                key=(
+                    "ask_reference_context_"
+                    + selected_analysis_id
+                ),
+            )
+
+            if include_reference_context:
+                reference_families = sorted(
+                    {
+                        item.get("reference_family")
+                        or "TECHNICAL_REFERENCE"
+                        for item in available_reference_documents
+                    }
+                )
+                st.caption(
+                    "Reference context available: "
+                    + ", ".join(reference_families)
+                )
+            elif not available_reference_documents:
+                st.caption(
+                    "No REFERENCE_CONTEXT documents are indexed yet. "
+                    "Notebook 43 indexes the governed reference_context volume."
+                )
+
             with st.form(
                 (
                     "ask_question_form_"
@@ -4781,6 +4861,7 @@ def render_compare_llms():
                             scope_document_ids=scope_document_ids,
                             reference_analysis_ids=reference_analysis_ids,
                             model_selection=ask_model_selection,
+                            include_reference_context=include_reference_context,
                         )
 
                         if (
@@ -4936,6 +5017,17 @@ def render_compare_llms():
                         "retrieval_mode"
                     )
                     or "SCOPED_ALL_PASSAGES"
+                )
+
+                st.caption(
+                    "Reference context: "
+                    + (
+                        "included"
+                        if selected_question.get(
+                            "include_reference_context"
+                        )
+                        else "not included"
+                    )
                 )
 
                 if retrieval_mode == "GOVERNED_RELATIONSHIP_EVIDENCE":
