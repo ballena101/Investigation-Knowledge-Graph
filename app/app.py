@@ -1044,7 +1044,8 @@ def load_analysis_evidence_counts(analysis_id):
         coalesce(a.passages_total, 0) AS passages_total,
         properties(a)["detected_language"] AS detected_language,
         properties(a)["processing_error"] AS processing_error,
-        properties(a)["processing_stage"] AS processing_stage
+        properties(a)["processing_stage"] AS processing_stage,
+        properties(a)["extraction_duration_seconds"] AS extraction_duration_seconds
     """
 
     with get_driver().session() as session:
@@ -1305,6 +1306,7 @@ def load_model_run_graph(
         source.node_id AS source_id,
         target.node_id AS target_id,
         properties(r)["evidence_class"] AS evidence_class,
+        coalesce(properties(r)["edge_class"], "REPORT_DERIVED") AS edge_class,
         coalesce(properties(r)["evidence_passage_ids"], []) AS passage_ids
     ORDER BY source.label, relationship, target.label
     """
@@ -2187,6 +2189,13 @@ analysis_edge_styles = [
         curve_style="bezier",
         custom_styles={"line-color": "#16A34A", "target-arrow-color": "#16A34A"},
     ),
+    EdgeStyle(
+        label="INVOLVED_IN",
+        caption="label",
+        directed=True,
+        curve_style="bezier",
+        custom_styles={"line-style": "dashed"},
+    ),
 ]
 
 
@@ -2792,7 +2801,8 @@ with tab_new_analysis:
         st.caption("Recent analyses could not be loaded.")
         st.exception(exc)
 
-with tab_analyses:
+@st.fragment
+def render_compare_llms():
     st.subheader("Compare LLMs")
     st.caption(
         "Choose an existing analysis and compare independent model outputs "
@@ -2818,7 +2828,7 @@ with tab_analyses:
         load_analysis_graph.clear()
         load_model_runs.clear()
         load_model_run_graph.clear()
-        st.rerun()
+        st.toast("Status refreshed")
 
     try:
         analysis_groups = load_analysis_groups()
@@ -2931,6 +2941,16 @@ with tab_analyses:
             "Passages",
             evidence_counts.get("passages_total", 0),
         )
+
+        extraction_seconds = evidence_counts.get(
+            "extraction_duration_seconds"
+        )
+        if extraction_seconds is not None:
+            st.caption(
+                "Evidence extraction time: "
+                f"{float(extraction_seconds):.1f} seconds "
+                "(not including any queue delay before the task starts)."
+            )
 
         g1, g2 = st.columns(2)
         g1.metric(
@@ -3360,6 +3380,10 @@ with tab_analyses:
         )
 
 
+
+with tab_analyses:
+    render_compare_llms()
+
 with tab_graph:
     st.subheader("Findings & Knowledge")
     st.caption(
@@ -3644,6 +3668,7 @@ with tab_review:
             ),
         }
         for edge in selected_review_graph["edges"]
+        if edge.get("edge_class") != "STRUCTURAL"
     ]
 
     try:
