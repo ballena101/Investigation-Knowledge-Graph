@@ -101,3 +101,5 @@ a safety classification.
 - [27 — Reference-context retrieval](27_reference_context_retrieval.md) — separate SOURCE_EVIDENCE, REFERENCE_CONTEXT and controlled-taxonomy roles in Ask.
 
 - [29 — SHIELD two-gate classification workflow](29_shield_two_gate_workflow.md) — persistent SHIELD corpus, Gate-1 contributing-factor validation, grounded assistant proposal and Gate-2 human review.
+
+- [26 — Consolidated runtime validation](26_consolidated_runtime_validation.md) — one-shot Databricks preflight, deployment and feature-validation checklist.
