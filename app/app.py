@@ -1450,6 +1450,7 @@ def render_pipeline_status(
     ]
 
     failure_to_step = {
+        "PREPARE_EVIDENCE_FAILED": 0,
         "EXTRACTION_FAILED": 0,
         "CANDIDATE_EXTRACTION_FAILED": 1,
         "RESOLUTION_FAILED": 1,
