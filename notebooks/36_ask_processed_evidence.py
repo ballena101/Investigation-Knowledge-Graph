@@ -1092,26 +1092,44 @@ def format_page_reference(page_start, page_end):
     return f"pp. {page_start}–{page_end}"
 
 
-passage_by_id = {
+source_evidence_by_id = {
     row["passage_id"]: row
     for row in passage_rows
 }
 
+reference_context_by_id = {
+    row["passage_id"]: row
+    for row in reference_rows
+}
 
-def evidence_references(passage_ids):
+# Backward-compatible alias for primary case evidence only.
+passage_by_id = source_evidence_by_id
+
+
+def references_for(
+    passage_ids,
+    row_by_id,
+    name_by_document_id,
+):
     refs = []
     seen = set()
 
     for passage_id in passage_ids:
-        row = passage_by_id.get(passage_id)
+        row = row_by_id.get(
+            passage_id
+        )
         if row is None:
             continue
 
         filename = (
-            document_names.get(row["document_id"])
+            name_by_document_id.get(
+                row["document_id"]
+            )
             or (
                 "Direct text"
-                if str(row["document_id"]).startswith("text_")
+                if str(
+                    row["document_id"]
+                ).startswith("text_")
                 else row["document_id"]
             )
         )
@@ -1136,12 +1154,17 @@ def evidence_references(passage_ids):
     return refs
 
 
-def evidence_locations(passage_ids):
+def locations_for(
+    passage_ids,
+    row_by_id,
+):
     locations = []
     seen = set()
 
     for passage_id in passage_ids:
-        row = passage_by_id.get(passage_id)
+        row = row_by_id.get(
+            passage_id
+        )
         if row is None:
             continue
 
@@ -1172,17 +1195,57 @@ def evidence_locations(passage_ids):
     return locations
 
 
-def passage_block(row):
+def evidence_references(passage_ids):
+    return references_for(
+        passage_ids,
+        source_evidence_by_id,
+        document_names,
+    )
+
+
+def evidence_locations(passage_ids):
+    return locations_for(
+        passage_ids,
+        source_evidence_by_id,
+    )
+
+
+def reference_references(passage_ids):
+    return references_for(
+        passage_ids,
+        reference_context_by_id,
+        reference_document_names,
+    )
+
+
+def reference_locations(passage_ids):
+    return locations_for(
+        passage_ids,
+        reference_context_by_id,
+    )
+
+
+def passage_block(
+    row,
+    *,
+    source_layer,
+    name_by_document_id,
+):
     filename = (
-        document_names.get(row["document_id"])
+        name_by_document_id.get(
+            row["document_id"]
+        )
         or (
             "Direct text"
-            if str(row["document_id"]).startswith("text_")
+            if str(
+                row["document_id"]
+            ).startswith("text_")
             else row["document_id"]
         )
     )
 
     return (
+        f"[SOURCE_LAYER: {source_layer}]\n"
         f"[PASSAGE_ID: {row['passage_id']}]\n"
         f"[DOCUMENT: {filename}]\n"
         f"[DOCUMENT_ID: {row['document_id']}]\n"
