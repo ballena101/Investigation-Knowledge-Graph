@@ -49,8 +49,10 @@ from databricks.sdk.service.serving import (
 from neo4j import GraphDatabase
 from pyspark.sql import functions as F
 
-QUESTION_RUN_VERSION = "IKF_QUESTION_RUN_V0.3_REFERENCE_CONTEXT"
+QUESTION_RUN_VERSION = "IKF_QUESTION_RUN_V0.4_REFERENCE_CORPUS"
 ANALYSIS_PASSAGE_TABLE = "bdw_analysis_prod.kg_poc.analysis_passage"
+REFERENCE_DOCUMENT_TABLE = "bdw_analysis_prod.kg_poc.reference_document"
+REFERENCE_PASSAGE_TABLE = "bdw_analysis_prod.kg_poc.reference_passage"
 
 MAX_SCOPE_PASSAGES = 80
 MAX_SCOPE_CHARS = 120000
@@ -181,7 +183,7 @@ with driver.session() as session:
             properties(a)["input_mode"] AS input_mode,
             q.scope_mode AS scope_mode,
             coalesce(q.scope_document_ids, []) AS scope_document_ids,
-            coalesce(q.reference_analysis_ids, []) AS reference_analysis_ids,
+            coalesce(q.include_reference_context, false) AS include_reference_context,
             q.model_keys AS model_keys,
             q.model_services AS model_services,
             q.question_text AS question_text,
@@ -209,9 +211,8 @@ scope_document_ids = list(
     question_run.get("scope_document_ids")
     or []
 )
-reference_analysis_ids = list(
-    question_run.get("reference_analysis_ids")
-    or []
+include_reference_context = bool(
+    question_run.get("include_reference_context")
 )
 model_keys = list(
     question_run.get("model_keys")
@@ -235,95 +236,6 @@ document_names = {
 }
 
 reference_document_names = {}
-reference_analysis_titles = {}
-
-if reference_analysis_ids:
-    if len(set(reference_analysis_ids)) != len(reference_analysis_ids):
-        driver.close()
-        raise ValueError(
-            "Reference analysis IDs contain duplicates."
-        )
-
-    with driver.session() as session:
-        reference_records = [
-            record.data()
-            for record in session.run(
-                """
-                UNWIND $reference_analysis_ids AS reference_analysis_id
-                MATCH (r:AnalysisGroup {
-                    analysis_id: reference_analysis_id
-                })
-                OPTIONAL MATCH (r)-[:HAS_SOURCE]->(d:SourceDocument)
-                WITH r, collect({
-                    document_id: d.document_id,
-                    filename: d.filename
-                }) AS documents
-                RETURN
-                    r.analysis_id AS analysis_id,
-                    r.analysis_title AS analysis_title,
-                    r.status AS status,
-                    properties(r)["information_class"] AS information_class,
-                    documents
-                """,
-                reference_analysis_ids=reference_analysis_ids,
-            )
-        ]
-
-    reference_by_id = {
-        item["analysis_id"]: item
-        for item in reference_records
-    }
-
-    missing_reference_ids = sorted(
-        set(reference_analysis_ids)
-        - set(reference_by_id)
-    )
-
-    if missing_reference_ids:
-        driver.close()
-        raise ValueError(
-            "Reference analyses were not found: "
-            + ", ".join(missing_reference_ids)
-        )
-
-    invalid_reference_ids = []
-
-    for reference_analysis_id in reference_analysis_ids:
-        item = reference_by_id[
-            reference_analysis_id
-        ]
-
-        if (
-            item.get("status") != "COMPLETED"
-            or item.get("information_class") != "A"
-        ):
-            invalid_reference_ids.append(
-                reference_analysis_id
-            )
-            continue
-
-        reference_analysis_titles[
-            reference_analysis_id
-        ] = (
-            item.get("analysis_title")
-            or reference_analysis_id
-        )
-
-        for document in item.get("documents") or []:
-            if document.get("document_id"):
-                reference_document_names[
-                    document["document_id"]
-                ] = (
-                    document.get("filename")
-                    or document["document_id"]
-                )
-
-    if invalid_reference_ids:
-        driver.close()
-        raise ValueError(
-            "REFERENCE_CONTEXT must use completed Class-A analyses only: "
-            + ", ".join(invalid_reference_ids)
-        )
 
 # COMMAND ----------
 
@@ -366,7 +278,7 @@ if not question_text:
 print("Analysis:", analysis_id)
 print("Scope:", scope_mode)
 print("Scoped documents:", len(scope_document_ids))
-print("Reference analyses:", len(reference_analysis_ids))
+print("Reference context requested:", include_reference_context)
 print("Models:", model_keys)
 
 # Exact governed-query recognition.
@@ -936,7 +848,7 @@ reference_retrieval_mode = "NONE"
 reference_retrieval_passage_ids = []
 reference_retrieval_snapshot_id = None
 
-if reference_analysis_ids:
+if include_reference_context:
     if maira_import_error is not None:
         message = (
             "Reference context requires MAIRA's deterministic free-text "
@@ -960,29 +872,93 @@ if reference_analysis_ids:
         driver.close()
         raise RuntimeError(message)
 
+    if not spark.catalog.tableExists(
+        REFERENCE_DOCUMENT_TABLE
+    ) or not spark.catalog.tableExists(
+        REFERENCE_PASSAGE_TABLE
+    ):
+        message = (
+            "Reference context was requested, but the governed IKF "
+            "REFERENCE_CONTEXT corpus has not been indexed. "
+            "Run notebook 43 first."
+        )
+        with driver.session() as session:
+            session.run(
+                """
+                MATCH (q:QuestionRun {
+                    question_run_id: $question_run_id
+                })
+                SET
+                    q.status = 'FAILED',
+                    q.processing_stage = 'REFERENCE_CORPUS_NOT_READY',
+                    q.processing_error = $message,
+                    q.updated_at = datetime()
+                """,
+                question_run_id=question_run_id,
+                message=message,
+            ).consume()
+        driver.close()
+        raise RuntimeError(message)
+
     from maira.retrieval import retrieve_free_text
 
-    reference_candidates = (
-        spark.table(ANALYSIS_PASSAGE_TABLE)
-        .filter(
-            F.col("analysis_id").isin(
-                reference_analysis_ids
+    reference_documents = {
+        row["reference_document_id"]: row.asDict(
+            recursive=True
+        )
+        for row in (
+            spark.table(
+                REFERENCE_DOCUMENT_TABLE
             )
+            .filter(
+                F.col("source_layer")
+                == "REFERENCE_CONTEXT"
+            )
+            .select(
+                "reference_document_id",
+                "filename",
+                "reference_family",
+                "reference_code",
+                "reference_title",
+            )
+            .collect()
+        )
+    }
+
+    reference_document_names = {
+        document_id: (
+            item.get("reference_code")
+            or item.get("reference_title")
+            or item.get("filename")
+            or document_id
+        )
+        for document_id, item
+        in reference_documents.items()
+    }
+
+    reference_candidates = (
+        spark.table(
+            REFERENCE_PASSAGE_TABLE
+        )
+        .filter(
+            F.col("source_layer")
+            == "REFERENCE_CONTEXT"
         )
         .select(
-            "analysis_id",
-            "document_id",
-            "passage_id",
+            F.col(
+                "reference_document_id"
+            ).alias("document_id"),
+            F.col(
+                "reference_passage_id"
+            ).alias("passage_id"),
             "page_start",
             "page_end",
-            "passage_order",
-            "detected_language",
+            "passage_number",
             "passage_text",
         )
         .orderBy(
-            "analysis_id",
             "document_id",
-            "passage_order",
+            "passage_number",
         )
         .collect()
     )
@@ -993,11 +969,11 @@ if reference_analysis_ids:
                 {
                     "document_id": row["document_id"],
                     "passage_id": row["passage_id"],
-                    "passage_number": row["passage_order"],
+                    "passage_number": row["passage_number"],
                     "start_page": row["page_start"],
                     "end_page": row["page_end"],
                     "passage_text": row["passage_text"],
-                    "report_package_id": row["analysis_id"],
+                    "report_package_id": None,
                 }
                 for row in reference_candidates
             ],
@@ -1013,7 +989,15 @@ if reference_analysis_ids:
         }
 
         reference_rows = [
-            row
+            {
+                "document_id": row["document_id"],
+                "passage_id": row["passage_id"],
+                "page_start": row["page_start"],
+                "page_end": row["page_end"],
+                "passage_order": row["passage_number"],
+                "detected_language": "REFERENCE",
+                "passage_text": row["passage_text"],
+            }
             for row in reference_candidates
             if row["passage_id"]
             in selected_reference_ids
@@ -1030,9 +1014,7 @@ if reference_analysis_ids:
         "question_sha256": hashlib.sha256(
             question_text.encode("utf-8")
         ).hexdigest(),
-        "reference_analysis_ids": sorted(
-            reference_analysis_ids
-        ),
+        "reference_corpus": REFERENCE_PASSAGE_TABLE,
         "reference_retrieval_mode": reference_retrieval_mode,
         "reference_retrieval_passage_ids": (
             reference_retrieval_passage_ids
