@@ -204,6 +204,38 @@ for item in expired:
             analysis_id=analysis_id,
         ).consume()
 
+
+        session.run(
+            """
+            MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+            OPTIONAL MATCH (a)-[:HAS_RELATIONSHIP_CORRECTION_PROPOSAL]->(
+                p:RelationshipCorrectionProposal
+            )
+            REMOVE
+                p.rationale,
+                p.evidence_passage_ids,
+                p.evidence_references,
+                p.evidence_locations
+            SET
+                p.derived_content_purged_at = datetime()
+            """,
+            analysis_id=analysis_id,
+        ).consume()
+
+        session.run(
+            """
+            MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+            OPTIONAL MATCH (a)-[:HAS_RELATIONSHIP_CORRECTION_REVIEW]->(
+                r:RelationshipCorrectionReview
+            )
+            REMOVE
+                r.review_comment
+            SET
+                r.derived_content_purged_at = datetime()
+            """,
+            analysis_id=analysis_id,
+        ).consume()
+
         session.run(
             """
             MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
