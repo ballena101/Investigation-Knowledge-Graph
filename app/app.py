@@ -308,7 +308,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-evidence-viewer-v26"
+APP_BUILD = "2026-09-22-evidence-and-action-followup-v26"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -6349,7 +6349,8 @@ def render_compare_llms():
                         load_question_model_runs.clear()
 
                         st.success(
-                            "Question queued."
+                            "Question queued. Use Refresh status above to "
+                            "update the answer."
                         )
                         st.caption(
                             f"Question run: {question_run_id} · "
@@ -9507,7 +9508,8 @@ with tab_mapping_review:
             )
             load_emcip_mapping_proposals.clear()
             st.success(
-                "EMCIP proposal generation queued."
+                "EMCIP proposal generation queued. Use Refresh mapping "
+                "status to update the proposals."
             )
             st.caption(
                 "Databricks run: " + mapping_job_run_id
@@ -10162,7 +10164,8 @@ with tab_mapping_review:
             )
             load_shield_proposals.clear()
             st.success(
-                "SHIELD proposal generation queued."
+                "SHIELD proposal generation queued. Use Refresh SHIELD "
+                "status to update the proposals."
             )
             st.caption(
                 "Databricks run: "
