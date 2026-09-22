@@ -142,79 +142,54 @@ and human-validated knowledge distinct.
 
 ## 3. NEXT — current milestone
 
-### Development — Class-D completion
+### Development — SHIELD workflow
 
-Complete the automatic information-class pre-screen and fail-closed routing for
-protected investigation material.
+Implement the governed two-human-gate SHIELD workflow:
+
+```text
+candidate contributing factor
+        ↓
+human validates CF
+        ↓
+LLM suggests SHIELD classification
+        ↓
+human validates / amends / rejects SHIELD
+        ↓
+only validated SHIELD becomes authoritative
+```
 
 Required principles:
 
-- investigator-declared A/B/C/D remains visible and auditable;
-- automatic screening is a safeguard, not a silent reclassification engine;
-- obvious protected indicators can escalate/reroute but must not downgrade D;
-- ambiguous material fails closed toward the more protected path;
-- witness statements, identities, medical/personal data, investigator drafts,
-  VTS/VDR and equivalent protected evidence remain Class-D indicators;
-- raw protected production content must not become a general Neo4j evidence
-  store;
-- dedicated Class-D model routes remain mandatory;
-- rule version and trigger reason must be logged deterministically.
+- SHIELD classification must never be proposed before the contributing factor
+  itself has been human-validated;
+- the LLM suggestion is a candidate only;
+- SHIELD source documents/taxonomy remain separate from SOURCE_EVIDENCE and
+  REFERENCE_CONTEXT;
+- proposal provenance must include the validated CF, model/prompt version and
+  SHIELD taxonomy/version;
+- human SHIELD review is append-only;
+- no model output silently overwrites a validated classification.
 
 ### Consolidated runtime validation
 
 The accumulated App/Job changes remain intentionally undeployed to avoid
 repeated Databricks cost.
 
-Next validation session:
+The next consolidated test session must also include Class-D pre-screen checks:
 
-1. Pull current IKF `main` and MAIRA `main`.
-2. Populate:
-   `/Volumes/bdw_analysis_prod/kg_poc/reference_context`
-   with the governed legal/IMO/technical reference files.
-3. Run notebook 44 and require:
-   `PASS — IKF REFERENCE_CONTEXT CORPUS INDEXED`.
-4. Run notebook 37 to create/update the Ask Job.
-5. Attach App Job resource:
-   - key: `ask_job`;
-   - permission: `Can manage run`.
-6. Run notebook 41 to create/update the EMCIP mapping Job.
-7. Attach:
-   - key: `emcip_mapping_job`;
-   - permission: `Can manage run`.
-8. Redeploy the App once.
-9. Create/retry one Class-B MAIRA MAIN_REPORT analysis.
-10. Require notebook 32:
-    `PASS — NORMAL APP ANALYSIS PRESERVES MAIRA_IKF_PASSAGE_V0.1`.
-11. Require notebook 35:
-    `PASS — SOURCE VIEWER METADATA AND PAGE RANGES ARE VALID`.
-12. Confirm visible report/page citations and cited PDF rendering.
-13. Run one ordinary Ask question and one document-scoped Ask question.
-14. Run one Ask question with REFERENCE_CONTEXT enabled.
-15. Require notebook 38:
-    `PASS — SCOPED ASK / COMPARE PRESERVES SOURCE_EVIDENCE AND REFERENCE_CONTEXT BOUNDARIES`.
-16. Test one exact persisted MAIRA governed query and confirm:
-    `GOVERNED_RELATIONSHIP_EVIDENCE`.
-17. Test one large ordinary free-text scope and confirm:
-    `DETERMINISTIC_FREE_TEXT_LEXICAL_V0.1`.
-18. Save at least one generic relationship review and require notebook 39:
-    `PASS — GENERIC RELATIONSHIP REVIEWS PRESERVE ANALYSIS AND MODEL PROVENANCE`.
-19. Generate generic EMCIP proposals from Review & Validate.
-20. Save at least one mapping review and require notebook 42:
-    `PASS — GENERIC EMCIP PROPOSALS AND REVIEWS REMAIN GOVERNED`.
+- one synthetic non-D direct-text attempt blocked by the App preflight;
+- one backend non-D protected-content attempt that reaches notebook 15 and fails
+  closed before passages/model execution;
+- one declared Class-D case proving the detector never downgrades D;
+- one published MAIRA Class-B report proving the published-report exemption;
+- notebook 43 must return:
+  `PASS — INFORMATION-CLASS PRESCREEN FAILS CLOSED WITHOUT DOWNGRADING CLASS D`.
 
-No question, reference retrieval, relationship review or EMCIP mapping review
-should rebuild the case graph.
+Reference-context indexing is notebook 44.
 
 ## 4. PENDING — planned implementation sequence
 
-### P1 — Class-D completion
-
-- Automated A/B/C/D pre-screen with fail-closed routing.
-- Complete protected-data controls and assurance.
-- Keep production protected raw content outside Neo4j.
-- Preserve dual-model comparison and privacy validation.
-
-### P2 — SHIELD workflow
+### P1 — SHIELD workflow
 
 - Candidate contributing factor
   → human validation
@@ -222,21 +197,21 @@ should rebuild the case graph.
   → independent human SHIELD validation.
 - Only validated SHIELD classification becomes authoritative.
 
-### P3 — knowledge assistant and relationship correction
+### P2 — knowledge assistant and relationship correction
 
 - Ask/Research over processed knowledge with citations.
 - Distinguish candidate from human-validated knowledge.
 - Allow LLM to propose relationship corrections from the graph.
 - Never change validated graph relationships without explicit human approval.
 
-### P4 — similar cases and external signals
+### P3 — similar cases and external signals
 
 - Retrieve similar MAIRA investigation reports.
 - Keep News & Alerts separate as external/unvalidated information.
 - Later allow governed read-only LLM access to the news backend without mixing
   news with validated investigation findings.
 
-### P5 — production-readiness validation
+### P4 — production-readiness validation
 
 - Reproducible benchmarks.
 - Versioned prompts/models/retrieval snapshots.
@@ -486,5 +461,33 @@ Implemented in code:
 - old completed-Class-A-analysis reference mechanism was removed so there is
   only one reference-context architecture;
 - notebook 38 now validates the dedicated corpus boundary.
+
+Status: **code complete; runtime validation deferred**.
+
+
+### Class-D deterministic fail-closed pre-screen
+
+Implemented in source:
+
+- canonical reusable detector:
+  `src/ikf/classification_prescreen.py`;
+- synthetic unit tests:
+  `tests/test_classification_prescreen.py`;
+- early App preflight for non-D direct text and IKF document metadata;
+- backend content preflight in notebook 15 before passage persistence/model use;
+- published MAIRA Class-B reports are explicitly exempt from escalation merely
+  because the published report discusses protected evidence types;
+- strong indicators require Class D for non-D raw/IKF-managed material;
+- blocked direct-text encrypted payload is purged immediately;
+- blocked backend analyses persist zero passages and must have zero ModelRuns;
+- declared Class D is never downgraded;
+- backend stores rule version/status/rule IDs/required class without matched
+  protected text;
+- App-blocked attempts now persist compact privacy-safe
+  `ClassificationPrescreenAttempt` audit metadata;
+- App Technical details exposes backend pre-screen status/version/rule IDs;
+- generic public email alone does not trigger Class D; the test suite now
+  matches that governed rule;
+- notebook 43 validates fail-closed routing and App audit privacy constraints.
 
 Status: **code complete; runtime validation deferred**.
