@@ -5495,6 +5495,299 @@ with tab_new_analysis:
         st.caption("Recent analyses could not be loaded.")
         st.exception(exc)
 
+
+    st.divider()
+    st.markdown("### Analysis results")
+    st.caption(
+        "See what the analysis identified before asking any questions. "
+        "These are model-derived analytical outputs with source provenance; "
+        "relationships remain candidates until human review."
+    )
+
+    if st.button(
+        "Refresh analysis results",
+        key="refresh_analyse_results",
+    ):
+        load_analysis_groups.clear()
+        load_model_runs.clear()
+        load_analysis_graph.clear()
+        load_model_run_graph.clear()
+        load_analysis_result.clear()
+        st.rerun()
+
+    try:
+        result_analyses = load_analysis_groups()
+    except Exception as exc:
+        result_analyses = []
+        st.error(
+            "Analysis results could not be loaded."
+        )
+        st.exception(exc)
+
+    if result_analyses:
+        result_by_id = {
+            item["analysis_id"]: item
+            for item in result_analyses
+        }
+
+        result_analysis_id = st.selectbox(
+            "Analysis result",
+            options=list(result_by_id),
+            format_func=lambda value: (
+                f"{result_by_id[value]['analysis_title']} · "
+                f"Class {result_by_id[value].get('information_class') or '—'} · "
+                f"{result_by_id[value].get('status') or 'UNKNOWN'}"
+            ),
+            key="analyse_result_selector",
+        )
+        result_meta = result_by_id[
+            result_analysis_id
+        ]
+
+        if result_meta.get("status") != "COMPLETED":
+            st.info(
+                "Structured results become available after processing "
+                "completes. Use Refresh analysis results to update the status."
+            )
+        else:
+            completed_model_runs = [
+                item
+                for item in load_model_runs(
+                    result_analysis_id
+                )
+                if item.get("status") == "COMPLETED"
+            ]
+
+            if len(completed_model_runs) > 1:
+                result_model_by_id = {
+                    item["model_run_id"]: item
+                    for item in completed_model_runs
+                }
+                result_model_run_id = st.selectbox(
+                    "Model output",
+                    options=list(
+                        result_model_by_id
+                    ),
+                    format_func=lambda value: (
+                        result_model_by_id[value].get(
+                            "model_label"
+                        )
+                        or result_model_by_id[value].get(
+                            "model_key"
+                        )
+                        or value
+                    ),
+                    key=(
+                        "analyse_result_model_"
+                        + result_analysis_id
+                    ),
+                )
+                result_graph = load_model_run_graph(
+                    result_analysis_id,
+                    result_model_run_id,
+                )
+            elif len(completed_model_runs) == 1:
+                result_graph = load_model_run_graph(
+                    result_analysis_id,
+                    completed_model_runs[0][
+                        "model_run_id"
+                    ],
+                )
+            else:
+                result_graph = load_analysis_graph(
+                    result_analysis_id
+                )
+
+            result_nodes = result_graph[
+                "nodes"
+            ]
+            result_edges = result_graph[
+                "edges"
+            ]
+
+            nodes_by_kind = {}
+            for node in result_nodes:
+                nodes_by_kind.setdefault(
+                    node.get("node_kind")
+                    or "Other",
+                    [],
+                ).append(node)
+
+            event_nodes = nodes_by_kind.get(
+                "Event",
+                [],
+            )
+            contributing_nodes = nodes_by_kind.get(
+                "ContributingFactor",
+                [],
+            )
+            finding_nodes = nodes_by_kind.get(
+                "Finding",
+                [],
+            )
+            safety_issue_nodes = nodes_by_kind.get(
+                "SafetyIssue",
+                [],
+            )
+            recommendation_nodes = nodes_by_kind.get(
+                "Recommendation",
+                [],
+            )
+
+            result_metrics = st.columns(5)
+            result_metrics[0].metric(
+                "Events",
+                len(event_nodes),
+            )
+            result_metrics[1].metric(
+                "Contributing factors",
+                len(contributing_nodes),
+            )
+            result_metrics[2].metric(
+                "Findings",
+                len(finding_nodes),
+            )
+            result_metrics[3].metric(
+                "Safety issues",
+                len(safety_issue_nodes),
+            )
+            result_metrics[4].metric(
+                "Recommendations",
+                len(recommendation_nodes),
+            )
+
+            def render_result_group(
+                title,
+                items,
+                empty_text,
+            ):
+                st.markdown(
+                    "#### " + title
+                )
+                if not items:
+                    st.caption(
+                        empty_text
+                    )
+                    return
+
+                for item in items:
+                    with st.expander(
+                        item.get("label")
+                        or "Unnamed item",
+                        expanded=False,
+                    ):
+                        description = (
+                            item.get("description")
+                            or "No description was published."
+                        )
+                        st.write(
+                            description
+                        )
+                        references = (
+                            item.get(
+                                "evidence_references"
+                            )
+                            or []
+                        )
+                        if references:
+                            st.markdown(
+                                "**Source pages**"
+                            )
+                            for reference in references:
+                                st.write(
+                                    "• " + str(reference)
+                                )
+                        else:
+                            st.caption(
+                                "No page-level citation is available for this item."
+                            )
+
+            render_result_group(
+                "Events / casualty sequence",
+                event_nodes,
+                "No Event nodes were identified.",
+            )
+            render_result_group(
+                "Contributing factors",
+                contributing_nodes,
+                "No ContributingFactor nodes were identified.",
+            )
+            render_result_group(
+                "Findings",
+                finding_nodes,
+                "No Finding nodes were identified.",
+            )
+            render_result_group(
+                "Safety issues",
+                safety_issue_nodes,
+                "No SafetyIssue nodes were identified.",
+            )
+            render_result_group(
+                "Safety recommendations",
+                recommendation_nodes,
+                "No Recommendation nodes were identified.",
+            )
+
+            analytical_relationships = [
+                edge
+                for edge in result_edges
+                if (
+                    edge.get("edge_class")
+                    != "STRUCTURAL"
+                    and edge.get("relationship")
+                    in {
+                        "FOLLOWED_BY",
+                        "CONTRIBUTED_TO",
+                        "RESULTED_IN",
+                        "AFFECTED",
+                        "SUPPORTS",
+                    }
+                )
+            ]
+
+            st.markdown(
+                "#### Analytical relationships"
+            )
+            st.caption(
+                "These relationships describe sequence/support/contribution "
+                "as extracted from the report. They are not authoritative "
+                "until reviewed where human validation is required."
+            )
+
+            if analytical_relationships:
+                for edge in analytical_relationships:
+                    st.write(
+                        "• "
+                        + edge["source_label"]
+                        + " — "
+                        + edge["relationship"]
+                        + " → "
+                        + edge["target_label"]
+                    )
+                    for reference in (
+                        edge.get(
+                            "evidence_references"
+                        )
+                        or []
+                    ):
+                        st.caption(
+                            str(reference)
+                        )
+            else:
+                st.caption(
+                    "No evidence-derived analytical relationships were published."
+                )
+
+            st.info(
+                "Use Findings & Knowledge for detailed evidence browsing and "
+                "the graph. Use Review & Validate for human decisions. Use "
+                "Ask / Compare LLMs only when you want to pose a question."
+            )
+    else:
+        st.info(
+            "No analyses are available yet."
+        )
+
 @st.fragment
 def render_compare_llms():
     st.subheader("Ask / Compare LLMs")
