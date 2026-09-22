@@ -6057,7 +6057,7 @@ def render_compare_llms():
 
                 if scope_mode == "ONE_DOCUMENT":
                     one_document_id = st.selectbox(
-                        "Document",
+                        "Use this document for the question",
                         options=list(
                             ask_source_by_id
                         ),
@@ -6072,7 +6072,7 @@ def render_compare_llms():
                     ]
                 elif scope_mode == "SELECTED_DOCUMENTS":
                     scope_document_ids = st.multiselect(
-                        "Documents",
+                        "Use these documents for the question",
                         options=list(
                             ask_source_by_id
                         ),
@@ -6141,7 +6141,7 @@ def render_compare_llms():
             available_reference_documents = load_reference_documents()
 
             include_reference_context = st.checkbox(
-                "Include legal / IMO / technical reference context",
+                "Include legal / IMO / technical references",
                 value=False,
                 disabled=not bool(
                     available_reference_documents
