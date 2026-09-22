@@ -32,7 +32,9 @@ dbutils.widgets.text(
 
 import hashlib
 import json
+import os
 import re
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -90,6 +92,64 @@ w = WorkspaceClient()
 print("Question run:", question_run_id)
 print("Neo4j connection: OK")
 
+# IKF query runner import path + sibling MAIRA source discovery.
+#
+# GitHub remains authoritative; the workspace Git folders are only runtime
+# imports for the PoC jobs.
+current_notebook_path = (
+    dbutils.notebook.entry_point
+    .getDbutils()
+    .notebook()
+    .getContext()
+    .notebookPath()
+    .get()
+)
+workspace_notebook_path = (
+    "/Workspace" + current_notebook_path
+    if current_notebook_path.startswith("/Users/")
+    else current_notebook_path
+)
+ikf_repo_root = workspace_notebook_path.rsplit(
+    "/notebooks/",
+    1,
+)[0]
+ikf_src_path = os.path.join(
+    ikf_repo_root,
+    "src",
+)
+
+if ikf_src_path not in sys.path:
+    sys.path.insert(0, ikf_src_path)
+
+maira_import_error = None
+
+try:
+    import maira  # noqa: F401
+except ModuleNotFoundError as exc:
+    maira_import_error = exc
+    workspace_user_root = ikf_repo_root.rsplit(
+        "/",
+        1,
+    )[0]
+
+    for candidate_name in (
+        "MAIRA",
+        "MAIRA-main",
+    ):
+        candidate = os.path.join(
+            workspace_user_root,
+            candidate_name,
+            "src",
+        )
+        if os.path.isdir(candidate):
+            sys.path.insert(0, candidate)
+            try:
+                import maira  # noqa: F401
+                maira_import_error = None
+                break
+            except ModuleNotFoundError as retry_exc:
+                maira_import_error = retry_exc
+
 # COMMAND ----------
 
 with driver.session() as session:
@@ -101,7 +161,12 @@ with driver.session() as session:
         OPTIONAL MATCH (a)-[:HAS_SOURCE]->(d:SourceDocument)
         WITH a, q, collect({
             document_id: d.document_id,
-            filename: d.filename
+            filename: d.filename,
+            source_managed_by: coalesce(
+                properties(d)["source_managed_by"],
+                "IKF"
+            ),
+            maira_document_role: properties(d)["maira_document_role"]
         }) AS documents
         RETURN
             a.analysis_id AS analysis_id,
@@ -202,6 +267,67 @@ print("Scope:", scope_mode)
 print("Scoped documents:", len(scope_document_ids))
 print("Models:", model_keys)
 
+# Exact governed-query recognition.
+#
+# Arbitrary free-text questions are NOT semantically forced into a governed
+# query spec. Only exact normalized matches to persisted MAIRA user_query values
+# activate this path.
+governed_query_id = None
+governed_query_spec_id = None
+governed_relationship = None
+retrieval_mode = "SCOPED_ALL_PASSAGES"
+
+if (
+    information_class == "B"
+    and spark.catalog.tableExists(
+        "bdw_analysis_prod.maira.query_specifications"
+    )
+):
+    normalized_question = " ".join(
+        question_text.casefold().split()
+    )
+
+    governed_matches = [
+        row.asDict(recursive=True)
+        for row in (
+            spark.table(
+                "bdw_analysis_prod.maira.query_specifications"
+            )
+            .select(
+                "query_id",
+                "query_spec_id",
+                "user_query",
+                "relationship",
+            )
+            .collect()
+        )
+        if " ".join(
+            str(row["user_query"] or "")
+            .casefold()
+            .split()
+        )
+        == normalized_question
+    ]
+
+    if len(governed_matches) > 1:
+        driver.close()
+        raise RuntimeError(
+            "More than one persisted governed MAIRA query matched the "
+            "normalized question. Resolve the governance ambiguity first."
+        )
+
+    if len(governed_matches) == 1:
+        governed = governed_matches[0]
+        governed_query_id = governed["query_id"]
+        governed_query_spec_id = governed["query_spec_id"]
+        governed_relationship = governed["relationship"]
+
+        print(
+            "Exact governed query recognized:",
+            governed_query_id,
+            governed_relationship,
+        )
+
 # COMMAND ----------
 
 passages = (
@@ -240,6 +366,121 @@ passage_rows = (
     )
     .collect()
 )
+
+if governed_query_id is not None:
+    if maira_import_error is not None:
+        message = (
+            "An exact governed MAIRA query was recognized, but the MAIRA "
+            "runtime package is not importable by the Ask Job. The governed "
+            "path fails closed rather than falling back to an ungoverned answer."
+        )
+        with driver.session() as session:
+            session.run(
+                """
+                MATCH (q:QuestionRun {
+                    question_run_id: $question_run_id
+                })
+                SET
+                    q.status = 'FAILED',
+                    q.processing_stage = 'GOVERNED_RUNTIME_UNAVAILABLE',
+                    q.processing_error = $message,
+                    q.governed_query_id = $governed_query_id,
+                    q.governed_query_spec_id = $governed_query_spec_id,
+                    q.updated_at = datetime()
+                """,
+                question_run_id=question_run_id,
+                message=message,
+                governed_query_id=governed_query_id,
+                governed_query_spec_id=governed_query_spec_id,
+            ).consume()
+        driver.close()
+        raise RuntimeError(message)
+
+    from ikf.query_runner import run_query
+
+    scoped_document_ids = sorted(
+        {
+            row["document_id"]
+            for row in passage_rows
+        }
+    )
+
+    governed_results = run_query(
+        spark,
+        governed_query_id,
+        document_ids=scoped_document_ids,
+    )
+
+    governed_passage_ids = sorted(
+        {
+            item["passage_id"]
+            for item in governed_results
+        }
+    )
+
+    with driver.session() as session:
+        session.run(
+            """
+            MATCH (q:QuestionRun {
+                question_run_id: $question_run_id
+            })
+            SET
+                q.governed_query_id = $governed_query_id,
+                q.governed_query_spec_id = $governed_query_spec_id,
+                q.governed_relationship = $governed_relationship,
+                q.governed_retrieval_result_count = $result_count,
+                q.retrieval_mode = $retrieval_mode,
+                q.updated_at = datetime()
+            """,
+            question_run_id=question_run_id,
+            governed_query_id=governed_query_id,
+            governed_query_spec_id=governed_query_spec_id,
+            governed_relationship=governed_relationship,
+            result_count=len(governed_results),
+            retrieval_mode="GOVERNED_RELATIONSHIP_EVIDENCE",
+        ).consume()
+
+    if not governed_passage_ids:
+        deterministic_answer = (
+            "No explicit source-language evidence supporting the governed "
+            f"{governed_relationship} relationship was found within the "
+            "selected evidence scope."
+        )
+
+        with driver.session() as session:
+            session.run(
+                """
+                MATCH (q:QuestionRun {
+                    question_run_id: $question_run_id
+                })
+                SET
+                    q.status = 'COMPLETED',
+                    q.processing_stage = 'COMPLETED',
+                    q.retrieval_mode = 'GOVERNED_RELATIONSHIP_EVIDENCE',
+                    q.deterministic_answer = $deterministic_answer,
+                    q.insufficient_evidence = true,
+                    q.completed_at = datetime(),
+                    q.updated_at = datetime()
+                """,
+                question_run_id=question_run_id,
+                deterministic_answer=deterministic_answer,
+            ).consume()
+
+        print("")
+        print("QUESTION RUN: COMPLETED — NO GOVERNED SUPPORT")
+        print("governed_query_id:", governed_query_id)
+        driver.close()
+        dbutils.notebook.exit(
+            "COMPLETED_NO_GOVERNED_SUPPORT"
+        )
+
+    passage_rows = [
+        row
+        for row in passage_rows
+        if row["passage_id"]
+        in set(governed_passage_ids)
+    ]
+    retrieval_mode = "GOVERNED_RELATIONSHIP_EVIDENCE"
 
 if not passage_rows:
     with driver.session() as session:
@@ -703,12 +944,18 @@ with driver.session() as session:
             q.evidence_passage_count = $passage_count,
             q.evidence_character_count = $character_count,
             q.question_run_version = $question_run_version,
+            q.retrieval_mode = $retrieval_mode,
+            q.governed_query_id = $governed_query_id,
+            q.governed_query_spec_id = $governed_query_spec_id,
             q.updated_at = datetime()
         """,
         question_run_id=question_run_id,
         passage_count=len(passage_rows),
         character_count=scope_chars,
         question_run_version=QUESTION_RUN_VERSION,
+        retrieval_mode=retrieval_mode,
+        governed_query_id=governed_query_id,
+        governed_query_spec_id=governed_query_spec_id,
     ).consume()
 
 # COMMAND ----------
