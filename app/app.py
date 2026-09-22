@@ -94,7 +94,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-analysis-driven-capabilities-v3"
+APP_BUILD = "2026-09-22-evidence-sheet-and-answer-v4"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -1273,6 +1273,9 @@ def load_analysis_result(analysis_id):
     query = """
     MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
     RETURN
+        properties(a)["answer_to_question"] AS answer_to_question,
+        coalesce(properties(a)["answer_passage_ids"], []) AS answer_passage_ids,
+        coalesce(properties(a)["answer_references"], []) AS answer_references,
         properties(a)["analysis_summary"] AS overview,
         coalesce(properties(a)["key_findings"], []) AS key_findings,
         coalesce(properties(a)["uncertainties"], []) AS uncertainties,
@@ -1307,6 +1310,9 @@ def load_model_runs(analysis_id):
         m.model_label AS model_label,
         m.model_service AS model_service,
         m.status AS status,
+        properties(m)["answer_to_question"] AS answer_to_question,
+        coalesce(properties(m)["answer_passage_ids"], []) AS answer_passage_ids,
+        coalesce(properties(m)["answer_references"], []) AS answer_references,
         properties(m)["overview"] AS overview,
         coalesce(properties(m)["key_findings"], []) AS key_findings,
         coalesce(properties(m)["uncertainties"], []) AS uncertainties,
@@ -1354,7 +1360,8 @@ def load_model_run_graph(
         n.label AS label,
         n.node_kind AS node_kind,
         properties(n)["description"] AS description,
-        coalesce(properties(n)["evidence_passage_ids"], []) AS passage_ids
+        coalesce(properties(n)["evidence_passage_ids"], []) AS passage_ids,
+        coalesce(properties(n)["evidence_references"], []) AS evidence_references
     ORDER BY n.label
     """
 
@@ -1375,7 +1382,8 @@ def load_model_run_graph(
         target.node_id AS target_id,
         properties(r)["evidence_class"] AS evidence_class,
         coalesce(properties(r)["edge_class"], "REPORT_DERIVED") AS edge_class,
-        coalesce(properties(r)["evidence_passage_ids"], []) AS passage_ids
+        coalesce(properties(r)["evidence_passage_ids"], []) AS passage_ids,
+        coalesce(properties(r)["evidence_references"], []) AS evidence_references
     ORDER BY source.label, relationship, target.label
     """
 
@@ -1415,6 +1423,15 @@ def render_model_run(
         f"{model_run.get('model_service') or '—'} · "
         f"{model_run.get('status') or 'UNKNOWN'}"
     )
+
+    if model_run.get("answer_to_question"):
+        st.markdown("**Answer to question / objective**")
+        st.info(model_run["answer_to_question"])
+        answer_refs = model_run.get("answer_references") or []
+        if answer_refs:
+            st.caption(
+                "Evidence: " + " · ".join(answer_refs)
+            )
 
     if model_run.get("overview"):
         st.markdown("**Summary**")
@@ -1493,6 +1510,10 @@ def render_model_run(
                         node.get("passage_ids")
                         or []
                     ),
+                    "evidence_references": (
+                        node.get("evidence_references")
+                        or []
+                    ),
                 }
             }
             for node in graph["nodes"]
@@ -1511,6 +1532,10 @@ def render_model_run(
                     ),
                     "passage_ids": (
                         edge.get("passage_ids")
+                        or []
+                    ),
+                    "evidence_references": (
+                        edge.get("evidence_references")
                         or []
                     ),
                 }
@@ -1548,7 +1573,8 @@ def load_analysis_graph(analysis_id):
         n.label AS label,
         n.node_kind AS node_kind,
         properties(n)["description"] AS description,
-        coalesce(properties(n)["evidence_passage_ids"], []) AS passage_ids
+        coalesce(properties(n)["evidence_passage_ids"], []) AS passage_ids,
+        coalesce(properties(n)["evidence_references"], []) AS evidence_references
     ORDER BY n.label
     """
 
@@ -1564,7 +1590,9 @@ def load_analysis_graph(analysis_id):
         target.node_id AS target_id,
         target.label AS target_label,
         properties(r)["evidence_class"] AS evidence_class,
-        coalesce(properties(r)["evidence_passage_ids"], []) AS passage_ids
+        coalesce(properties(r)["edge_class"], "REPORT_DERIVED") AS edge_class,
+        coalesce(properties(r)["evidence_passage_ids"], []) AS passage_ids,
+        coalesce(properties(r)["evidence_references"], []) AS evidence_references
     ORDER BY source.label, relationship, target.label
     """
 
@@ -3320,6 +3348,29 @@ def render_compare_llms():
                                 model_run["model_key"],
                             )
             else:
+                if selected_analysis.get("analysis_objective"):
+                    st.markdown("### Question / objective")
+                    st.write(selected_analysis["analysis_objective"])
+
+                    if result_meta.get("answer_to_question"):
+                        st.markdown("### Answer")
+                        st.info(result_meta["answer_to_question"])
+                        answer_refs = (
+                            result_meta.get("answer_references")
+                            or []
+                        )
+                        if answer_refs:
+                            st.caption(
+                                "Evidence: "
+                                + " · ".join(answer_refs)
+                            )
+                    else:
+                        st.warning(
+                            "This analysis was created before the explicit "
+                            "question-answer output was introduced, or no "
+                            "grounded answer was produced."
+                        )
+
                 if result_meta.get("overview"):
                     st.markdown("### Analysis summary")
                     st.write(result_meta["overview"])
@@ -3382,6 +3433,9 @@ def render_compare_llms():
                                 "passage_ids": node.get(
                                     "passage_ids"
                                 ) or [],
+                                "evidence_references": node.get(
+                                    "evidence_references"
+                                ) or [],
                             }
                         }
                         for node in analysis_graph["nodes"]
@@ -3400,6 +3454,9 @@ def render_compare_llms():
                                 ),
                                 "passage_ids": edge.get(
                                     "passage_ids"
+                                ) or [],
+                                "evidence_references": edge.get(
+                                    "evidence_references"
                                 ) or [],
                             }
                         }
@@ -3514,6 +3571,9 @@ with tab_graph:
                         "name": node["label"],
                         "description": node.get("description") or "",
                         "passage_ids": node.get("passage_ids") or [],
+                        "evidence_references": node.get(
+                            "evidence_references"
+                        ) or [],
                     }
                 }
                 for node in knowledge_graph["nodes"]
@@ -3527,6 +3587,9 @@ with tab_graph:
                         "target": edge["target_id"],
                         "relationship": edge["relationship"],
                         "passage_ids": edge.get("passage_ids") or [],
+                        "evidence_references": edge.get(
+                            "evidence_references"
+                        ) or [],
                     }
                 }
                 for edge in knowledge_graph["edges"]
@@ -3534,6 +3597,102 @@ with tab_graph:
         }
 
         if knowledge_elements["nodes"]:
+            st.markdown("### Evidence sheet")
+            st.caption(
+                "Select a finding, event, concept or relationship to see "
+                "where its description is supported in the source."
+            )
+
+            evidence_items = []
+
+            for node in knowledge_graph["nodes"]:
+                evidence_items.append(
+                    {
+                        "kind": "Node",
+                        "label": (
+                            f"{node['node_kind']}: {node['label']}"
+                        ),
+                        "description": (
+                            node.get("description")
+                            or "No description was published."
+                        ),
+                        "references": (
+                            node.get("evidence_references")
+                            or []
+                        ),
+                        "passage_ids": (
+                            node.get("passage_ids")
+                            or []
+                        ),
+                    }
+                )
+
+            for edge in knowledge_graph["edges"]:
+                evidence_items.append(
+                    {
+                        "kind": "Relationship",
+                        "label": (
+                            f"{edge['source_label']} — "
+                            f"{edge['relationship']} → "
+                            f"{edge['target_label']}"
+                        ),
+                        "description": (
+                            "Relationship proposed from the referenced "
+                            "source evidence."
+                        ),
+                        "references": (
+                            edge.get("evidence_references")
+                            or []
+                        ),
+                        "passage_ids": (
+                            edge.get("passage_ids")
+                            or []
+                        ),
+                    }
+                )
+
+            selected_evidence_index = st.selectbox(
+                "Finding / relationship",
+                options=list(range(len(evidence_items))),
+                format_func=lambda index: evidence_items[index]["label"],
+                key="knowledge_evidence_selector",
+            )
+
+            selected_evidence = evidence_items[
+                selected_evidence_index
+            ]
+
+            evidence_left, evidence_right = st.columns(
+                [1.1, 0.9]
+            )
+
+            with evidence_left:
+                st.markdown("**Description**")
+                st.write(selected_evidence["description"])
+
+                st.markdown("**Source reference**")
+                if selected_evidence["references"]:
+                    for reference in selected_evidence["references"]:
+                        st.write(f"• {reference}")
+                else:
+                    st.write(
+                        "No page-level source reference is available for "
+                        "this item in an older analysis."
+                    )
+
+                with st.expander("Technical evidence IDs"):
+                    for passage_id in selected_evidence["passage_ids"]:
+                        st.code(passage_id, language=None)
+
+            with evidence_right:
+                st.markdown("**Document viewer**")
+                st.info(
+                    "The page reference is ready. In-App PDF viewing will "
+                    "be enabled once the App is given governed read-only "
+                    "access to the source document bytes; the current App "
+                    "does not have that access."
+                )
+
             with st.expander("View graph", expanded=False):
                 st.caption(
                     "Colour key — event: amber · contributing factor: red · "
