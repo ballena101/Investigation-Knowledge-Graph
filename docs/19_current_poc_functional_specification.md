@@ -1047,3 +1047,34 @@ The App displays the two citation classes separately and can render cited PDF
 pages from either the case source or the reference corpus.
 
 See `docs/27_reference_context_retrieval.md`.
+
+
+## 2I. Two-gate SHIELD classification
+
+SHIELD classification is downstream of human-validated contributing-factor
+relationships.
+
+```text
+ContributingFactor — CONTRIBUTED_TO → target
+        ↓ human Gate 1
+deterministic SHIELD retrieval
+        ↓
+LLM grounded SHIELD proposal
+        ↓ human Gate 2
+VALIDATED / REJECTED / AMENDED
+```
+
+The persistent SHIELD corpus is indexed from the reserved `SHIELD/` volume
+folder and is excluded from ordinary case-document retention.
+
+The assistant can propose only from retrieved SHIELD source passages; an
+ungrounded label/code is rejected as `NO_GROUNDED_PROPOSAL`.
+
+A proposal becomes stale when its Gate-1 relationship receives a newer human
+review.
+
+Only the latest valid human Gate-2 review can represent an authoritative
+reviewed SHIELD classification. The graph node and assistant proposal are never
+silently overwritten.
+
+See `docs/29_shield_two_gate_workflow.md`.
