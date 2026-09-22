@@ -680,3 +680,28 @@ Implemented in source on 2026-09-22:
 
 Status: **code/documentation complete; runtime validation pending one
 redeployment**.
+
+
+### Pre-validation UI restoration and Knowledge Graph workspace
+
+Implemented in source on 2026-09-22:
+
+- restored the four processing stages in Analyse Documents:
+  Prepare evidence → Analyse evidence → Check output → Build result;
+- changed the four stages from vertical rows to horizontal cards;
+- moved Refresh status before Recent analyses;
+- collapsed Recent analyses so current structured results remain visible;
+- removed the legacy processed-evidence/graph block from Ask / Compare;
+- renamed Findings & Knowledge to **Findings & Evidence**;
+- added a dedicated **Knowledge Graph** tab;
+- graph workspace supports document scope, concept filters, relationship filters
+  and multiple layouts;
+- graph questions reuse the governed QuestionRun/Ask Job but are tagged
+  `KNOWLEDGE_GRAPH`;
+- normal Ask / Compare history is kept separate as `ASK_COMPARE`;
+- diagram controls cannot mutate graph knowledge;
+- relationship changes remain governed by Review & Validate;
+- backup branch created:
+  `backup/pre-graph-workspace-2026-09-22`.
+
+Status: **code/documentation complete; runtime validation pending redeploy**.
