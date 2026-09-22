@@ -428,3 +428,31 @@ Implemented in code:
   scope and the retrieval snapshot.
 
 Status: **code complete; runtime validation deferred**.
+
+
+### Generic relationship review and EMCIP mapping review
+
+Implemented in code.
+
+Relationship review:
+- no longer depends on the Commodore Clipper demo dataset;
+- only completed AnalysisGroups are offered for generic review;
+- Class-D dual-model graphs are reviewed per model_run_id;
+- each candidate relationship shows report/page evidence and cited PDF page;
+- human reviews are append-only and linked to AnalysisGroup/source/target nodes;
+- graph relationships are not overwritten;
+- notebook 39 validates analysis/model/edge provenance.
+
+EMCIP mapping:
+- added on-demand generic proposal notebook 40;
+- added Job setup notebook 41;
+- added App resource `emcip_mapping_job`;
+- MAIRA operational registry remains the only taxonomy source;
+- deterministic shortlist precedes the LLM;
+- the LLM may select a shortlist candidate or NO_MAPPING only;
+- human VALIDATED/REJECTED/AMENDED review is independent;
+- human amendment must select another governed shortlist candidate;
+- source report/page and PDF evidence are visible during review;
+- notebook 42 validates proposal/review governance.
+
+Status: **code complete; runtime validation deferred**.
