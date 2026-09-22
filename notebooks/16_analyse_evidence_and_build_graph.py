@@ -89,7 +89,7 @@ CANDIDATE_REL_TABLE = (
 )
 SUMMARY_TABLE = "bdw_analysis_prod.kg_poc.analysis_summary"
 
-ANALYSIS_VERSION = "GROUP_ANALYSIS_LLM_V0.5"
+ANALYSIS_VERSION = "GROUP_ANALYSIS_LLM_V0.6"
 PRIVACY_OUTPUT_MODE = "DE_IDENTIFIED_BY_DEFAULT"
 MAX_PASSAGES = 500
 MAX_BATCH_CHARS = 14000
@@ -437,6 +437,42 @@ def evidence_references(passage_ids):
         )
 
     return refs
+
+
+def evidence_locations(passage_ids):
+    """Return stable document/page keys for App-side source resolution."""
+
+    locations = []
+    seen = set()
+
+    for passage_id in passage_ids or []:
+        ref = passage_reference_by_id.get(passage_id)
+        if ref is None:
+            continue
+
+        key = (
+            ref["document_id"],
+            ref["page_start"],
+            ref["page_end"],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+
+        page_start = (
+            "" if ref["page_start"] is None
+            else str(ref["page_start"])
+        )
+        page_end = (
+            "" if ref["page_end"] is None
+            else str(ref["page_end"])
+        )
+
+        locations.append(
+            f"{ref['document_id']}|{page_start}|{page_end}"
+        )
+
+    return locations
 
 
 # COMMAND ----------
@@ -1367,6 +1403,9 @@ for node in resolution.get(
         "evidence_references": evidence_references(
             sorted(passage_ids)
         ),
+        "evidence_locations": evidence_locations(
+            sorted(passage_ids)
+        ),
     }
 
     resolved_nodes.append(payload)
@@ -1501,6 +1540,9 @@ for relationship in resolution.get(
             "evidence_class": evidence_class,
             "edge_class": "REPORT_DERIVED",
             "evidence_references": evidence_references(
+                sorted(passage_ids)
+            ),
+            "evidence_locations": evidence_locations(
                 sorted(passage_ids)
             ),
         }
@@ -1710,6 +1752,9 @@ if (
                 "evidence_references": evidence_references(
                     first_event["passage_ids"]
                 ),
+                "evidence_locations": evidence_locations(
+                    first_event["passage_ids"]
+                ),
             }
         )
         existing_relationship_keys.add(structural_key)
@@ -1758,6 +1803,9 @@ for earlier, later in zip(
             "evidence_class": "DIRECT",
             "edge_class": "DETERMINISTIC_TEMPORAL",
             "evidence_references": evidence_references(
+                temporal_passages
+            ),
+            "evidence_locations": evidence_locations(
                 temporal_passages
             ),
         }
@@ -1865,6 +1913,9 @@ privacy_redaction_count += int(
 )
 
 answer_references = evidence_references(
+    answer_passage_ids
+)
+answer_locations = evidence_locations(
     answer_passage_ids
 )
 
@@ -2046,6 +2097,7 @@ try:
                     description: $description,
                     evidence_passage_ids: $passage_ids,
                     evidence_references: $evidence_references,
+                    evidence_locations: $evidence_locations,
                     assistant_review_status: 'ASSISTANT_CANDIDATE',
                     privacy_output_mode: $privacy_output_mode,
                     analysis_version: $analysis_version,
@@ -2063,6 +2115,10 @@ try:
                 passage_ids=node["passage_ids"],
                 evidence_references=node.get(
                     "evidence_references",
+                    [],
+                ),
+                evidence_locations=node.get(
+                    "evidence_locations",
                     [],
                 ),
                 privacy_output_mode=PRIVACY_OUTPUT_MODE,
@@ -2096,6 +2152,7 @@ try:
                 evidence_class: $evidence_class,
                 evidence_passage_ids: $passage_ids,
                 evidence_references: $evidence_references,
+                evidence_locations: $evidence_locations,
                 supporting_candidate_relationship_ids: $support_ids,
                 analysis_version: $analysis_version,
                 model_service: $model_service,
@@ -2130,6 +2187,10 @@ try:
                     "evidence_references",
                     [],
                 ),
+                evidence_locations=relationship.get(
+                    "evidence_locations",
+                    [],
+                ),
                 support_ids=relationship[
                     "support_ids"
                 ],
@@ -2150,6 +2211,7 @@ try:
                 m.answer_to_question = $answer_to_question,
                 m.answer_passage_ids = $answer_passage_ids,
                 m.answer_references = $answer_references,
+                m.answer_locations = $answer_locations,
                 m.overview = $overview,
                 m.key_findings = $key_findings,
                 m.uncertainties = $uncertainties,
@@ -2171,6 +2233,7 @@ try:
             answer_to_question=answer_text or None,
             answer_passage_ids=answer_passage_ids,
             answer_references=answer_references,
+            answer_locations=answer_locations,
             overview=overview,
             key_findings=key_findings,
             uncertainties=uncertainties,
@@ -2199,6 +2262,7 @@ try:
                 a.answer_to_question = $answer_to_question,
                 a.answer_passage_ids = $answer_passage_ids,
                 a.answer_references = $answer_references,
+                a.answer_locations = $answer_locations,
                 a.analysis_summary = $overview,
                 a.key_findings = $key_findings,
                 a.uncertainties = $uncertainties,
@@ -2218,6 +2282,7 @@ try:
             answer_to_question=answer_text or None,
             answer_passage_ids=answer_passage_ids,
             answer_references=answer_references,
+            answer_locations=answer_locations,
             overview=overview,
             key_findings=key_findings,
             uncertainties=uncertainties,
