@@ -7978,6 +7978,906 @@ with tab_findings:
             "workstream."
         )
 
+
+with tab_knowledge_graph:
+    st.subheader("Knowledge Graph")
+    st.caption(
+        "Explore the active analysis as an interactive knowledge graph. "
+        "Document selection changes the evidence scope represented in the "
+        "diagram; concept, relationship and layout controls change only the view."
+    )
+
+    if not active_analysis_id or not active_analysis:
+        st.info(
+            "Create or select an active analysis to explore its knowledge graph."
+        )
+    elif active_analysis.get("status") != "COMPLETED":
+        st.info(
+            "The Knowledge Graph becomes available after the active analysis "
+            "has completed all four processing stages."
+        )
+    else:
+        graph_analysis_id = active_analysis_id
+        graph_meta = active_analysis
+
+        graph_model_runs = [
+            item
+            for item in load_model_runs(
+                graph_analysis_id
+            )
+            if item.get("status") == "COMPLETED"
+        ]
+
+        graph_model_run_id = None
+        if len(graph_model_runs) > 1:
+            graph_model_by_id = {
+                item["model_run_id"]: item
+                for item in graph_model_runs
+            }
+            graph_model_run_id = st.selectbox(
+                "Model graph",
+                options=list(
+                    graph_model_by_id
+                ),
+                format_func=lambda value: (
+                    graph_model_by_id[value].get(
+                        "model_label"
+                    )
+                    or graph_model_by_id[value].get(
+                        "model_key"
+                    )
+                    or value
+                ),
+                key=(
+                    "graph_model_run_"
+                    + graph_analysis_id
+                ),
+            )
+            raw_graph = load_model_run_graph(
+                graph_analysis_id,
+                graph_model_run_id,
+            )
+        elif len(graph_model_runs) == 1:
+            graph_model_run_id = (
+                graph_model_runs[0][
+                    "model_run_id"
+                ]
+            )
+            raw_graph = load_model_run_graph(
+                graph_analysis_id,
+                graph_model_run_id,
+            )
+        else:
+            raw_graph = load_analysis_graph(
+                graph_analysis_id
+            )
+
+        graph_sources = load_analysis_sources(
+            graph_analysis_id
+        )
+        graph_source_by_id = {
+            item["document_id"]: item
+            for item in graph_sources
+        }
+        all_graph_document_ids = list(
+            graph_source_by_id
+        )
+
+        def graph_source_label(document_id):
+            source = graph_source_by_id[
+                document_id
+            ]
+            repository = (
+                source.get(
+                    "viewer_source_repository"
+                )
+                or "IKF"
+            )
+            return (
+                "["
+                + repository
+                + "] "
+                + str(
+                    source.get(
+                        "viewer_source_filename"
+                    )
+                    or source.get(
+                        "filename"
+                    )
+                    or document_id
+                )
+            )
+
+        st.markdown("### Graph scope and view")
+
+        scope_left, scope_right = st.columns(
+            [1.35, 1.0]
+        )
+
+        with scope_left:
+            if all_graph_document_ids:
+                selected_graph_document_ids = (
+                    st.multiselect(
+                        "Documents represented in the graph",
+                        options=all_graph_document_ids,
+                        default=all_graph_document_ids,
+                        format_func=graph_source_label,
+                        filter_mode="contains",
+                        key=(
+                            "graph_documents_"
+                            + graph_analysis_id
+                        ),
+                        help=(
+                            "Only graph items supported by the selected "
+                            "documents are shown. This same document scope "
+                            "is used for graph questions."
+                        ),
+                    )
+                )
+            else:
+                selected_graph_document_ids = []
+                st.caption(
+                    "This analysis does not use document sources; the whole "
+                    "prepared evidence set is represented."
+                )
+
+        def graph_item_document_ids(
+            evidence_locations,
+        ):
+            document_ids = set()
+            for value in evidence_locations or []:
+                parsed = parse_evidence_location(
+                    value
+                )
+                if (
+                    parsed
+                    and parsed.get(
+                        "document_id"
+                    )
+                ):
+                    document_ids.add(
+                        parsed[
+                            "document_id"
+                        ]
+                    )
+            return document_ids
+
+        selected_document_set = set(
+            selected_graph_document_ids
+        )
+        all_document_set = set(
+            all_graph_document_ids
+        )
+        document_filter_active = bool(
+            all_document_set
+        ) and (
+            selected_document_set
+            != all_document_set
+        )
+
+        scoped_nodes = list(
+            raw_graph["nodes"]
+        )
+        scoped_edges = list(
+            raw_graph["edges"]
+        )
+
+        if document_filter_active:
+            node_ids_from_documents = {
+                node["node_id"]
+                for node in raw_graph[
+                    "nodes"
+                ]
+                if (
+                    graph_item_document_ids(
+                        node.get(
+                            "evidence_locations"
+                        )
+                    )
+                    & selected_document_set
+                )
+            }
+
+            evidence_scoped_edges = [
+                edge
+                for edge in raw_graph[
+                    "edges"
+                ]
+                if (
+                    graph_item_document_ids(
+                        edge.get(
+                            "evidence_locations"
+                        )
+                    )
+                    & selected_document_set
+                )
+            ]
+
+            endpoint_ids = set()
+            for edge in evidence_scoped_edges:
+                endpoint_ids.add(
+                    edge["source_id"]
+                )
+                endpoint_ids.add(
+                    edge["target_id"]
+                )
+
+            scoped_node_ids = (
+                node_ids_from_documents
+                | endpoint_ids
+            )
+
+            scoped_nodes = [
+                node
+                for node in raw_graph[
+                    "nodes"
+                ]
+                if node["node_id"]
+                in scoped_node_ids
+            ]
+
+            scoped_edges = [
+                edge
+                for edge in raw_graph[
+                    "edges"
+                ]
+                if (
+                    edge["source_id"]
+                    in scoped_node_ids
+                    and edge["target_id"]
+                    in scoped_node_ids
+                    and (
+                        edge
+                        in evidence_scoped_edges
+                        or edge.get(
+                            "edge_class"
+                        )
+                        == "STRUCTURAL"
+                    )
+                )
+            ]
+
+        available_node_kinds = sorted(
+            {
+                node.get(
+                    "node_kind"
+                )
+                or "Other"
+                for node in scoped_nodes
+            }
+        )
+        available_relationships = sorted(
+            {
+                edge.get(
+                    "relationship"
+                )
+                or "OTHER"
+                for edge in scoped_edges
+            }
+        )
+
+        with scope_right:
+            graph_layout_options = {
+                "Force-directed":
+                    "fcose",
+                "Hierarchy":
+                    "breadthfirst",
+                "Circle":
+                    "circle",
+                "Concentric":
+                    "concentric",
+                "Grid":
+                    "grid",
+            }
+            graph_layout_label = st.selectbox(
+                "Diagram layout",
+                options=list(
+                    graph_layout_options
+                ),
+                key=(
+                    "graph_layout_"
+                    + graph_analysis_id
+                ),
+            )
+            graph_layout = (
+                graph_layout_options[
+                    graph_layout_label
+                ]
+            )
+
+        filter_left, filter_right = st.columns(
+            2
+        )
+
+        with filter_left:
+            selected_node_kinds = st.multiselect(
+                "Concept types",
+                options=available_node_kinds,
+                default=available_node_kinds,
+                key=(
+                    "graph_node_types_"
+                    + graph_analysis_id
+                ),
+            )
+
+        with filter_right:
+            selected_relationships = st.multiselect(
+                "Relationship types",
+                options=available_relationships,
+                default=available_relationships,
+                key=(
+                    "graph_relationship_types_"
+                    + graph_analysis_id
+                ),
+            )
+
+        selected_node_kind_set = set(
+            selected_node_kinds
+        )
+        selected_relationship_set = set(
+            selected_relationships
+        )
+
+        visible_nodes = [
+            node
+            for node in scoped_nodes
+            if (
+                node.get(
+                    "node_kind"
+                )
+                or "Other"
+            )
+            in selected_node_kind_set
+        ]
+        visible_node_ids = {
+            node["node_id"]
+            for node in visible_nodes
+        }
+
+        visible_edges = [
+            edge
+            for edge in scoped_edges
+            if (
+                edge.get(
+                    "relationship"
+                )
+                or "OTHER"
+            )
+            in selected_relationship_set
+            and edge["source_id"]
+            in visible_node_ids
+            and edge["target_id"]
+            in visible_node_ids
+        ]
+
+        graph_elements = {
+            "nodes": [
+                {
+                    "data": {
+                        "id": node[
+                            "node_id"
+                        ],
+                        "label": node.get(
+                            "node_kind"
+                        )
+                        or "Other",
+                        "name": node.get(
+                            "label"
+                        )
+                        or node[
+                            "node_id"
+                        ],
+                        "description": node.get(
+                            "description"
+                        )
+                        or "",
+                    }
+                }
+                for node in visible_nodes
+            ],
+            "edges": [
+                {
+                    "data": {
+                        "id": edge[
+                            "edge_id"
+                        ],
+                        "label": edge.get(
+                            "relationship"
+                        )
+                        or "OTHER",
+                        "source": edge[
+                            "source_id"
+                        ],
+                        "target": edge[
+                            "target_id"
+                        ],
+                        "relationship": edge.get(
+                            "relationship"
+                        )
+                        or "OTHER",
+                    }
+                }
+                for edge in visible_edges
+            ],
+        }
+
+        graph_metrics = st.columns(3)
+        graph_metrics[0].metric(
+            "Visible concepts",
+            len(
+                visible_nodes
+            ),
+        )
+        graph_metrics[1].metric(
+            "Visible relationships",
+            len(
+                visible_edges
+            ),
+        )
+        graph_metrics[2].metric(
+            "Documents in scope",
+            (
+                len(
+                    selected_graph_document_ids
+                )
+                if all_graph_document_ids
+                else "Text"
+            ),
+        )
+
+        if not graph_elements["nodes"]:
+            st.warning(
+                "No graph concepts match the current document/type filters."
+            )
+        else:
+            st.caption(
+                "Colour key — event: amber · contributing factor: red · "
+                "finding: blue · safety issue: purple · recommendation: "
+                "green · actor: pink · vessel: teal · system: slate."
+            )
+            streamlit_cytoscape(
+                elements=graph_elements,
+                layout=graph_layout,
+                node_styles=analysis_node_styles,
+                edge_styles=analysis_edge_styles,
+                height=760,
+                key=(
+                    "knowledge_graph_workspace_"
+                    + graph_analysis_id
+                    + "_"
+                    + graph_layout
+                ),
+            )
+
+        st.caption(
+            "Diagram filters and layout do not edit knowledge. Relationship "
+            "validation/amendment remains in Review & Validate."
+        )
+
+        st.divider()
+        st.markdown("### Ask about this graph scope")
+        st.caption(
+            "The question uses governed source evidence from the selected "
+            "documents. Visual node/relationship filters do not silently "
+            "remove evidence from retrieval."
+        )
+
+        graph_class = (
+            graph_meta.get(
+                "information_class"
+            )
+            or "B"
+        )
+
+        if graph_class == "D":
+            graph_model_label = st.radio(
+                "Protected-evidence model mode",
+                options=list(
+                    CLASS_D_MODEL_OPTIONS
+                ),
+                horizontal=True,
+                key=(
+                    "graph_question_model_"
+                    + graph_analysis_id
+                ),
+            )
+            graph_question_model_selection = (
+                CLASS_D_MODEL_OPTIONS[
+                    graph_model_label
+                ]
+            )
+        else:
+            graph_question_model_selection = (
+                "DEFAULT"
+            )
+
+        graph_reference_context = st.checkbox(
+            "Include legal / IMO / technical references",
+            value=False,
+            key=(
+                "graph_reference_context_"
+                + graph_analysis_id
+            ),
+            help=(
+                "Reference material remains separate from case evidence and "
+                "cannot prove an occurrence fact."
+            ),
+        )
+
+        if not all_graph_document_ids:
+            graph_question_scope_mode = (
+                "WHOLE_CASE"
+            )
+            graph_question_document_ids = []
+            graph_scope_text = (
+                "Entire prepared evidence set"
+            )
+        elif (
+            selected_document_set
+            == all_document_set
+        ):
+            graph_question_scope_mode = (
+                "WHOLE_CASE"
+            )
+            graph_question_document_ids = []
+            graph_scope_text = (
+                "All analysis documents"
+            )
+        elif len(
+            selected_graph_document_ids
+        ) == 1:
+            graph_question_scope_mode = (
+                "ONE_DOCUMENT"
+            )
+            graph_question_document_ids = list(
+                selected_graph_document_ids
+            )
+            graph_scope_text = (
+                graph_source_label(
+                    selected_graph_document_ids[
+                        0
+                    ]
+                )
+            )
+        else:
+            graph_question_scope_mode = (
+                "SELECTED_DOCUMENTS"
+            )
+            graph_question_document_ids = list(
+                selected_graph_document_ids
+            )
+            graph_scope_text = (
+                str(
+                    len(
+                        selected_graph_document_ids
+                    )
+                )
+                + " selected document(s)"
+            )
+
+        st.info(
+            "Graph question evidence scope: "
+            + graph_scope_text
+        )
+
+        with st.form(
+            "graph_question_form_"
+            + graph_analysis_id,
+            clear_on_submit=False,
+        ):
+            graph_question_text = st.text_area(
+                "Question about this graph",
+                placeholder=(
+                    "Example: Which contributing factors are connected to "
+                    "the fire event, and what source evidence supports those links?"
+                ),
+                height=110,
+            )
+            graph_question_submit = (
+                st.form_submit_button(
+                    "Ask",
+                    type="primary",
+                )
+            )
+
+        if graph_question_submit:
+            graph_question_errors = []
+
+            if not graph_question_text.strip():
+                graph_question_errors.append(
+                    "Enter a question."
+                )
+
+            if (
+                graph_question_scope_mode
+                == "SELECTED_DOCUMENTS"
+                and not graph_question_document_ids
+            ):
+                graph_question_errors.append(
+                    "Select at least one document for the graph question."
+                )
+
+            if not ASK_JOB_ID:
+                graph_question_errors.append(
+                    "The Ask Job is not attached to this App deployment."
+                )
+
+            if (
+                graph_class == "D"
+                and graph_question_model_selection
+                in {
+                    "LLAMA70",
+                    "BOTH",
+                }
+                and get_llama_daily_usage()
+                >= LLAMA_DAILY_QUESTION_LIMIT
+            ):
+                graph_question_errors.append(
+                    "The daily Llama 3.3 70B question limit has been reached."
+                )
+
+            if graph_question_errors:
+                for error in graph_question_errors:
+                    st.error(
+                        error
+                    )
+            else:
+                graph_question_run_id = None
+                try:
+                    graph_question_run_id = (
+                        create_question_run(
+                            analysis=graph_meta,
+                            question_text=(
+                                graph_question_text.strip()
+                            ),
+                            scope_mode=(
+                                graph_question_scope_mode
+                            ),
+                            scope_document_ids=(
+                                graph_question_document_ids
+                            ),
+                            model_selection=(
+                                graph_question_model_selection
+                            ),
+                            include_reference_context=(
+                                graph_reference_context
+                            ),
+                            interaction_surface=(
+                                "KNOWLEDGE_GRAPH"
+                            ),
+                        )
+                    )
+
+                    if (
+                        graph_class == "D"
+                        and graph_question_model_selection
+                        in {
+                            "LLAMA70",
+                            "BOTH",
+                        }
+                    ):
+                        consumed = (
+                            consume_llama_daily_usage()
+                        )
+                        if consumed is None:
+                            raise RuntimeError(
+                                "The Llama daily quota could not be reserved."
+                            )
+
+                    graph_question_job_run_id = (
+                        trigger_question_job(
+                            graph_question_run_id
+                        )
+                    )
+
+                    load_question_runs.clear()
+                    load_question_model_runs.clear()
+
+                    st.success(
+                        "Graph question queued."
+                    )
+                    st.caption(
+                        "Question run: "
+                        + graph_question_run_id
+                        + " · Databricks run: "
+                        + graph_question_job_run_id
+                    )
+
+                except Exception as exc:
+                    if graph_question_run_id:
+                        with get_driver().session() as session:
+                            session.run(
+                                """
+                                MATCH (q:QuestionRun {
+                                    question_run_id: $question_run_id
+                                })
+                                SET
+                                    q.status = 'FAILED',
+                                    q.processing_stage = 'JOB_TRIGGER_FAILED',
+                                    q.processing_error = $error_message,
+                                    q.updated_at = datetime()
+                                """,
+                                question_run_id=graph_question_run_id,
+                                error_message=(
+                                    f"{type(exc).__name__}: {exc}"
+                                ),
+                            ).consume()
+                    st.error(
+                        "The graph question could not be queued."
+                    )
+                    st.exception(
+                        exc
+                    )
+
+        graph_question_runs = [
+            item
+            for item in load_question_runs(
+                graph_analysis_id
+            )
+            if (
+                item.get(
+                    "interaction_surface"
+                )
+                == "KNOWLEDGE_GRAPH"
+            )
+        ]
+
+        if graph_question_runs:
+            st.markdown(
+                "### Graph question history"
+            )
+
+            graph_question_by_id = {
+                item[
+                    "question_run_id"
+                ]: item
+                for item in graph_question_runs
+            }
+
+            selected_graph_question_id = (
+                st.selectbox(
+                    "Graph question",
+                    options=list(
+                        graph_question_by_id
+                    ),
+                    format_func=lambda value: (
+                        question_display_text(
+                            graph_question_by_id[
+                                value
+                            ]
+                        )[:100]
+                        + " · "
+                        + (
+                            graph_question_by_id[
+                                value
+                            ].get(
+                                "status"
+                            )
+                            or "UNKNOWN"
+                        )
+                    ),
+                    key=(
+                        "graph_question_history_"
+                        + graph_analysis_id
+                    ),
+                )
+            )
+
+            selected_graph_question = (
+                graph_question_by_id[
+                    selected_graph_question_id
+                ]
+            )
+
+            st.write(
+                question_display_text(
+                    selected_graph_question
+                )
+            )
+            st.caption(
+                "Scope: "
+                + (
+                    selected_graph_question.get(
+                        "scope_mode"
+                    )
+                    or "WHOLE_CASE"
+                )
+                + " · Status: "
+                + (
+                    selected_graph_question.get(
+                        "status"
+                    )
+                    or "UNKNOWN"
+                )
+            )
+
+            if (
+                selected_graph_question.get(
+                    "status"
+                )
+                == "COMPLETED"
+            ):
+                graph_answer_runs = (
+                    load_question_model_runs(
+                        selected_graph_question_id
+                    )
+                )
+
+                if len(
+                    graph_answer_runs
+                ) == 1:
+                    render_question_answer(
+                        analysis_id=(
+                            graph_analysis_id
+                        ),
+                        question_run=(
+                            selected_graph_question
+                        ),
+                        model_run=(
+                            graph_answer_runs[
+                                0
+                            ]
+                        ),
+                        render_key=(
+                            "graph_"
+                            + graph_answer_runs[
+                                0
+                            ][
+                                "model_key"
+                            ]
+                        ),
+                    )
+                elif graph_answer_runs:
+                    graph_answer_columns = (
+                        st.columns(
+                            len(
+                                graph_answer_runs
+                            )
+                        )
+                    )
+                    for (
+                        graph_answer_column,
+                        graph_answer_run,
+                    ) in zip(
+                        graph_answer_columns,
+                        graph_answer_runs,
+                    ):
+                        with graph_answer_column:
+                            render_question_answer(
+                                analysis_id=(
+                                    graph_analysis_id
+                                ),
+                                question_run=(
+                                    selected_graph_question
+                                ),
+                                model_run=(
+                                    graph_answer_run
+                                ),
+                                render_key=(
+                                    "graph_"
+                                    + graph_answer_run[
+                                        "model_key"
+                                    ]
+                                ),
+                            )
+            elif (
+                selected_graph_question.get(
+                    "status"
+                )
+                == "FAILED"
+            ):
+                st.error(
+                    selected_graph_question.get(
+                        "processing_error"
+                    )
+                    or "Graph question processing failed."
+                )
+            else:
+                st.info(
+                    "The graph question is queued or running."
+                )
+
+
 with tab_review:
     st.subheader("Review & Validate")
     st.caption(
