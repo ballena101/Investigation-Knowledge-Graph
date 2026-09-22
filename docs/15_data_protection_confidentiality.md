@@ -1228,10 +1228,10 @@ Any exception requires explicit organisational approval of:
 
 The confidentiality controls do not remove the A/B/C workflows.
 
-- **A:** public/technical → default `system.ai.gpt-5-6-sol`
-  (OpenAI GPT-5.6 Sol through Databricks).
+- **A:** public/technical → default
+  `system.ai.meta-llama-3-3-70b-instruct`.
 - **B:** published/non-sensitive investigation material → default
-  `system.ai.gpt-5-6-sol`.
+  `system.ai.meta-llama-3-3-70b-instruct`.
 - **C:** internal/restricted but not Article 9 protected → default
   `system.ai.gpt-oss-120b` (Databricks-hosted GPT-OSS 120B).
 - **D:** Article 9/protected → dedicated GPT-OSS 20B and/or
@@ -1374,3 +1374,20 @@ them available.
 
 This keeps the repository small and avoids turning source control into an
 evidence or artefact store.
+
+
+## 23. Deterministic protected-content pre-screen
+
+IKF applies a deterministic routing safeguard before non-D content reaches an
+LLM.
+
+Strong raw-record indicators can escalate A/B/C raw/direct or IKF-managed
+material to a fail-closed `REQUIRES_CLASS_D` outcome.
+
+Published MAIRA Class-B documents are exempt from escalation merely because the
+published report discusses witness/VDR/VTS/medical evidence.
+
+Class D is never downgraded because a rule did not match.
+
+See:
+`docs/28_classification_prescreen.md`.
