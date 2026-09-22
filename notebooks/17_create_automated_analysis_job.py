@@ -73,7 +73,7 @@ job_settings = {
         },
         {
             "name": "model_service",
-            "default": "system.ai.gpt-5-6-sol",
+            "default": "system.ai.meta-llama-3-3-70b-instruct",
         }
     ],
     "tasks": [
