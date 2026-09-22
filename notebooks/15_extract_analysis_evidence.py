@@ -293,6 +293,8 @@ def resolve_maira_document_route(document):
         .select(
             "document_id",
             "report_package_id",
+            "file_path",
+            "source_filename",
         )
         .distinct()
         .collect()
@@ -322,6 +324,8 @@ def resolve_maira_document_route(document):
         "route": "MAIRA_CANONICAL",
         "maira_document_id": match["document_id"],
         "report_package_id": match["report_package_id"],
+        "file_path": match["file_path"],
+        "source_filename": match["source_filename"],
     }
 
 
@@ -882,6 +886,9 @@ try:
                             d.maira_document_id = $maira_document_id,
                             d.maira_report_package_id = $report_package_id,
                             d.passage_contract_version = $passage_contract_version,
+                            d.viewer_source_repository = 'MAIRA',
+                            d.viewer_source_path = $viewer_source_path,
+                            d.viewer_source_filename = $viewer_source_filename,
                             d.extracted_at = datetime()
                         """,
                         document_id=document["document_id"],
@@ -892,6 +899,11 @@ try:
                         maira_document_id=route["maira_document_id"],
                         report_package_id=route["report_package_id"],
                         passage_contract_version=PASSAGE_CONTRACT_VERSION,
+                        viewer_source_path=route["file_path"],
+                        viewer_source_filename=(
+                            route.get("source_filename")
+                            or document["filename"]
+                        ),
                     ).consume()
 
                 print(
@@ -975,6 +987,9 @@ try:
                             d.passage_count = $passage_count,
                             d.extraction_status = 'IKF_LOCAL_FALLBACK',
                             d.extraction_version = $extraction_version,
+                            d.viewer_source_repository = 'IKF',
+                            d.viewer_source_path = $viewer_source_path,
+                            d.viewer_source_filename = $viewer_source_filename,
                             d.extracted_at = datetime()
                         """,
                         document_id=document["document_id"],
@@ -982,6 +997,8 @@ try:
                         page_count=len(pages),
                         passage_count=document_passage_count,
                         extraction_version=EXTRACTION_VERSION,
+                        viewer_source_path=document["volume_path"],
+                        viewer_source_filename=document["filename"],
                     ).consume()
 
                 documents_processed += 1
