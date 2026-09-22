@@ -89,7 +89,7 @@ CANDIDATE_REL_TABLE = (
 )
 SUMMARY_TABLE = "bdw_analysis_prod.kg_poc.analysis_summary"
 
-ANALYSIS_VERSION = "GROUP_ANALYSIS_LLM_V0.3"
+ANALYSIS_VERSION = "GROUP_ANALYSIS_LLM_V0.4"
 PRIVACY_OUTPUT_MODE = "DE_IDENTIFIED_BY_DEFAULT"
 MAX_PASSAGES = 500
 MAX_BATCH_CHARS = 14000
@@ -1438,12 +1438,17 @@ for relationship in resolution.get(
         }
     )
 
-# Deterministic subject-vessel completion.
+# Deterministic subject-vessel and explicit chronology completion.
 #
-# The LLM is allowed to extract Vessel nodes, but a source that explicitly
-# refers to one generic subject vessel ("the vessel" / "the ship") should not
-# produce an event-only graph merely because the model omitted the vessel
-# entity. This rule adds no vessel attributes and no causal semantics.
+# Purpose:
+# - keep a generic subject vessel when the source explicitly refers to it;
+# - connect that vessel only to the first supported event in the sequence;
+# - when two or more event nodes carry explicit source times, add FOLLOWED_BY
+#   links between adjacent events in chronological order.
+#
+# This adds no causal meaning. FOLLOWED_BY represents source-supported temporal
+# sequence only.
+
 passage_text_by_id = {
     row["passage_id"]: (row["passage_text"] or "")
     for row in passage_rows
@@ -1463,6 +1468,45 @@ generic_vessel_passage_ids = {
         flags=re.IGNORECASE,
     )
 }
+
+
+def explicit_event_time(node):
+    """Return (minutes_since_midnight, HH:MM) from source-supported event text."""
+
+    text_parts = [
+        node.get("label") or "",
+        node.get("description") or "",
+    ]
+
+    for member_id in node.get("member_candidate_ids") or []:
+        candidate = candidate_by_id.get(member_id) or {}
+        text_parts.extend(
+            [
+                candidate.get("label") or "",
+                candidate.get("description") or "",
+                candidate.get("evidence_text") or "",
+            ]
+        )
+
+    for passage_id in node.get("passage_ids") or []:
+        text_parts.append(
+            passage_text_by_id.get(passage_id, "")
+        )
+
+    combined = "\n".join(text_parts)
+
+    matches = re.findall(
+        r"(?<!\d)([01]?\d|2[0-3])[:.]([0-5]\d)(?!\d)",
+        combined,
+    )
+
+    if not matches:
+        return None
+
+    hour, minute = matches[0]
+    minutes = int(hour) * 60 + int(minute)
+    return minutes, f"{int(hour):02d}:{int(minute):02d}"
+
 
 vessel_nodes = [
     node
@@ -1489,7 +1533,7 @@ if generic_vessel_passage_ids and not vessel_nodes:
         "label": "Subject vessel",
         "description": (
             "Vessel explicitly referenced in the source evidence; "
-            "no additional vessel identity or characteristics inferred."
+            "no name or additional vessel characteristics inferred."
         ),
         "member_candidate_ids": [],
         "passage_ids": sorted(generic_vessel_passage_ids),
@@ -1499,42 +1543,87 @@ if generic_vessel_passage_ids and not vessel_nodes:
 elif len(vessel_nodes) == 1:
     subject_vessel_node = vessel_nodes[0]
 
-if subject_vessel_node is not None:
-    existing_structural_keys = {
-        (
-            rel["source_node_id"],
-            rel["relationship"],
-            rel["target_node_id"],
-        )
-        for rel in resolved_relationships
-    }
 
-    for event_node in [
-        node
-        for node in resolved_nodes
-        if node["kind"] == "Event"
-    ]:
-        supporting_passages = sorted(
-            set(event_node.get("passage_ids") or [])
-            & generic_vessel_passage_ids
-        )
+event_nodes = [
+    node
+    for node in resolved_nodes
+    if node["kind"] == "Event"
+]
 
-        if not supporting_passages:
-            continue
+timed_events = []
 
-        structural_key = (
-            subject_vessel_node["node_id"],
-            "INVOLVED_IN",
-            event_node["node_id"],
-        )
+for event_node in event_nodes:
+    event_time = explicit_event_time(event_node)
+    if event_time is None:
+        continue
 
-        if structural_key in existing_structural_keys:
-            continue
+    supporting_passages = sorted(
+        set(event_node.get("passage_ids") or [])
+        & generic_vessel_passage_ids
+    )
 
+    if not supporting_passages:
+        continue
+
+    timed_events.append(
+        {
+            "node": event_node,
+            "minutes": event_time[0],
+            "time_label": event_time[1],
+            "passage_ids": supporting_passages,
+        }
+    )
+
+timed_events.sort(
+    key=lambda item: (
+        item["minutes"],
+        item["node"]["node_id"],
+    )
+)
+
+existing_relationship_keys = {
+    (
+        rel["source_node_id"],
+        rel["relationship"],
+        rel["target_node_id"],
+    )
+    for rel in resolved_relationships
+}
+
+# Connect the vessel only to the first event in the supported sequence.
+first_event = (
+    timed_events[0]
+    if timed_events
+    else (
+        {
+            "node": event_nodes[0],
+            "passage_ids": sorted(
+                set(event_nodes[0].get("passage_ids") or [])
+                & generic_vessel_passage_ids
+            ),
+        }
+        if len(event_nodes) == 1
+        else None
+    )
+)
+
+if (
+    subject_vessel_node is not None
+    and first_event is not None
+    and first_event.get("passage_ids")
+):
+    structural_key = (
+        subject_vessel_node["node_id"],
+        "INVOLVED_IN",
+        first_event["node"]["node_id"],
+    )
+
+    if structural_key not in existing_relationship_keys:
         edge_raw = (
             f"{analysis_id}|{subject_vessel_node['node_id']}|"
-            f"INVOLVED_IN|{event_node['node_id']}"
+            f"INVOLVED_IN|{first_event['node']['node_id']}"
         )
+
         resolved_relationships.append(
             {
                 "edge_id": (
@@ -1545,13 +1634,62 @@ if subject_vessel_node is not None:
                 ),
                 "source_node_id": subject_vessel_node["node_id"],
                 "relationship": "INVOLVED_IN",
-                "target_node_id": event_node["node_id"],
+                "target_node_id": first_event["node"]["node_id"],
                 "support_ids": [],
-                "passage_ids": supporting_passages,
+                "passage_ids": first_event["passage_ids"],
                 "evidence_class": "DIRECT",
                 "edge_class": "STRUCTURAL",
             }
         )
+        existing_relationship_keys.add(structural_key)
+
+
+# Add only explicit temporal sequence between adjacent timed events.
+for earlier, later in zip(
+    timed_events,
+    timed_events[1:],
+):
+    if later["minutes"] <= earlier["minutes"]:
+        continue
+
+    temporal_key = (
+        earlier["node"]["node_id"],
+        "FOLLOWED_BY",
+        later["node"]["node_id"],
+    )
+
+    if temporal_key in existing_relationship_keys:
+        continue
+
+    temporal_passages = sorted(
+        set(earlier["passage_ids"])
+        | set(later["passage_ids"])
+    )
+
+    edge_raw = (
+        f"{analysis_id}|{earlier['node']['node_id']}|"
+        f"FOLLOWED_BY|{later['node']['node_id']}|explicit-time"
+    )
+
+    resolved_relationships.append(
+        {
+            "edge_id": (
+                "analysis_edge_"
+                + hashlib.sha256(
+                    edge_raw.encode("utf-8")
+                ).hexdigest()[:24]
+            ),
+            "source_node_id": earlier["node"]["node_id"],
+            "relationship": "FOLLOWED_BY",
+            "target_node_id": later["node"]["node_id"],
+            "support_ids": [],
+            "passage_ids": temporal_passages,
+            "evidence_class": "DIRECT",
+            "edge_class": "DETERMINISTIC_TEMPORAL",
+        }
+    )
+    existing_relationship_keys.add(temporal_key)
+
 
 print("Resolved nodes:", len(resolved_nodes))
 print(
