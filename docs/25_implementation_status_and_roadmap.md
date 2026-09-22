@@ -607,3 +607,16 @@ URLs remain provenance while captured snapshots are used for deterministic,
 page-level retrieval and rendering.
 
 Status: **runtime validated**.
+
+
+### Consolidated release preflight — runtime PASS
+
+Validated in Databricks on 2026-09-22:
+
+- warnings: **0**;
+- errors: **0**;
+- observed marker:
+  `PASS — IKF CONSOLIDATED RELEASE PREFLIGHT`;
+- all checked release prerequisites reported present.
+
+Result: **PASS — environment/setup validation complete.**
