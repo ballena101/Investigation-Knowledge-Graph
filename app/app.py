@@ -4851,8 +4851,7 @@ if active_analysis_ids:
         )
         with h1:
             st.markdown(
-                "**Active analysis**  
-"
+                "**Active analysis:** "
                 + str(
                     active_analysis.get(
                         "analysis_title"
@@ -7900,6 +7899,13 @@ with tab_review:
         "its evidence-derived relationships and taxonomy proposals."
     )
 
+    st.markdown("### Review queue")
+    st.caption(
+        "Work through only the areas that need a human decision. "
+        "Relationships are reviewed first; SHIELD becomes available only "
+        "after an eligible contributing relationship has been validated."
+    )
+
     try:
         review_analyses = [
             item
@@ -7943,7 +7949,7 @@ with tab_review:
             "controls are not available."
         )
 
-    st.markdown("### Relationship review")
+    st.markdown("### 1. Relationship review")
     st.caption(
         "Human review is stored as a separate append-only review record. "
         "The original graph relationship and assistant review are not overwritten."
@@ -8399,7 +8405,7 @@ with tab_review:
 
 with tab_review:
     st.divider()
-    st.markdown("### Optional assistant relationship check")
+    st.markdown("### Optional relationship quality check")
     st.caption(
         "Use this only when you want the assistant to challenge or refine one "
         "evidence-derived relationship. The proposal is advisory; the human "
@@ -8724,7 +8730,7 @@ with tab_review:
 
 with tab_mapping_review:
     st.divider()
-    st.markdown("### EMCIP mapping review")
+    st.markdown("### 2. EMCIP mapping review")
     st.caption(
         "Assistant mappings are generated on demand from the governed MAIRA "
         "EMCIP registry. The proposal never becomes authoritative until a "
@@ -9395,7 +9401,7 @@ with tab_mapping_review:
                 st.exception(exc)
 
     st.divider()
-    st.markdown("### SHIELD classification review")
+    st.markdown("### 3. SHIELD classification review")
     st.caption(
         "Gate 1: the contributing factor relationship must already be human "
         "validated as CONTRIBUTED_TO. Gate 2: the SHIELD suggestion requires "
