@@ -308,7 +308,7 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-case-centric-gui-v22"
+APP_BUILD = "2026-09-22-graph-workspace-v23"
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -6846,9 +6846,9 @@ with tab_analyses:
 with tab_findings:
     st.subheader("Findings & Evidence")
     st.caption(
-        "Browse processed findings and their evidence. Open the graph when "
-        "relationships help, and retrieve similar MAIRA cases. Questions are "
-        "asked in Ask / Compare LLMs; validation decisions are made in Review & Validate."
+        "Browse processed findings, relationships and their cited source evidence. "
+        "The interactive diagram now has its own Knowledge Graph workspace; "
+        "validation decisions remain in Review & Validate."
     )
 
     st.markdown("### Existing analysis")
@@ -6890,10 +6890,9 @@ with tab_findings:
         ]
 
         st.info(
-            "Free-text questions and model comparison are handled in "
-            "Ask / Compare LLMs. This page is intentionally read-only: "
-            "browse the extracted knowledge, inspect investigation evidence, view "
-            "relationships and retrieve similar MAIRA cases."
+            "This page is intentionally read-only: browse extracted knowledge, "
+            "inspect investigation evidence and retrieve similar MAIRA cases. "
+            "Use Knowledge Graph for diagram exploration and graph-scoped questions."
         )
 
         knowledge_elements = {
@@ -10488,16 +10487,19 @@ with tab_about:
         f"""
 ### Current Proof of Concept
 
-IKF separates the investigator workflow into four distinct operational
+IKF separates the investigator workflow into five distinct operational
 capabilities:
 
-1. **Analyse Documents** — prepare governed evidence and inspect structured
-   analytical outputs without requiring an initial question.
-2. **Ask / Compare LLMs** — pose free-text questions against a completed
+1. **Analyse Documents** — prepare governed evidence, follow the four processing
+   stages and inspect structured analytical outputs without requiring an initial
+   question.
+2. **Findings & Evidence** — read-only exploration of extracted findings,
+   relationships, source pages and deterministic similar-case retrieval.
+3. **Knowledge Graph** — interactive graph exploration with document scope,
+   concept/relationship filters, layout controls and graph-scoped questions.
+4. **Ask / Compare LLMs** — pose free-text questions against a completed
    evidence set, optionally compare approved model routes, and retain citations.
-3. **Findings & Knowledge** — read-only exploration of extracted knowledge,
-   evidence, the graph and deterministic similar-case retrieval.
-4. **Review & Validate** — human governance of relationships, assistant
+5. **Review & Validate** — human governance of relationships, assistant
    correction proposals, EMCIP mappings and SHIELD classifications.
 
 News & Alerts remains a separate external-signal capability and is not silently
