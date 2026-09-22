@@ -616,3 +616,34 @@ Notebook 16 now applies a deterministic completion rule after model resolution:
 
 This adds graph completeness without converting sequence or involvement into
 causality.
+
+
+### Investigator-facing progress simplification
+
+The App no longer exposes the full internal stage list as the primary progress
+display. The user-facing sequence is:
+
+1. Prepare evidence;
+2. Analyse evidence;
+3. Check output;
+4. Build result.
+
+When complete, the App reports that the result is ready for review. The exact
+technical stage remains available under a collapsed Technical details section
+for troubleshooting and validation.
+
+### Subject-vessel sequence rule
+
+For a source that explicitly describes one unnamed vessel and timed events, the
+preferred graph representation is a sequence rather than a hub:
+
+```text
+Subject vessel
+    → first supported event
+        → FOLLOWED_BY → next supported event
+```
+
+The subject vessel is connected only to the first supported event. Explicit
+source times may be used deterministically to establish FOLLOWED_BY chronology,
+but never causality. When a vessel name is supported by the source, the named
+Vessel node is retained; `Subject vessel` is only the unnamed fallback.
