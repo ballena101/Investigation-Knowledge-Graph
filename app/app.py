@@ -1045,7 +1045,8 @@ def load_analysis_evidence_counts(analysis_id):
         properties(a)["detected_language"] AS detected_language,
         properties(a)["processing_error"] AS processing_error,
         properties(a)["processing_stage"] AS processing_stage,
-        properties(a)["extraction_duration_seconds"] AS extraction_duration_seconds
+        properties(a)["extraction_duration_seconds"] AS extraction_duration_seconds,
+        properties(a)["evidence_source_mode"] AS evidence_source_mode
     """
 
     with get_driver().session() as session:
@@ -1240,6 +1241,24 @@ def render_pipeline_status(
         if batches_total:
             st.write(
                 f"Analysis batches: {batches_processed}/{batches_total}"
+            )
+
+        evidence_source_mode = evidence_counts.get(
+            "evidence_source_mode"
+        )
+        if evidence_source_mode:
+            evidence_source_labels = {
+                "MAIRA_CANONICAL": "MAIRA canonical passages",
+                "MAIRA_FIRST_MIXED": "MAIRA canonical + temporary IKF fallback",
+                "IKF_LOCAL_FALLBACK": "Temporary IKF local extraction",
+                "IKF_DIRECT_TEXT": "IKF direct-text evidence",
+            }
+            st.write(
+                "Evidence source: "
+                + evidence_source_labels.get(
+                    evidence_source_mode,
+                    evidence_source_mode,
+                )
             )
 
         if evidence_counts.get("processing_error"):
