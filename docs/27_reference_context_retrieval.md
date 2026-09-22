@@ -77,7 +77,7 @@ It is not occurrence evidence and is not merged into either passage layer.
 
 ## Indexing
 
-Notebook `43_index_reference_context.py` deterministically indexes supported
+Notebook `44_index_reference_context.py` deterministically indexes supported
 PDF/TXT/MD/DOCX files from the IKF reference-context volume.
 
 It preserves:
@@ -219,7 +219,7 @@ Implementation is complete in source and intentionally not yet deployed.
 The next consolidated Databricks test session must include:
 
 1. create/populate the IKF `reference_context` folder;
-2. run notebook 43 and require:
+2. run notebook 44 and require:
    `PASS — IKF REFERENCE_CONTEXT CORPUS INDEXED`;
 3. deploy accumulated App/Job changes once;
 4. run one question with reference context disabled;
