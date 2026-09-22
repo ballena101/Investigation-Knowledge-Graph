@@ -4779,6 +4779,21 @@ active_analysis_id = None
 active_analysis = None
 
 if active_analysis_ids:
+    pending_active_analysis_id = (
+        st.session_state.pop(
+            "pending_active_analysis_id",
+            None,
+        )
+    )
+
+    if (
+        pending_active_analysis_id
+        in active_analysis_by_id
+    ):
+        st.session_state[
+            "active_analysis_id"
+        ] = pending_active_analysis_id
+
     if (
         st.session_state.get(
             "active_analysis_id"
@@ -5521,7 +5536,7 @@ with tab_new_analysis:
                 load_recent_analyses.clear()
                 load_analysis_groups.clear()
                 st.session_state[
-                    "active_analysis_id"
+                    "pending_active_analysis_id"
                 ] = analysis_id
 
                 st.success(f"Analysis created: {analysis_id}")
