@@ -553,3 +553,48 @@ Backup branch:
 `backup/pre-action-followup-2026-09-22`
 
 Status: **code/documentation complete; runtime validation pending redeploy**.
+
+
+## Direct reference-document Q&A
+
+Implemented in source on 2026-09-22.
+
+The Ask / Compare capability now contains two explicit modes:
+
+1. **Case / analysed evidence**
+   - uses an existing completed AnalysisGroup;
+   - may scope to the full case, one document or selected case documents;
+   - uses SOURCE_EVIDENCE and may optionally add REFERENCE_CONTEXT;
+   - does not rebuild the graph when a question is asked.
+
+2. **Direct reference documents**
+   - selects governed documents directly from the indexed REFERENCE_CONTEXT
+     corpus;
+   - creates a standalone QuestionRun with
+     `interaction_surface = DIRECT_DOCUMENT_ASK`;
+   - does **not** create an AnalysisGroup;
+   - does **not** run event/finding/contributing-factor extraction;
+   - does **not** create or modify a knowledge graph;
+   - uses deterministic passage retrieval over only the selected reference
+     documents;
+   - answers with REFERENCE_CONTEXT citations and page-level PDF rendering;
+   - reuses the existing Ask Job/model infrastructure.
+
+This route is intended for legal, IMO and technical/reference questions where
+full investigation analysis would add cost and latency without analytical
+benefit.
+
+REFERENCE_CONTEXT remains non-occurrence evidence. A direct-reference answer may
+state what the selected document says, defines or requires, but it must not
+convert general technical/legal material into a claim that something occurred
+in a particular investigation.
+
+Technical documents that should support this route must be governed/indexed as
+REFERENCE_CONTEXT. Project documentation remains in GitHub and is not
+automatically model input.
+
+App build:
+
+`2026-09-22-direct-reference-ask-v28`
+
+Status: **code/documentation complete; runtime validation pending redeploy**.
