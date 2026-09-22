@@ -1017,3 +1017,29 @@ Source:
 - notebook 41 — on-demand Job setup;
 - notebook 42 — read-only proposal/review validation;
 - App resource: `EMCIP_MAPPING_JOB_ID <- emcip_mapping_job`.
+
+
+## 2H. Reference-context retrieval
+
+Ask / Compare LLMs supports optional reference context without mixing it with
+occurrence evidence.
+
+Source layers are explicit:
+
+- `SOURCE_EVIDENCE` — selected case evidence;
+- `REFERENCE_CONTEXT` — completed Class-A legal/methodological/technical
+  analyses;
+- `CONTROLLED_TAXONOMY` — MAIRA EMCIP vocabulary.
+
+Only SOURCE_EVIDENCE may establish that a case fact occurred.
+
+Reference context is independently retrieved with MAIRA's deterministic
+free-text lexical method and has its own passage IDs and retrieval snapshot.
+
+QuestionModelRun persists separate source-evidence and reference-context
+passage IDs, report/page references and machine page locations.
+
+The App displays the two citation classes separately and can render cited PDF
+pages from either source analysis.
+
+See `docs/27_reference_context_retrieval.md`.
