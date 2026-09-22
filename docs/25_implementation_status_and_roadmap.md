@@ -144,23 +144,23 @@ and human-validated knowledge distinct.
 
 ### Production-readiness and consolidated validation
 
-The substantive PoC capabilities in this workstream are now implemented in
-source. The next milestone is to validate them together in one controlled
-Databricks session rather than continuing to add unvalidated layers.
+The consolidated release preflight has now passed in Databricks with
+**0 warnings and 0 errors**. SHIELD and authoritative REFERENCE_CONTEXT are
+indexed.
 
-The release-preflight validator is implemented as notebook 55.
+The current milestone is **functional runtime validation of the simplified App
+information architecture**.
 
-Next execution step, when the user chooses to spend the Databricks runtime
-cost:
+Next execution step:
 
-1. pull current GitHub `main` for IKF and MAIRA;
-2. run notebook 55 and resolve any FAIL items;
-3. complete any NOT_INDEXED governed-corpus setup warnings;
-4. create/update and attach the accumulated Jobs/resources;
-5. redeploy the App once;
-6. execute the consolidated feature-validation sequence in
+1. pull current GitHub `main`;
+2. redeploy the App with the pinned Streamlit requirement;
+3. verify the App loads without the searchable-selector/form exception;
+4. run one fresh Class-B MAIRA analysis;
+5. validate structured outputs, citations and source-page rendering;
+6. continue the feature-specific validators in
    `docs/26_consolidated_runtime_validation.md`;
-7. record the observed PASS/FAIL results in this tracker.
+7. record observed PASS/FAIL results here.
 
 ### Consolidated runtime validation sequence
 
@@ -195,8 +195,11 @@ News/dashboard integration remains outside this conversation.
 
 ### P1 — consolidated production-readiness validation
 
-- release/preflight validator: **DONE in source (notebook 55)**;
-- one consolidated Databricks deployment/test session: **PENDING**;
+- release/preflight validator: **RUNTIME PASS — 0 warnings / 0 errors**;
+- governed SHIELD corpus: **RUNTIME PASS**;
+- authoritative REFERENCE_CONTEXT corpus: **RUNTIME PASS**;
+- simplified App capability separation: **CODE COMPLETE; REDEPLOY/VALIDATION PENDING**;
+- one consolidated Databricks functional test session: **IN PROGRESS**;
 - reproducible benchmark/retrieval snapshots;
 - permissions/scopes validation;
 - retention validation;
@@ -620,3 +623,32 @@ Validated in Databricks on 2026-09-22:
 - all checked release prerequisites reported present.
 
 Result: **PASS — environment/setup validation complete.**
+
+
+### App information-architecture correction
+
+Implemented in source on 2026-09-22 after the first post-preflight App deploy:
+
+- backup branch created:
+  `backup/pre-ux-separation-2026-09-22`;
+- removed the Commodore Clipper demonstrator from the primary operational tab
+  bar while retaining it as a project validation/reference asset;
+- **Analyse Documents** now owns creation/status plus structured outputs:
+  Events, Contributing Factors, Findings, Safety Issues, Safety Recommendations
+  and analytical relationships with provenance;
+- **Ask / Compare LLMs** is the sole operational free-text question surface;
+- **Findings & Knowledge** is read-only evidence / graph / similar-case
+  exploration;
+- **Review & Validate** centralises direct human relationship review, optional
+  assistant relationship correction, EMCIP review and SHIELD review;
+- fixed the non-Class-D direct-text pre-screen UI branch value;
+- pinned `streamlit[pdf]>=1.56.0,<2` because the searchable multiselect uses
+  `filter_mode`, introduced in Streamlit 1.56;
+- documented the separation in `docs/28_app_information_architecture.md`.
+
+The observed Streamlit "form has no submit button" message followed a failure
+while constructing the searchable multiselect before execution reached the
+form-submit line; it is treated as a secondary symptom of the runtime/library
+mismatch rather than as evidence that the source form lacked a submit button.
+
+Status: **code/documentation complete; runtime validation pending redeploy**.
