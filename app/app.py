@@ -1089,115 +1089,164 @@ def render_pipeline_status(
     evidence_counts,
     result_meta,
 ):
-    stages = [
-        ("Analysis created", "PENDING_PROCESSING"),
-        ("Workflow queued", "JOB_QUEUED"),
-        ("Evidence extraction", "EXTRACTING"),
-        ("Evidence ready", "EVIDENCE_READY"),
-        ("Candidate extraction", "CANDIDATE_EXTRACTION"),
-        ("Cross-document resolution", "RESOLVING"),
-        ("Privacy validation", "PRIVACY_VALIDATION"),
-        ("Knowledge graph construction", "BUILDING_GRAPH"),
-        ("Completed", "COMPLETED"),
-    ]
-
-    failure_stages = {
-        "EXTRACTION_FAILED": "Evidence extraction",
-        "CANDIDATE_EXTRACTION_FAILED": "Candidate extraction",
-        "RESOLUTION_FAILED": "Cross-document resolution",
-        "PRIVACY_VALIDATION_FAILED": "Privacy validation",
-        "GRAPH_BUILD_FAILED": "Knowledge graph construction",
-    }
-
-    order = {
-        stage_key: index
-        for index, (_, stage_key) in enumerate(stages)
-    }
+    """Render investigator-facing progress, hiding technical pipeline detail."""
 
     effective_stage = processing_stage or status or "PENDING_PROCESSING"
-
     if status == "QUEUED":
         effective_stage = "JOB_QUEUED"
 
-    failed_label = failure_stages.get(effective_stage)
-
-    if status == "FAILED" and failed_label:
-        current_index = next(
-            (
-                index
-                for index, (label, _) in enumerate(stages)
-                if label == failed_label
+    user_steps = [
+        {
+            "label": "Prepare evidence",
+            "description": (
+                "Open the selected source, preserve provenance and create the "
+                "evidence passages used for analysis."
             ),
-            0,
-        )
+            "stages": {
+                "PENDING_PROCESSING",
+                "JOB_QUEUED",
+                "EXTRACTING",
+                "EVIDENCE_READY",
+            },
+        },
+        {
+            "label": "Analyse evidence",
+            "description": (
+                "Identify evidence-grounded events, concepts and supported "
+                "relationships, then consolidate duplicates."
+            ),
+            "stages": {
+                "CANDIDATE_EXTRACTION",
+                "RESOLVING",
+            },
+        },
+        {
+            "label": "Check output",
+            "description": (
+                "Apply privacy and output-safety checks before publication."
+            ),
+            "stages": {
+                "PRIVACY_VALIDATION",
+            },
+        },
+        {
+            "label": "Build result",
+            "description": (
+                "Publish the final candidate knowledge structure and graph "
+                "for investigator review."
+            ),
+            "stages": {
+                "BUILDING_GRAPH",
+                "COMPLETED",
+            },
+        },
+    ]
+
+    technical_order = [
+        "PENDING_PROCESSING",
+        "JOB_QUEUED",
+        "EXTRACTING",
+        "EVIDENCE_READY",
+        "CANDIDATE_EXTRACTION",
+        "RESOLVING",
+        "PRIVACY_VALIDATION",
+        "BUILDING_GRAPH",
+        "COMPLETED",
+    ]
+
+    failure_to_step = {
+        "EXTRACTION_FAILED": 0,
+        "CANDIDATE_EXTRACTION_FAILED": 1,
+        "RESOLUTION_FAILED": 1,
+        "PRIVACY_VALIDATION_FAILED": 2,
+        "GRAPH_BUILD_FAILED": 3,
+    }
+
+    if status == "FAILED":
+        current_step = failure_to_step.get(effective_stage, 0)
     else:
-        current_index = order.get(
-            effective_stage,
-            order.get(status, 0),
+        current_technical_index = (
+            technical_order.index(effective_stage)
+            if effective_stage in technical_order
+            else 0
         )
+        current_step = 0
+        for index, step in enumerate(user_steps):
+            if any(
+                technical_order.index(stage) <= current_technical_index
+                for stage in step["stages"]
+                if stage in technical_order
+            ):
+                current_step = index
 
-    st.markdown("### Process status")
+    st.markdown("### Progress")
 
-    for index, (label, stage_key) in enumerate(stages):
-        if status == "FAILED" and index == current_index:
+    if status == "COMPLETED":
+        st.success("Result ready for review.")
+
+    for index, step in enumerate(user_steps):
+        if status == "FAILED" and index == current_step:
             marker = "❌"
             state_text = "Failed"
-        elif index < current_index:
+        elif status == "COMPLETED" or index < current_step:
             marker = "✅"
             state_text = "Completed"
-        elif index == current_index:
-            if stage_key == "COMPLETED" and status == "COMPLETED":
-                marker = "✅"
-                state_text = "Completed"
-            else:
-                marker = "🔄"
-                state_text = "Running"
+        elif index == current_step:
+            marker = "🔄"
+            state_text = "In progress"
         else:
             marker = "○"
             state_text = "Pending"
 
-        detail = ""
-
-        if stage_key == "EXTRACTING":
-            documents_processed = int(
-                evidence_counts.get("documents_processed") or 0
-            )
-            documents_total = int(
-                evidence_counts.get("documents_total") or 0
-            )
-            pages_processed = int(
-                evidence_counts.get("pages_processed") or 0
-            )
-            pages_total = int(
-                evidence_counts.get("pages_total") or 0
-            )
-            passages_total = int(
-                evidence_counts.get("passages_total") or 0
-            )
-
-            if documents_total or pages_total or passages_total:
-                detail = (
-                    f" — documents {documents_processed}/{documents_total}, "
-                    f"pages {pages_processed}/{pages_total}, "
-                    f"passages {passages_total}"
-                )
-
-        if stage_key == "CANDIDATE_EXTRACTION":
-            batches_processed = int(
-                result_meta.get("batches_processed") or 0
-            )
-            batches_total = int(
-                result_meta.get("batches_total") or 0
-            )
-
-            if batches_total:
-                detail = (
-                    f" — batches {batches_processed}/{batches_total}"
-                )
-
         st.write(
-            f"{marker} **{label}** — {state_text}{detail}"
+            f"{marker} **{step['label']}** — {state_text}"
         )
+        if index == current_step and status != "COMPLETED":
+            st.caption(step["description"])
+
+    with st.expander("Technical details", expanded=False):
+        st.write(
+            f"Current pipeline stage: {effective_stage}"
+        )
+
+        documents_processed = int(
+            evidence_counts.get("documents_processed") or 0
+        )
+        documents_total = int(
+            evidence_counts.get("documents_total") or 0
+        )
+        pages_processed = int(
+            evidence_counts.get("pages_processed") or 0
+        )
+        pages_total = int(
+            evidence_counts.get("pages_total") or 0
+        )
+        passages_total = int(
+            evidence_counts.get("passages_total") or 0
+        )
+        st.write(
+            "Evidence: "
+            f"{documents_processed}/{documents_total} documents · "
+            f"{pages_processed}/{pages_total} pages · "
+            f"{passages_total} passages"
+        )
+
+        batches_processed = int(
+            result_meta.get("batches_processed") or 0
+        )
+        batches_total = int(
+            result_meta.get("batches_total") or 0
+        )
+        if batches_total:
+            st.write(
+                f"Analysis batches: {batches_processed}/{batches_total}"
+            )
+
+        if evidence_counts.get("processing_error"):
+            st.code(
+                evidence_counts["processing_error"],
+                language=None,
+            )
 
 
 @st.cache_data(ttl=30)
