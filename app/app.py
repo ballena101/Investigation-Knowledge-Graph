@@ -1835,6 +1835,277 @@ def load_model_runs(analysis_id):
 
 
 @st.cache_data(ttl=30)
+def load_question_runs(analysis_id):
+    query = """
+    MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+          -[:HAS_QUESTION_RUN]->
+          (q:QuestionRun)
+    RETURN
+        q.question_run_id AS question_run_id,
+        q.analysis_id AS analysis_id,
+        q.information_class AS information_class,
+        q.scope_mode AS scope_mode,
+        coalesce(q.scope_document_ids, []) AS scope_document_ids,
+        q.model_selection AS model_selection,
+        coalesce(q.model_keys, []) AS model_keys,
+        q.question_text AS question_text,
+        q.encrypted_question_text AS encrypted_question_text,
+        q.question_encryption_scheme AS question_encryption_scheme,
+        q.status AS status,
+        q.processing_stage AS processing_stage,
+        q.processing_error AS processing_error,
+        q.job_run_id AS job_run_id,
+        q.created_by AS created_by,
+        toString(q.created_at) AS created_at,
+        toString(q.completed_at) AS completed_at
+    ORDER BY q.created_at DESC
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(
+                query,
+                analysis_id=analysis_id,
+            )
+        ]
+
+
+@st.cache_data(ttl=30)
+def load_question_model_runs(question_run_id):
+    query = """
+    MATCH (q:QuestionRun {
+        question_run_id: $question_run_id
+    })-[:HAS_MODEL_ANSWER]->(m:QuestionModelRun)
+    RETURN
+        m.question_model_run_id AS question_model_run_id,
+        m.model_key AS model_key,
+        m.model_label AS model_label,
+        m.model_service AS model_service,
+        m.status AS status,
+        m.answer AS answer,
+        coalesce(m.passage_ids, []) AS passage_ids,
+        coalesce(m.evidence_references, []) AS evidence_references,
+        coalesce(m.evidence_locations, []) AS evidence_locations,
+        coalesce(m.limitations, []) AS limitations,
+        coalesce(m.insufficient_evidence, false) AS insufficient_evidence,
+        m.duration_seconds AS duration_seconds,
+        coalesce(m.total_tokens, 0) AS total_tokens,
+        m.processing_error AS processing_error,
+        toString(m.completed_at) AS completed_at
+    ORDER BY
+        CASE m.model_key
+            WHEN 'GPT20' THEN 1
+            WHEN 'LLAMA70' THEN 2
+            ELSE 9
+        END
+    """
+
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(
+                query,
+                question_run_id=question_run_id,
+            )
+        ]
+
+
+def question_display_text(question_run):
+    plain = str(
+        question_run.get("question_text")
+        or ""
+    ).strip()
+
+    if plain:
+        return plain
+
+    encrypted = question_run.get(
+        "encrypted_question_text"
+    )
+    if encrypted:
+        try:
+            return decrypt_protected_text(
+                encrypted
+            )
+        except Exception:
+            return "[Protected Class D question]"
+
+    return "—"
+
+
+def render_question_answer(
+    *,
+    analysis_id,
+    question_run,
+    model_run,
+    render_key,
+):
+    st.markdown(
+        f"### {model_run.get('model_label') or model_run.get('model_key') or 'Model'}"
+    )
+    st.caption(
+        f"{model_run.get('model_service') or '—'} · "
+        f"{model_run.get('status') or 'UNKNOWN'}"
+    )
+
+    if model_run.get("status") == "FAILED":
+        st.error(
+            model_run.get("processing_error")
+            or "The model answer failed."
+        )
+        return
+
+    answer = model_run.get("answer")
+    if answer:
+        if model_run.get("insufficient_evidence"):
+            st.warning(answer)
+        else:
+            st.info(answer)
+    else:
+        st.info("No answer has been returned yet.")
+
+    references = (
+        model_run.get("evidence_references")
+        or []
+    )
+    if references:
+        st.markdown("**Source pages**")
+        for reference in references:
+            st.write(f"• {reference}")
+    elif model_run.get("status") == "COMPLETED":
+        st.warning(
+            "The answer contains no valid document/page citation."
+        )
+
+    limitations = (
+        model_run.get("limitations")
+        or []
+    )
+    if limitations:
+        with st.expander("Limitations", expanded=False):
+            for item in limitations:
+                st.write(f"• {item}")
+
+    m1, m2 = st.columns(2)
+    duration = model_run.get("duration_seconds")
+    m1.metric(
+        "Elapsed",
+        (
+            f"{float(duration):.1f} s"
+            if duration is not None
+            else "—"
+        ),
+    )
+    m2.metric(
+        "Tokens",
+        model_run.get("total_tokens") or "—",
+    )
+
+    locations = [
+        parsed
+        for parsed in (
+            parse_evidence_location(value)
+            for value in (
+                model_run.get("evidence_locations")
+                or []
+            )
+        )
+        if parsed is not None
+    ]
+
+    if not locations:
+        return
+
+    sources = load_analysis_sources(
+        analysis_id
+    )
+    source_by_id = {
+        source["document_id"]: source
+        for source in sources
+    }
+
+    location_index = st.selectbox(
+        "Cited source page",
+        options=list(range(len(locations))),
+        format_func=lambda index: format_evidence_location(
+            locations[index],
+            source_by_id.get(
+                locations[index]["document_id"]
+            ),
+        ),
+        key=(
+            "question_citation_"
+            + question_run["question_run_id"]
+            + "_"
+            + render_key
+        ),
+    )
+
+    location = locations[location_index]
+    source = source_by_id.get(
+        location["document_id"]
+    )
+
+    if source is None:
+        st.caption(
+            "The cited document is not linked to this analysis."
+        )
+        return
+
+    source_path = source.get(
+        "viewer_source_path"
+    )
+    source_type = str(
+        source.get("source_type") or ""
+    ).upper()
+
+    if source_type != "PDF" or not source_path:
+        st.caption(
+            "The citation is available, but an embedded PDF source is not available."
+        )
+        return
+
+    try:
+        pdf_bytes = download_source_file_as_user(
+            source_path
+        )
+        excerpt_bytes = pdf_page_range_bytes(
+            pdf_bytes,
+            location.get("page_start"),
+            location.get("page_end"),
+        )
+
+        st.pdf(
+            excerpt_bytes,
+            height=650,
+            key=(
+                "question_pdf_"
+                + hashlib.sha256(
+                    (
+                        question_run["question_run_id"]
+                        + "|"
+                        + render_key
+                        + "|"
+                        + source_path
+                        + "|"
+                        + str(location.get("page_start"))
+                        + "|"
+                        + str(location.get("page_end"))
+                    ).encode("utf-8")
+                ).hexdigest()[:16]
+            ),
+        )
+    except PermissionError as exc:
+        st.warning(str(exc))
+    except Exception as exc:
+        st.caption(
+            "The cited page could not be rendered: "
+            + str(exc)
+        )
+
+
+@st.cache_data(ttl=30)
 def load_model_run_graph(
     analysis_id,
     model_run_id,
