@@ -1,8 +1,9 @@
 """Build the deployable IKF Databricks App source bundle.
 
 The generated bundle contains the investigator-facing App files plus the
-canonical ``src/ikf`` package. This prevents Databricks deployment from falling
-back to duplicated policy logic when only the App source folder is uploaded.
+canonical ``src/ikf`` package. The historical App source is transformed during
+the local build, not in Databricks, so governed policy adoption can be compiled
+and regression-tested before cloud compute is used.
 
 The bundle is a derived artefact and is not committed to GitHub.
 """
@@ -10,38 +11,65 @@ The bundle is a derived artefact and is not committed to GitHub.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 from pathlib import Path
 import shutil
+import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 APP_SOURCE = REPO_ROOT / "app"
-IKF_SOURCE = REPO_ROOT / "src" / "ikf"
+SRC_ROOT = REPO_ROOT / "src"
+IKF_SOURCE = SRC_ROOT / "ikf"
 DEFAULT_OUTPUT = REPO_ROOT / "build" / "databricks_app"
 
-APP_FILES = (
-    "app.py",
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from ikf.app_adoption import ADOPTION_VERSION, transform_app_source
+
+
+COPIED_APP_FILES = (
     "bootstrap.py",
     "app.yaml",
     "requirements.txt",
 )
 
+MATERIALIZED_MARKER = ".ikf_shared_policy_materialized"
+MANIFEST_NAME = "ikf_bundle_manifest.json"
+
+
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
 
 def build_bundle(output: Path) -> Path:
     output = output.resolve()
+    repo_root = REPO_ROOT.resolve()
+    app_source = APP_SOURCE.resolve()
 
-    if output == REPO_ROOT.resolve() or REPO_ROOT.resolve() in output.parents and output == APP_SOURCE.resolve():
+    if (
+        output == repo_root
+        or output == app_source
+        or app_source in output.parents
+    ):
         raise ValueError("Refusing to overwrite repository source directories.")
 
     if output.exists():
         shutil.rmtree(output)
     output.mkdir(parents=True)
 
-    for name in APP_FILES:
+    for name in COPIED_APP_FILES:
         source = APP_SOURCE / name
         if not source.is_file():
             raise FileNotFoundError(f"Missing required App source file: {source}")
         shutil.copy2(source, output / name)
+
+    original_app_source = (APP_SOURCE / "app.py").read_text(encoding="utf-8")
+    transformed_app_source, applied = transform_app_source(original_app_source)
+    compile(transformed_app_source, str(output / "app.py"), "exec")
+    (output / "app.py").write_text(transformed_app_source, encoding="utf-8")
 
     bundle_package = output / "src" / "ikf"
     shutil.copytree(
@@ -50,13 +78,32 @@ def build_bundle(output: Path) -> Path:
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
     )
 
+    marker = output / MATERIALIZED_MARKER
+    marker.write_text(ADOPTION_VERSION + "\n", encoding="utf-8")
+
+    manifest = {
+        "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.1",
+        "adoption_version": ADOPTION_VERSION,
+        "source_app_sha256": _sha256_text(original_app_source),
+        "materialized_app_sha256": _sha256_text(transformed_app_source),
+        "applied_policy_adoptions": list(applied),
+        "shared_package_path": "src/ikf",
+    }
+    (output / MANIFEST_NAME).write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
     required = [
         output / "app.py",
         output / "bootstrap.py",
         output / "app.yaml",
         output / "requirements.txt",
+        marker,
+        output / MANIFEST_NAME,
         bundle_package / "app_adoption.py",
         bundle_package / "source_routing.py",
+        bundle_package / "evidence_locations.py",
         bundle_package / "question_scope.py",
         bundle_package / "review_governance.py",
         bundle_package / "shield_governance.py",
