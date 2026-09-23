@@ -1,29 +1,38 @@
-"""Databricks App bootstrap.
+"""Databricks App bootstrap for incremental shared-policy adoption.
 
-Keeps the Streamlit entrypoint small while making the repository's canonical
-``src/ikf`` package importable when the App is deployed from the repository
-checkout. The existing ``app.py`` remains the user-facing application during
-the incremental refactor.
+The canonical deterministic governance logic lives in ``src/ikf``. During the
+transition away from the historical monolithic ``app.py``, this bootstrap
+loads that package and applies a strict, tested source transformation so the
+running App calls the shared policy modules without requiring a risky one-shot
+rewrite of the full Streamlit application.
 
-The bootstrap is intentionally behavior-preserving: if the sibling ``src``
-directory is not present in a particular deployment bundle, the legacy App can
-still start because no shared-module import is forced here.
+If the deployment bundle does not contain the repository ``src`` directory,
+the legacy App still starts unchanged. That fallback is temporary and should
+be removed after the deployment source is confirmed to include the packaged
+IKF modules.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-import runpy
 import sys
 
 
 APP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = APP_DIR.parent
 SRC_DIR = REPO_ROOT / "src"
+APP_FILE = APP_DIR / "app.py"
+
+source = APP_FILE.read_text(encoding="utf-8")
 
 if SRC_DIR.is_dir():
     src_text = str(SRC_DIR)
     if src_text not in sys.path:
         sys.path.insert(0, src_text)
 
-runpy.run_path(str(APP_DIR / "app.py"), run_name="__main__")
+    from ikf.app_adoption import transform_app_source
+
+    source, _applied_policy_adoptions = transform_app_source(source)
+
+code = compile(source, str(APP_FILE), "exec")
+exec(code, {"__name__": "__main__", "__file__": str(APP_FILE)})
