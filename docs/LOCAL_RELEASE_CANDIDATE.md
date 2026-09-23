@@ -9,11 +9,14 @@ the next cost-controlled Databricks integration proof.
 
 ## Validation baseline
 
-Latest locally validated code run before this documentation-only record:
+Final locally validated release-candidate state:
 
-- GitHub Actions run: `35915330053`
-- validated code commit: `ae14c16bc2d85ace32c4cd023117b1ca0704ee2f`
+- GitHub Actions run: `35915596757`
+- validated code commit: `967c680ab697d24a78cc618b1a807f2e8a7cf610`
+- frozen branch: `release/ikf-local-baseline-2026-09-23`
 - result: **81 deterministic tests passed**
+- materialised App bundle build: **PASS**
+- static undefined-name check on materialised App: **PASS**
 
 The tested baseline includes:
 
@@ -25,7 +28,8 @@ The tested baseline includes:
 - relationship, SHIELD and EMCIP governance;
 - graph document-scope invariants;
 - retention calculations;
-- Class-D Llama legacy-variable compatibility fix.
+- Class-D Llama legacy-variable compatibility fix;
+- pre-cloud undefined-name checking of the generated App source.
 
 ## Deployment source
 
@@ -66,6 +70,10 @@ Before deploying or running an IKF Job:
 4. confirm the exact minimum integration checks to execute;
 5. prefer existing persisted analyses, QuestionRuns, retrieval snapshots and
    indexed corpora over fresh model inference.
+
+Detailed execution and decision criteria are in:
+
+`docs/33_gate0_cost_audit_and_minimum_integration_proof.md`
 
 ## Minimum intended integration proof
 
