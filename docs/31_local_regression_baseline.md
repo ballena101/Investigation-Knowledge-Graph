@@ -42,6 +42,28 @@ The objective is to catch routine defects without consuming Databricks compute a
   - malformed-location fail-closed cases;
   - cross-document citation leakage prevention.
 
+- `src/ikf/question_scope.py`
+  - deterministic QuestionRun scope resolution for `WHOLE_CASE`, `ONE_DOCUMENT` and `SELECTED_DOCUMENTS`;
+  - selected documents must belong to the primary AnalysisGroup;
+  - `ONE_DOCUMENT` must resolve to exactly one document;
+  - retrieval snapshots cannot contain unknown passages or passages outside the effective document scope;
+  - answer `SOURCE_EVIDENCE` passage IDs cannot escape the selected case scope or primary retrieval snapshot;
+  - `REFERENCE_CONTEXT` remains a separate governed layer and requires an explicit request and its own retrieval snapshot;
+  - source/reference passage IDs cannot be attributed to both layers;
+  - combined passage IDs must equal the exact union of the two evidence layers;
+  - deterministic no-support results cannot coexist with model-generated answers.
+
+- `tests/test_question_scope.py`
+  - whole-case resolution;
+  - one-document cardinality enforcement;
+  - selected-document AnalysisGroup membership checks;
+  - retrieval-snapshot scope leakage detection;
+  - unknown-passage rejection;
+  - source/reference evidence-layer separation;
+  - primary/reference retrieval-snapshot enforcement;
+  - combined passage-union contract;
+  - deterministic no-support/model-answer mutual exclusion.
+
 - `pytest.ini`
   - local `src` import path and test discovery.
 
@@ -58,32 +80,40 @@ The objective is to catch routine defects without consuming Databricks compute a
   - cloud sessions must reuse persisted outputs and minimise model reruns;
   - App/continuous resources should be stopped when not required.
 
+## Relationship to Databricks validator 38
+
+The pure-Python QuestionRun scope module now captures the deterministic governance rules that were previously verifiable mainly through `notebooks/38_validate_scoped_ask_run.py`.
+
+Notebook 38 remains valuable as a **cloud integration validator** because it proves that the persisted Neo4j/Delta state obeys those contracts in the deployed environment. It should not be used as the routine place to discover basic scope/provenance bugs.
+
+The intended sequence is therefore:
+
+1. local tests against `src/ikf/question_scope.py`;
+2. frozen fixture replay where needed;
+3. App/notebook code consumes the same contract;
+4. notebook 38 runs only as part of a batched Databricks release-candidate integration proof.
+
 ## Next local extraction priorities
 
-1. QuestionRun scope contract:
-   - whole case / one document / selected documents;
-   - answer passage IDs must remain inside the chosen scope;
-   - reference context must remain separate from source evidence.
-
-2. Relationship-review governance:
+1. Relationship-review governance:
    - semantic vs structural relationship distinction;
    - append-only human review;
    - valid review/amendment states.
 
-3. SHIELD two-gate rules:
+2. SHIELD two-gate rules:
    - Gate 1 requires human validation of the contributing factor;
    - Gate 2 is a separate human decision on the SHIELD proposal.
 
-4. EMCIP mapping governance:
+3. EMCIP mapping governance:
    - proposal restricted to the governed shortlist or `NO_MAPPING`;
    - human amendment restricted to a governed candidate.
 
-5. Graph filtering/coverage rules:
+4. Graph filtering/coverage rules:
    - document-scope filtering;
    - supporting structural passthrough nodes;
    - no conversion of chronological `FOLLOWED_BY` into causality.
 
-6. Retention/deletion calculations.
+5. Retention/deletion calculations.
 
 ## Migration rule
 
