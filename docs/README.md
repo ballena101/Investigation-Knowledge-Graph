@@ -18,23 +18,38 @@ The Commodore Clipper material is retained as a controlled reference and benchma
 4. [30_cost_efficient_validation_strategy.md](30_cost_efficient_validation_strategy.md)  
    Authoritative engineering rule for local/GitHub-first validation and minimal-cost Databricks integration proof.
 
-5. [18_model_validation_and_feedback.md](18_model_validation_and_feedback.md)  
+5. [32_local_governance_extraction_status.md](32_local_governance_extraction_status.md)  
+   Current local-first governance extraction/adoption status and latest regression state.
+
+6. [LOCAL_RELEASE_CANDIDATE.md](LOCAL_RELEASE_CANDIDATE.md)  
+   Frozen locally validated baseline and deployment-bundle contract for the next Databricks integration proof.
+
+7. [33_gate0_cost_audit_and_minimum_integration_proof.md](33_gate0_cost_audit_and_minimum_integration_proof.md)  
+   Mandatory Gate-0 sequence, GO/STOP criteria and minimum cloud-validation plan.
+
+8. [34_gate0_execution_record_template.md](34_gate0_execution_record_template.md)  
+   Execution record to capture the actual billing results, resource actions, cloud checks and incremental cost.
+
+9. [35_ikf_cloud_resource_inventory.md](35_ikf_cloud_resource_inventory.md)  
+   Known IKF App, Job, endpoint and persisted-artifact identifiers for billing attribution. The audit remains broad so unexpected resources remain visible.
+
+10. [18_model_validation_and_feedback.md](18_model_validation_and_feedback.md)  
    Model validation, benchmark metrics and the controlled use of human-validated knowledge as evaluation/retrieval/feedback material.
 
-6. [16_unified_input_and_model_routing.md](16_unified_input_and_model_routing.md)  
+11. [16_unified_input_and_model_routing.md](16_unified_input_and_model_routing.md)  
    Input modes, information classes, model routing and privacy controls.
 
-7. [15_data_protection_confidentiality.md](15_data_protection_confidentiality.md)  
+12. [15_data_protection_confidentiality.md](15_data_protection_confidentiality.md)  
    Confidentiality, minimisation, Article-9-oriented design and privacy gate.
 
-8. [13_automated_analysis_orchestration.md](13_automated_analysis_orchestration.md)  
+13. [13_automated_analysis_orchestration.md](13_automated_analysis_orchestration.md)  
    Lakeflow Job lifecycle and processing stages.
 
-9. [03_architecture.md](03_architecture.md) and [04_data_model.md](04_data_model.md)  
+14. [03_architecture.md](03_architecture.md) and [04_data_model.md](04_data_model.md)  
    Technical architecture and graph/data model.
 
-10. [22_maira_passage_integration.md](22_maira_passage_integration.md)  
-    MAIRA passage contract, provenance preservation and removal of parallel document-chunking logic from IKF.
+15. [22_maira_passage_integration.md](22_maira_passage_integration.md)  
+   MAIRA passage contract, provenance preservation and removal of parallel document-chunking logic from IKF.
 
 ## Current source/knowledge ownership
 
@@ -84,12 +99,14 @@ mocked/contract integration tests
         ↓
 release-candidate freeze
         ↓
+Gate-0 cost audit
+        ↓
 minimal Databricks integration proof
 ```
 
 A validator notebook does not imply a fresh analysis or fresh LLM execution. Persisted analyses, retrieval snapshots, model outputs and graph/review artefacts should be reused whenever the behaviour under test is downstream or deterministic.
 
-See [30_cost_efficient_validation_strategy.md](30_cost_efficient_validation_strategy.md).
+Before any new IKF cloud execution, run `sql/02_databricks_cost_audit.sql` and apply the GO/STOP criteria in document 33. The extended audit shows overall spend, Jobs, daily trends, Databricks Apps by app name/ID, model-serving endpoints, and attributable serverless notebook/job activity.
 
 ## Methodology and governance
 
@@ -121,7 +138,7 @@ The reference case is retained because it provides reviewed graph/evidence mater
 
 - [26_consolidated_runtime_validation.md](26_consolidated_runtime_validation.md) — Databricks-oriented integration checklist.
 
-This checklist should now be executed according to the cost-efficient strategy in document 30: reuse persisted artefacts, batch checks around one release candidate, and avoid separate cloud/model runs when local or read-only validation is sufficient.
+This checklist is subordinate to the cost-efficient release process: reuse persisted artefacts, batch checks around one release candidate, and avoid separate cloud/model runs when local or read-only validation is sufficient.
 
 ## Documentation maintenance note
 
@@ -130,6 +147,11 @@ Earlier documents may preserve historical PoC design decisions that have since b
 - `08_roadmap.md`;
 - `25_implementation_status_and_roadmap.md`;
 - `28_app_information_architecture.md`;
-- `30_cost_efficient_validation_strategy.md`.
+- `30_cost_efficient_validation_strategy.md`;
+- `32_local_governance_extraction_status.md`;
+- `LOCAL_RELEASE_CANDIDATE.md`;
+- `33_gate0_cost_audit_and_minimum_integration_proof.md`;
+- `34_gate0_execution_record_template.md`;
+- `35_ikf_cloud_resource_inventory.md`.
 
 Future documentation updates should prefer revising these current baseline documents over creating additional overlapping architecture descriptions.
