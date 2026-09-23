@@ -58,26 +58,25 @@ def evidence_backed_node_ids(nodes, selected_document_ids):
 
 
 def add_structural_passthrough_nodes(*, retained_node_ids, edges):
-    """Add only structural one-hop connectors touching retained evidence nodes.
+    """Add structural one-hop connectors touching retained evidence nodes.
 
-    This supports a readable graph without allowing structural plumbing to pull
-    unrelated semantic content into a document-scoped view.
+    Only the original evidence-backed node set is used as the expansion anchor.
+    A structural connector added by this function cannot recursively pull in a
+    wider structural subgraph.
     """
     retained = set(retained_node_ids or [])
-    changed = True
-    while changed:
-        changed = False
-        for edge in edges or []:
-            if relationship_semantics(edge.get("relationship")) != "STRUCTURAL":
-                continue
-            source = edge.get("source_node_id")
-            target = edge.get("target_node_id")
-            if source in retained and target and target not in retained:
-                retained.add(target)
-                changed = True
-            elif target in retained and source and source not in retained:
-                retained.add(source)
-                changed = True
+    anchors = set(retained)
+
+    for edge in edges or []:
+        if relationship_semantics(edge.get("relationship")) != "STRUCTURAL":
+            continue
+        source = edge.get("source_node_id")
+        target = edge.get("target_node_id")
+        if source in anchors and target:
+            retained.add(target)
+        elif target in anchors and source:
+            retained.add(source)
+
     return retained
 
 
