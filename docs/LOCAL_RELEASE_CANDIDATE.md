@@ -11,15 +11,16 @@ the next cost-controlled Databricks integration proof.
 
 Final locally validated release-candidate state:
 
-- GitHub Actions run: `35923187076`
-- validated code commit: `8d9262fd7c30feb75aa1a4193acf2f509b81a636`
+- GitHub Actions run: `35923614601`
+- validated code commit: `f8aea8c2e59f98634222bd9e11d99d2b421e5224`
 - frozen branch: `release/ikf-local-baseline-2026-09-23`
-- result: **85 deterministic tests passed**
+- result: **87 deterministic tests passed**
 - materialised App bundle build: **PASS**
 - static undefined-name check on materialised App: **PASS**
 - Gate-0 cost SQL select-only guard: **PASS**
 - notebook 60 no-inference/no-write guard: **PASS**
 - App resource/environment contract guard: **PASS**
+- `app.yaml` ↔ notebook 55 `valueFrom` resource parity: **PASS**
 
 The tested baseline includes:
 
@@ -34,8 +35,10 @@ The tested baseline includes:
 - Class-D Llama legacy-variable compatibility fix;
 - pre-cloud undefined-name checking of the generated App source;
 - deterministic checking that `app/app.yaml` exposes the expected release-candidate environment/resource names;
+- deterministic checking that every `valueFrom` binding in `app/app.yaml` is required by `notebooks/55_validate_consolidated_release_preflight.py`;
 - deterministic checking that `notebooks/60_validate_persisted_release_candidate_read_paths.py` remains read-only and does not trigger Jobs or inference;
-- deterministic checking that `sql/02_databricks_cost_audit.sql` remains SELECT-only.
+- deterministic checking that `sql/02_databricks_cost_audit.sql` remains SELECT-only;
+- CI path coverage for notebook 55, notebook 60 and the cost-audit SQL.
 
 ## Deployment source
 
@@ -57,9 +60,8 @@ The generated bundle contains:
 - `app.yaml`;
 - `requirements.txt`;
 - canonical `src/ikf` package;
-- `.ikf_shared_policy_materialized` marker;
-- `ikf_bundle_manifest.json` containing source/materialised hashes and applied
-  policy-adoption metadata.
+- `.ikf_shared_policy_materialized`;
+- `ikf_bundle_manifest.json` containing source/materialised hashes and applied policy-adoption metadata.
 
 ## Gate 0 — mandatory before Databricks validation
 
@@ -70,12 +72,10 @@ The first cloud action is the read-only cost audit:
 Before deploying or running an IKF Job:
 
 1. review Databricks usage/cost exposure;
-2. identify any App, Job or model-serving resources that are unnecessarily
-   running;
+2. identify any App, Job or model-serving resources that are unnecessarily running;
 3. stop unnecessary continuously billed resources;
 4. confirm the exact minimum integration checks to execute;
-5. prefer existing persisted analyses, QuestionRuns, retrieval snapshots and
-   indexed corpora over fresh model inference.
+5. prefer existing persisted analyses, QuestionRuns, retrieval snapshots and indexed corpora over fresh model inference.
 
 Detailed execution and decision criteria are in:
 
@@ -86,17 +86,15 @@ Detailed execution and decision criteria are in:
 Subject to the Gate-0 cost review, the intended cloud proof is limited to:
 
 - first, read-only `notebooks/60_validate_persisted_release_candidate_read_paths.py`;
+- then `notebooks/55_validate_consolidated_release_preflight.py` only if the broader runtime prerequisites need checking;
 - one generated App-bundle deployment only after the read paths remain usable;
 - App startup/resource-binding verification;
 - governed source/Files API access;
 - reuse of existing persisted case artefacts where possible;
-- one fresh Class-B analysis only if existing artefacts cannot prove the new
-  source/viewer path;
+- one fresh Class-B analysis only if existing artefacts cannot prove the new source/viewer path;
 - one QuestionRun only if Ask Job wiring materially requires it;
-- no Class-D model execution unless Class-D runtime itself is the explicit
-  validation subject;
-- no rebuilding of SHIELD or REFERENCE_CONTEXT unless their indexing code has
-  materially changed.
+- no Class-D model execution unless Class-D runtime itself is the explicit validation subject;
+- no rebuilding of SHIELD or REFERENCE_CONTEXT unless their indexing code has materially changed.
 
 ## What is not yet claimed
 
