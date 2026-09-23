@@ -20,7 +20,6 @@
 
 # COMMAND ----------
 from pyspark.sql import functions as F
-from pyspark.sql import types as T
 import hashlib
 import uuid
 from datetime import datetime, timezone
@@ -66,7 +65,7 @@ if meta["length"] is not None and int(meta["length"]) > 512 * 1024 * 1024:
     raise RuntimeError("ai_transcribe input exceeds the current 512 MB per-call limit.")
 
 # COMMAND ----------
-# Compute a source hash locally in Spark/Python for provenance.
+# Compute a source hash locally for provenance.
 content = audio_df.select("content").first()["content"]
 source_sha256 = hashlib.sha256(bytes(content)).hexdigest()
 audio_source_id = f"audio_{source_sha256[:24]}"
@@ -107,17 +106,7 @@ if error:
 
 # COMMAND ----------
 # Explode into one governed evidence row per timestamped segment.
-segments = (
-    transcribed
-    .select(
-        "path",
-        F.col("transcription_result:response.duration_seconds").cast("double").alias("duration_seconds"),
-        F.expr("variant_explode(transcription_result:response.segments)").alias("segment"),
-    )
-)
-
-# Some Databricks runtimes expose variant_explode only as a table-valued function in SQL.
-# Use SQL for compatibility and materialize a temp view.
+# variant_explode is used in the documented SQL table-valued form for compatibility.
 transcribed.createOrReplaceTempView("ikf_type_d_transcribed_audio")
 
 segments = spark.sql("""
