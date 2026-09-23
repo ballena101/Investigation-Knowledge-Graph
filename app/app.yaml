@@ -1,7 +1,7 @@
 command:
   - streamlit
   - run
-  - app.py
+  - bootstrap.py
 
 env:
   - name: NEO4J_URI
