@@ -13,8 +13,10 @@ APP_YAML = REPO_ROOT / "app" / "app.yaml"
 READ_ONLY_NOTEBOOK = (
     REPO_ROOT / "notebooks" / "60_validate_persisted_release_candidate_read_paths.py"
 )
+PREFLIGHT_NOTEBOOK = (
+    REPO_ROOT / "notebooks" / "55_validate_consolidated_release_preflight.py"
+)
 COST_AUDIT_SQL = REPO_ROOT / "sql" / "02_databricks_cost_audit.sql"
-
 
 EXPECTED_APP_ENV_NAMES = {
     "NEO4J_URI",
@@ -37,15 +39,57 @@ EXPECTED_APP_ENV_NAMES = {
     "STREAMLIT_GATHER_USAGE_STATS",
 }
 
+EXPECTED_VALUE_FROM_RESOURCES = {
+    "neo4j_uri",
+    "neo4j_username",
+    "neo4j_password",
+    "analysis_job",
+    "class_d_analysis_job",
+    "ask_job",
+    "emcip_mapping_job",
+    "shield_proposal_job",
+    "relationship_correction_job",
+    "similar_cases_job",
+    "class_d_gpt20_endpoint",
+    "class_d_ollama_llama70_url",
+    "direct_text_encryption_key",
+    "ikg_admin_users",
+}
+
 
 def _env_names_from_app_yaml(text: str) -> set[str]:
     return set(re.findall(r"(?m)^\s*- name:\s*([A-Z0-9_]+)\s*$", text))
+
+
+def _value_from_resources_from_app_yaml(text: str) -> set[str]:
+    return set(re.findall(r"(?m)^\s*valueFrom:\s*([a-z0-9_]+)\s*$", text))
+
+
+def _required_app_resources_from_preflight(text: str) -> set[str]:
+    match = re.search(
+        r"REQUIRED_APP_RESOURCES\s*=\s*\((.*?)\)\n\nREQUIRED_USER_SCOPES",
+        text,
+        flags=re.DOTALL,
+    )
+    assert match is not None
+    return set(re.findall(r'"([a-z0-9_]+)"', match.group(1)))
 
 
 def test_app_yaml_exposes_expected_release_candidate_environment_contract():
     text = APP_YAML.read_text(encoding="utf-8")
     assert _env_names_from_app_yaml(text) == EXPECTED_APP_ENV_NAMES
     assert "streamlit\n  - run\n  - bootstrap.py" in text
+
+
+def test_app_yaml_value_from_resource_contract_is_exact():
+    text = APP_YAML.read_text(encoding="utf-8")
+    assert _value_from_resources_from_app_yaml(text) == EXPECTED_VALUE_FROM_RESOURCES
+
+
+def test_preflight_resource_contract_matches_app_yaml_value_from_bindings():
+    app_yaml = APP_YAML.read_text(encoding="utf-8")
+    preflight = PREFLIGHT_NOTEBOOK.read_text(encoding="utf-8")
+    assert _required_app_resources_from_preflight(preflight) == _value_from_resources_from_app_yaml(app_yaml)
 
 
 def test_class_d_llama_has_canonical_endpoint_binding():
@@ -77,8 +121,6 @@ def test_notebook_60_remains_read_only_and_no_inference():
         "%pip install",
     )
 
-    # Comments describe prohibited actions, so check executable-looking forms
-    # rather than generic words such as "model" or "job".
     for fragment in forbidden_fragments:
         assert fragment not in lower, fragment
 
@@ -89,9 +131,6 @@ def test_notebook_60_remains_read_only_and_no_inference():
 
 def test_cost_audit_sql_remains_select_only():
     text = COST_AUDIT_SQL.read_text(encoding="utf-8")
-
-    # Remove -- comments before checking SQL verbs so explanatory prose cannot
-    # create false positives.
     sql = "\n".join(
         line.split("--", 1)[0]
         for line in text.splitlines()
