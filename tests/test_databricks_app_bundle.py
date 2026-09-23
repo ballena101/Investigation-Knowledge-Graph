@@ -51,6 +51,7 @@ def test_bundle_materializes_shared_policy_before_deployment(tmp_path):
     output = build_test_bundle(tmp_path)
     materialized = (output / "app.py").read_text(encoding="utf-8")
 
+    assert 'CLASS_D_OLLAMA_LLAMA70_URL = os.getenv("CLASS_D_OLLAMA_LLAMA70_URL")' in materialized
     assert "shared_content_retention_hours(information_class)" in materialized
     assert "legacy_parse_evidence_location(value)" in materialized
     assert "filter_catalogue_rows(" in materialized
@@ -74,6 +75,7 @@ def test_bundle_manifest_records_materialized_policy_contract(tmp_path):
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert set(manifest["applied_policy_adoptions"]) == {
         "shared_imports",
+        "class_d_llama_alias",
         "retention_policy",
         "evidence_location_parser",
         "source_catalogue_routing",
