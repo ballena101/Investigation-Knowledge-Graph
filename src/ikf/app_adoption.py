@@ -26,7 +26,7 @@ from .graph_governance import (
     relationship_semantics,
 )
 from .question_scope import resolve_effective_document_scope
-from .retention import content_retention_hours as shared_content_retention_hours
+from .retention import analysis_content_retention_hours as shared_content_retention_hours
 from .review_governance import validate_human_relationship_review
 from .shield_governance import validate_gate2_review
 from .source_routing import filter_catalogue_rows, resolve_source_route
