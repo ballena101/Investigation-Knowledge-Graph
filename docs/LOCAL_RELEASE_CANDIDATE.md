@@ -11,12 +11,15 @@ the next cost-controlled Databricks integration proof.
 
 Final locally validated release-candidate state:
 
-- GitHub Actions run: `35915596757`
-- validated code commit: `967c680ab697d24a78cc618b1a807f2e8a7cf610`
+- GitHub Actions run: `35923187076`
+- validated code commit: `8d9262fd7c30feb75aa1a4193acf2f509b81a636`
 - frozen branch: `release/ikf-local-baseline-2026-09-23`
-- result: **81 deterministic tests passed**
+- result: **85 deterministic tests passed**
 - materialised App bundle build: **PASS**
 - static undefined-name check on materialised App: **PASS**
+- Gate-0 cost SQL select-only guard: **PASS**
+- notebook 60 no-inference/no-write guard: **PASS**
+- App resource/environment contract guard: **PASS**
 
 The tested baseline includes:
 
@@ -29,7 +32,10 @@ The tested baseline includes:
 - graph document-scope invariants;
 - retention calculations;
 - Class-D Llama legacy-variable compatibility fix;
-- pre-cloud undefined-name checking of the generated App source.
+- pre-cloud undefined-name checking of the generated App source;
+- deterministic checking that `app/app.yaml` exposes the expected release-candidate environment/resource names;
+- deterministic checking that `notebooks/60_validate_persisted_release_candidate_read_paths.py` remains read-only and does not trigger Jobs or inference;
+- deterministic checking that `sql/02_databricks_cost_audit.sql` remains SELECT-only.
 
 ## Deployment source
 
@@ -79,7 +85,8 @@ Detailed execution and decision criteria are in:
 
 Subject to the Gate-0 cost review, the intended cloud proof is limited to:
 
-- one generated App-bundle deployment;
+- first, read-only `notebooks/60_validate_persisted_release_candidate_read_paths.py`;
+- one generated App-bundle deployment only after the read paths remain usable;
 - App startup/resource-binding verification;
 - governed source/Files API access;
 - reuse of existing persisted case artefacts where possible;
