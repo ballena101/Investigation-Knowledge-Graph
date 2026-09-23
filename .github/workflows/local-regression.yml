@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/ikf/**'
       - 'tests/**'
+      - 'scripts/**'
       - 'app/app.py'
       - 'app/bootstrap.py'
       - 'app/app.yaml'
@@ -16,6 +17,7 @@ on:
     paths:
       - 'src/ikf/**'
       - 'tests/**'
+      - 'scripts/**'
       - 'app/app.py'
       - 'app/bootstrap.py'
       - 'app/app.yaml'
