@@ -32,7 +32,7 @@ from .shield_governance import validate_gate2_review
 from .source_routing import filter_catalogue_rows, resolve_source_route
 
 
-ADOPTION_VERSION = "IKF_APP_SHARED_POLICY_ADOPTION_V0.1"
+ADOPTION_VERSION = "IKF_APP_SHARED_POLICY_ADOPTION_V0.2"
 
 
 def legacy_parse_evidence_location(value):
@@ -64,7 +64,7 @@ def scope_graph_by_documents(raw_graph: dict, selected_document_ids) -> dict:
 
     Evidence-bearing nodes and evidence-bearing relationship endpoints are the
     semantic seed. Structural relationships may add connector nodes, but they
-    do not independently pull unrelated semantic relationships into scope.
+    do not independently pull unrelated semantic content into scope.
     """
 
     selected = {str(value) for value in selected_document_ids or [] if value}
@@ -217,6 +217,28 @@ def transform_app_source(source: str) -> tuple[str, tuple[str, ...]]:
         raise RuntimeError("Shared-policy App adoption could not locate the import anchor.")
     source = source.replace(import_anchor, shared_imports, 1)
     applied.append("shared_imports")
+
+    endpoint_anchor = (
+        'CLASS_D_GPT20_ENDPOINT = os.getenv("CLASS_D_GPT20_ENDPOINT")\n'
+        'CLASS_D_LLAMA70_ENDPOINT = (\n'
+        '    os.getenv("CLASS_D_LLAMA70_ENDPOINT")\n'
+        '    or os.getenv("CLASS_D_OLLAMA_LLAMA70_URL")\n'
+        ')\n'
+    )
+    endpoint_replacement = (
+        'CLASS_D_GPT20_ENDPOINT = os.getenv("CLASS_D_GPT20_ENDPOINT")\n'
+        'CLASS_D_OLLAMA_LLAMA70_URL = os.getenv("CLASS_D_OLLAMA_LLAMA70_URL")\n'
+        'CLASS_D_LLAMA70_ENDPOINT = (\n'
+        '    os.getenv("CLASS_D_LLAMA70_ENDPOINT")\n'
+        '    or CLASS_D_OLLAMA_LLAMA70_URL\n'
+        ')\n'
+    )
+    if endpoint_anchor not in source:
+        raise RuntimeError(
+            "Shared-policy App adoption could not locate the Class-D Llama endpoint anchor."
+        )
+    source = source.replace(endpoint_anchor, endpoint_replacement, 1)
+    applied.append("class_d_llama_alias")
 
     source = _replace_once(
         source,
