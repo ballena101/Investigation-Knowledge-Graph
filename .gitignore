@@ -5,6 +5,10 @@ __pycache__/
 venv/
 .pytest_cache/
 
+# Generated build artefacts
+build/
+dist/
+
 # Databricks
 .databricks/
 .bundle/
