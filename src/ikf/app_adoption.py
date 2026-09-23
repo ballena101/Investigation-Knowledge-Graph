@@ -27,10 +27,7 @@ from .graph_governance import (
 )
 from .question_scope import resolve_effective_document_scope
 from .retention import content_retention_hours as shared_content_retention_hours
-from .review_governance import (
-    is_semantic_relationship,
-    validate_human_relationship_review,
-)
+from .review_governance import validate_human_relationship_review
 from .shield_governance import validate_gate2_review
 from .source_routing import filter_catalogue_rows, resolve_source_route
 
@@ -110,11 +107,11 @@ def scope_graph_by_documents(raw_graph: dict, selected_document_ids) -> dict:
         node for node in nodes if node.get("node_id") in retained_node_ids
     ]
 
-    edge_identity = {edge.get("edge_id") for edge in evidence_edges}
+    evidence_edge_ids = {edge.get("edge_id") for edge in evidence_edges}
     candidate_edges = [
         edge
         for edge in edges
-        if edge.get("edge_id") in edge_identity
+        if edge.get("edge_id") in evidence_edge_ids
         or relationship_semantics(edge.get("relationship")) == "STRUCTURAL"
     ]
     normalized = [
@@ -128,7 +125,11 @@ def scope_graph_by_documents(raw_graph: dict, selected_document_ids) -> dict:
     filtered = filter_edges_for_nodes(normalized, retained_node_ids)
 
     scoped_edges = [
-        {key: value for key, value in edge.items() if key not in {"source_node_id", "target_node_id"}}
+        {
+            key: value
+            for key, value in edge.items()
+            if key not in {"source_node_id", "target_node_id"}
+        }
         for edge in filtered
     ]
 
@@ -145,7 +146,12 @@ def _candidate_id(candidate: dict | None) -> str | None:
     return None
 
 
-def validate_app_emcip_review(*, proposal: dict, decision: str, amended_candidate: dict | None):
+def validate_app_emcip_review(
+    *,
+    proposal: dict,
+    decision: str,
+    amended_candidate: dict | None,
+):
     shortlist = proposal.get("candidate_options") or []
     shortlist_ids = [_candidate_id(item) for item in shortlist]
     proposed_id = str(proposal.get("proposed_code_idcode") or "").strip() or None
@@ -158,7 +164,12 @@ def validate_app_emcip_review(*, proposal: dict, decision: str, amended_candidat
     )
 
 
-def validate_app_shield_review(*, proposal: dict, decision: str, amended_label: str | None):
+def validate_app_shield_review(
+    *,
+    proposal: dict,
+    decision: str,
+    amended_label: str | None,
+):
     if not proposal.get("gate_is_current"):
         raise ValueError(
             "The Gate-1 relationship review has changed. Regenerate SHIELD proposals before reviewing this item."
@@ -174,7 +185,14 @@ def validate_app_shield_review(*, proposal: dict, decision: str, amended_label: 
     )
 
 
-def _replace_once(source: str, pattern: str, replacement: str, *, name: str, flags=0):
+def _replace_once(
+    source: str,
+    pattern: str,
+    replacement: str,
+    *,
+    name: str,
+    flags=0,
+):
     updated, count = re.subn(pattern, replacement, source, count=1, flags=flags)
     if count != 1:
         raise RuntimeError(
@@ -194,7 +212,7 @@ def transform_app_source(source: str) -> tuple[str, tuple[str, ...]]:
     applied: list[str] = []
 
     import_anchor = "from streamlit_cytoscape import (\n    streamlit_cytoscape,\n    NodeStyle,\n    EdgeStyle,\n)\n"
-    shared_imports = import_anchor + "\nfrom ikf.app_adoption import (\n    legacy_parse_evidence_location,\n    scope_graph_by_documents,\n    shared_content_retention_hours,\n    filter_catalogue_rows,\n    resolve_source_route,\n    resolve_effective_document_scope,\n    is_semantic_relationship,\n    validate_human_relationship_review,\n    validate_app_shield_review,\n    validate_app_emcip_review,\n)\n"
+    shared_imports = import_anchor + "\nfrom ikf.app_adoption import (\n    legacy_parse_evidence_location,\n    scope_graph_by_documents,\n    shared_content_retention_hours,\n    filter_catalogue_rows,\n    resolve_source_route,\n    resolve_effective_document_scope,\n    validate_human_relationship_review,\n    validate_app_shield_review,\n    validate_app_emcip_review,\n)\n"
     if import_anchor not in source:
         raise RuntimeError("Shared-policy App adoption could not locate the import anchor.")
     source = source.replace(import_anchor, shared_imports, 1)
@@ -266,12 +284,5 @@ def transform_app_source(source: str) -> tuple[str, tuple[str, ...]]:
         name="graph_document_scope",
     )
     applied.append("graph_document_scope")
-
-    source = source.replace(
-        "        if edge.get(\"edge_class\") != \"STRUCTURAL\"\n    ]\n",
-        "        if is_semantic_relationship(edge.get(\"relationship\"))\n    ]\n",
-        1,
-    )
-    applied.append("semantic_review_filter")
 
     return source, tuple(applied)
