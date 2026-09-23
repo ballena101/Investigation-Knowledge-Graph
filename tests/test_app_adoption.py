@@ -15,6 +15,7 @@ def test_real_app_source_adopts_shared_policy_and_compiles():
 
     assert set(applied) == {
         "shared_imports",
+        "class_d_llama_alias",
         "retention_policy",
         "evidence_location_parser",
         "source_catalogue_routing",
@@ -25,6 +26,7 @@ def test_real_app_source_adopts_shared_policy_and_compiles():
         "graph_document_scope",
     }
 
+    assert 'CLASS_D_OLLAMA_LLAMA70_URL = os.getenv("CLASS_D_OLLAMA_LLAMA70_URL")' in transformed
     assert "shared_content_retention_hours(information_class)" in transformed
     assert "legacy_parse_evidence_location(value)" in transformed
     assert "filter_catalogue_rows(" in transformed
