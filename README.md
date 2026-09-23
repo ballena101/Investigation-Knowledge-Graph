@@ -1,25 +1,26 @@
 # Safety Investigation Knowledge & AI Support
 
-Proof of Concept for artificial-intelligence-assisted safety investigation analysis, evidence-grounded knowledge structuring and investigator review.
+Proof of Concept for AI-assisted safety-investigation analysis, evidence-grounded knowledge structuring and investigator review.
 
 ## Product identity
 
-**Working product name:** Safety Investigation Knowledge & AI Support
+**Working product name:** Safety Investigation Knowledge & AI Support / IKF.
 
-The product is not defined by a knowledge graph alone. The knowledge graph is
-one analytical representation used inside a broader safety-investigation
-support environment.
+The product is not defined by a knowledge graph alone. The graph is one analytical representation inside a wider investigation-support environment.
 
-The PoC evaluates how AI and structured-knowledge tools can support
-investigators while preserving evidence provenance, confidentiality,
-human-review authority and clear separation between source evidence and
-machine-generated analysis.
+IKF evaluates how AI and structured-knowledge tools can support investigators while preserving:
+
+- evidence provenance;
+- confidentiality and data minimisation;
+- clear separation between source evidence and machine-generated analysis;
+- human-review authority;
+- reviewable and reproducible analytical outputs.
 
 ## Purpose
 
-This repository contains a standalone Proof of Concept (PoC) for representing investigation knowledge as an evidence-grounded graph.
+IKF is the investigator-facing **orchestration, analysis, review and validated-knowledge layer**.
 
-The current PoC is the **generic Class D dual-model investigation-analysis workflow**. The Commodore Clipper 2010 case is retained as a controlled reference/benchmark, not as the scope of the product. The longer-term objective is broader: analyse one document, multiple documents, or an entire investigation evidence set, including heterogeneous sources such as:
+Its long-term objective is to support one document, multiple documents or an entire investigation evidence corpus, including material such as:
 
 - accident investigation reports;
 - interview transcripts;
@@ -31,287 +32,250 @@ The current PoC is the **generic Class D dual-model investigation-analysis workf
 - recommendations and actions taken;
 - other documentary evidence.
 
-The system is designed so that graph relationships remain traceable to source evidence and analytical mappings can be reviewed rather than silently accepted.
-
-## Current PoC
-
-**Start here for the current PoC:** `docs/19_current_poc_functional_specification.md`.
-
-It is the authoritative functional description. Commodore Clipper material is
-reference/benchmark documentation only.
-
-
-The current PoC demonstrates:
-
-- documents or encrypted direct text as source input;
-- an investigator-defined question/objective;
-- information classification A/B/C/D;
-- Class D selection of GPT-OSS 20B, Llama 3.3 70B Instruct, or both through Databricks Unity Gateway;
-- one evidence extraction followed by independent model runs;
-- side-by-side model outputs when both are selected;
-- evidence-grounded graph generation;
-- privacy validation before graph publication;
-- de-identified analytical output by default;
-- a 5-question/day Llama 3.3 70B usage limit per user;
-- admin-controlled quota reset;
-- Neo4j graph projection and Databricks App exploration;
-- human-review provenance.
-
-The **Commodore Clipper 2010** graph remains a controlled reference case for
-methodology and future model benchmarking.
-
-## Long-term target
-
-The future target is an investigation knowledge environment in which:
+The intended knowledge flow is:
 
 ```text
-heterogeneous source material
+source material
         ↓
 evidence units / passages / utterances
         ↓
-LLM-assisted analytical extraction
+AI-assisted analytical extraction
         ↓
-candidate entities / events / factors / claims / findings
+candidate entities / events / factors / findings
         ↓
 candidate relationships
         ↓
-evidence grounding and validation
+evidence grounding
         ↓
 human review where required
         ↓
-case graph + cross-case graph
+validated case knowledge
         ↓
-query / comparison / pattern discovery
-```
-
-The future unit of analysis is therefore not "one PDF". It is an **investigation evidence corpus** that may contain many source types.
-
-## Relationship to MAIRA
-
-This project is independent from MAIRA.
-
-A later generic-ingestion stage may reuse MAIRA's existing capabilities for:
-
-- report acquisition;
-- PDF extraction;
-- page and passage generation;
-- document provenance;
-- retrieval.
-
-This avoids rebuilding mature document-processing components. The Investigation Knowledge Graph layer remains conceptually separate and adds evidence-grounded entities, relationships, graph structure, analytical mappings and review.
-
-The current Commodore Clipper PoC reuses existing Delta tables that were created during the workshop under the `bdw_analysis_prod.maira` schema. This is an implementation convenience, not project ownership. A dedicated schema is recommended for future development.
-
-## Documentation
-
-Start with `docs/README.md`. It separates the current generic/Class D PoC
-documentation from the older Commodore Clipper reference-case material.
-
-The two most important current documents are:
-
-- `docs/17_class_d_dual_model_poc.md`
-- `docs/18_model_validation_and_feedback.md`
-
-## Repository structure
-
-```text
-app/
-    app.py
-    app.yaml
-    requirements.txt
-
-docs/
-    00_project_charter.md
-    01_current_poc_scope.md
-    02_methodology.md
-    03_architecture.md
-    04_data_model.md
-    05_review_and_governance.md
-    06_source_types.md
-    07_future_corpus_analysis.md
-    08_roadmap.md
-    09_commodore_clipper_case.md
-    10_manual_relationship_review.md
-    11_manual_emcip_mapping_review.md
-    12_group_analysis_architecture.md
-    13_automated_analysis_orchestration.md
-    14_tooling_inventory.md
-    15_data_protection_confidentiality.md
-    16_unified_input_and_model_routing.md
-    17_class_d_dual_model_poc.md
-    18_model_validation_and_feedback.md
-    19_current_poc_functional_specification.md
-    20_class_d_neo4j_assurance.md
-    21_class_d_model_services_and_first_benchmark.md
-
-notebooks/
-    01_neo4j_connection_test.py
-    02_publish_commodore_clipper_graph.py
-    03_enrich_node_labels.py
-    04_enrich_edge_evidence.py
-    05_validate_neo4j_projection.py
-    06_configure_databricks_app_resources.py
-
-sql/
-    01_future_human_review_tables.sql
+cross-case retrieval / comparison / pattern discovery
 ```
 
 ## Core principle
 
-> Evidence first. Analysis is reviewable. Graph relationships are not accepted solely because they are plausible.
+> **Evidence first. Analysis is reviewable. Graph relationships are not accepted solely because they are plausible.**
 
 Chronology, causality, contribution and effect are distinct concepts and must not be conflated.
 
-## Current technology
+## Relationship to MAIRA
 
-See `docs/14_tooling_inventory.md` for the authoritative tool-by-tool inventory,
-including role, status and transition decisions.
+IKF and MAIRA have distinct roles.
+
+**MAIRA** is the canonical investigation-evidence layer for published investigation material, including:
+
+- source documents;
+- canonical passages;
+- page/provenance metadata;
+- governed terminology;
+- governed retrieval.
+
+**IKF** consumes those capabilities and adds:
+
+- investigator-facing orchestration;
+- structured analytical extraction;
+- QuestionRun / Ask workflows;
+- evidence-grounded graph and findings views;
+- human relationship review;
+- EMCIP mapping review;
+- SHIELD two-gate classification;
+- cross-case and similar-case use of validated knowledge.
+
+IKF must not build parallel substitutes for canonical MAIRA document/passages/terminology functionality.
+
+## Current App capabilities
+
+The current operational application is organised by user intent:
+
+1. **Analyse Documents** — question-independent structured analysis and processing status.
+2. **Findings & Evidence** — item-level analytical content, supporting evidence and cited source pages.
+3. **Knowledge Graph** — graph exploration and evidence-scoped graph questions.
+4. **Ask / Compare LLMs** — scoped questions over processed case evidence or governed reference documents.
+5. **Review & Validate** — human relationship, EMCIP and SHIELD governance.
+6. **News & Alerts** — external/unvalidated signals kept separate from validated investigation knowledge.
+
+Machine-generated outputs remain candidate knowledge unless the relevant human-review workflow records a validating decision.
+
+## Source ownership and controlled knowledge
+
+- Class B published investigation material → **MAIRA**.
+- Class A public/technical material → governed **IKF** source route.
+- Class C internal/restricted material → governed **IKF** source route.
+- Class D protected/confidential material → governed **IKF** protected route.
+- Legal / IMO / technical references → separate **REFERENCE_CONTEXT** corpus.
+- SHIELD taxonomy → separate persistent **SHIELD** corpus.
+- EMCIP controlled vocabulary → MAIRA-governed vocabulary consumed by IKF.
+
+## Human-governance sequence
+
+A core design rule is:
+
+```text
+AI candidate
+   ↓
+evidence-grounded review
+   ↓
+human decision
+   ↓
+validated knowledge
+   ↓
+controlled downstream classification/use
+```
+
+For SHIELD specifically:
+
+1. Gate 1 — the contributing factor must first be human validated;
+2. Gate 2 — the LLM may propose a SHIELD mapping, but the SHIELD mapping itself requires a separate human decision.
+
+## Cost-efficient validation strategy
+
+Databricks is a cloud execution environment with direct cost. IKF therefore does **not** use Databricks as the routine development/debugging environment.
+
+The default validation hierarchy is:
+
+```text
+local/static tests
+        ↓
+frozen benchmark replay
+        ↓
+mocked/contract integration tests
+        ↓
+release-candidate freeze
+        ↓
+minimal Databricks integration proof
+```
+
+A validator notebook does not imply a fresh analysis or a fresh LLM call.
+
+Persisted analyses, QuestionRuns, retrieval snapshots, model outputs, graphs and review artefacts should be reused whenever the behaviour being tested is downstream or deterministic.
+
+Databricks is reserved for checks that genuinely require the deployed environment, for example:
+
+- Unity Catalog permissions;
+- Files API access with user authorisation;
+- Lakeflow Job/resource wiring;
+- deployed model endpoint connectivity;
+- cloud Neo4j connectivity;
+- deployed Streamlit compatibility;
+- real governed source-page rendering;
+- representative end-to-end integration proof.
+
+See `docs/30_cost_efficient_validation_strategy.md`.
+
+## Current milestone
+
+The project is now in **IKF baseline consolidation** rather than broad feature expansion.
+
+Priority order:
+
+1. consolidate current architecture/documentation;
+2. move stable business logic progressively out of the large Streamlit file and Databricks-only notebooks into reusable `src/ikf/` modules;
+3. expand automated regression tests;
+4. replay frozen benchmark/model artefacts for downstream validation;
+5. freeze a release candidate;
+6. perform one economical Databricks integration session using shared persisted artefacts;
+7. record capability maturity and address failures locally wherever possible;
+8. resume major capability expansion only after the baseline is stable.
+
+## Validation maturity states
+
+Important capabilities should use the same maturity terminology:
+
+1. **Designed**
+2. **Code complete**
+3. **Local validated**
+4. **Runtime validated**
+5. **Benchmark validated** — where model behaviour is relevant
+6. **Production ready**
+
+This avoids treating `code complete` as equivalent to deployed proof while also avoiding unnecessary Databricks execution for deterministic logic.
+
+## Benchmark and model-quality objectives
+
+IKF is moving from proving that a pipeline runs to measuring whether model behaviour is acceptable.
+
+Important evaluation dimensions include:
+
+- semantic precision and recall;
+- evidence grounding;
+- extraction / graph completeness and coverage;
+- unsupported inference;
+- causal overreach;
+- human amendment/rejection/acceptance rate;
+- model stability/repeatability;
+- privacy leakage;
+- citation/provenance correctness.
+
+The Commodore Clipper reference case and the controlled MAIRA/IKF benchmark assets remain useful for regression and methodology testing, but they are not the product scope.
+
+## Repository structure
+
+```text
+app/       Databricks/Streamlit investigator-facing application
+config/    governed configuration and reference-source definitions
+docs/      architecture, governance, validation and roadmap documentation
+notebooks/ Databricks setup, jobs, processing and integration validators
+sql/       persistence/review schema assets
+src/ikf/   reusable IKF Python logic
+tests/     local automated regression tests
+```
+
+The repository intentionally does **not** store investigation evidence, model-output dumps or temporary case artefacts.
+
+## Documentation
+
+Start with `docs/README.md`.
+
+The authoritative current baseline is the combination of:
+
+- `docs/08_roadmap.md`
+- `docs/25_implementation_status_and_roadmap.md`
+- `docs/28_app_information_architecture.md`
+- `docs/30_cost_efficient_validation_strategy.md`
+
+Key supporting documents include:
+
+- `docs/15_data_protection_confidentiality.md`
+- `docs/18_model_validation_and_feedback.md`
+- `docs/22_maira_passage_integration.md`
+- `docs/23_maira_bosuil_integration_plan.md`
+- `docs/27_reference_context_retrieval.md`
+- `docs/29_shield_two_gate_workflow.md`
+
+Earlier documents may retain historical PoC decisions and reference-case material. They should not override the current baseline documents above.
+
+## Current technology
 
 Core stack:
 
-- GitHub: authoritative source control / target single source of truth
-- Databricks Apps + Streamlit: investigator-facing application
-- Databricks Lakeflow Jobs: automated processing orchestration
-- Unity Catalog + Delta Lake: governed source/evidence/provenance persistence
-- Neo4j AuraDB: property-graph projection, traversal and review metadata
-- streamlit-cytoscape: interactive graph visualisation
-- Databricks model services: LLM-assisted analytical extraction and resolution
-
-## Status
-
-Current status: **The MAIRA→IKF passage bridge, governed retrieval checkpoint, dual-model benchmark persistence, independent metric verification and canonical semantic gold matching have been validated. The current implementation focus is to converge the operational App on MAIRA's canonical evidence/taxonomy/query layer while completing generic review, EMCIP mapping and Class-D safeguards.**
-
-Immediate next steps:
-
-1. complete one clean generic A/B App run on the workspace-validated model route;
-2. migrate IKF document processing to canonical MAIRA passages and provenance;
-3. generalise relationship review and EMCIP mapping review to generated analyses;
-4. consume MAIRA's governed EMCIP registry and reviewed terminology/query logic;
-5. add governed Directive/IMO reference-context retrieval;
-6. add Class-D pre-flight fail-closed detection and complete Class-D operational validation;
-7. apply SHIELD only after human validation of contributing factors.
-
-See `docs/23_maira_bosuil_integration_plan.md` for the ordered integration plan.
-
-
-## Data protection and confidentiality
-
-The project may process investigation material subject to legal,
-organisational and personal-data protections.
-
-The authoritative project policy is:
-
-`docs/15_data_protection_confidentiality.md`
-
-Key rule: technical capability is not equivalent to authorisation. Raw
-confidential investigation evidence must not be introduced into a component
-until the permitted processing path, access controls, data location, retention,
-logging and vendor/processor implications have been confirmed.
-
-For the current PoC, published/non-sensitive investigation material is the
-preferred validation dataset.
-
+- GitHub — authoritative code/documentation source of truth;
+- Databricks Apps + Streamlit — investigator-facing deployed application;
+- Databricks Lakeflow Jobs — cloud orchestration where required;
+- Unity Catalog + Delta Lake — governed evidence/provenance persistence;
+- Neo4j AuraDB — graph projection, traversal and review metadata;
+- streamlit-cytoscape — interactive graph visualisation;
+- Databricks model services — governed LLM execution routes.
 
 ## Privacy-by-design mission
 
-A core mission of the Investigation Knowledge Graph is not merely to document
-legal/confidentiality obligations, but to **actively reduce unnecessary
-exposure of protected investigation and personal information throughout the
-analysis lifecycle**.
+The project actively aims to reduce unnecessary exposure of protected investigation and personal information.
 
-The product follows these default principles:
+Default principles include:
 
 - keep raw evidence in governed storage;
 - expose only the minimum evidence needed to each processing step;
 - prefer passage-level processing over whole-corpus disclosure;
 - preserve original evidence separately from analytical output;
-- de-identify analytical outputs by default;
-- represent people by functional role rather than personal name where possible;
-- omit emails, telephone numbers, addresses, personal IDs, dates of birth,
-  medical details and other unnecessary identifying data from summaries,
-  findings and graph labels;
-- avoid re-identification through combinations of otherwise innocuous details;
-- retain explicit provenance so an authorised investigator can trace an
-  analytical statement back to the protected source without reproducing that
-  source broadly;
-- require explicit authorisation before a workflow deliberately retains a
-  personal identity in an analytical output.
+- de-identify analytical output by default;
+- retain explicit provenance without unnecessarily reproducing protected source material;
+- require explicit authorisation before deliberately retaining personal identity in analytical output.
 
-This is a product-design objective as well as a compliance safeguard.
-
-
-## Information-class routing
-
-All four classes remain supported:
-
-- A — public/technical → Meta Llama 3.3 70B Instruct
-- B — published/non-sensitive investigation material → Meta Llama 3.3 70B Instruct
-- C — internal/restricted, non-Article-9 → GPT-OSS 120B
-- D — protected/Article 9 → dedicated GPT-OSS 20B, Llama 3.3 70B, or both
-
-**Class D is an additional protected-data route. It does not replace A/B/C.**
-Only D adds dual-model comparison, the Llama daily quota and the stricter
-protected-evidence handling rules.
-
-See `docs/19_current_poc_functional_specification.md` for the authoritative
-functional description and `docs/15_data_protection_confidentiality.md` for
-the confidentiality control mapping.
-
-## Unified analysis entry modes
-
-The App supports two source-ingress methods:
-
-- Documents — select 1–5 indexed source documents;
-- Direct text — write/paste source text and construct a knowledge graph from it.
-
-Both routes use the same evidence-grounded pipeline and privacy controls.
-
-Model routing is determined by information class:
-
-- A/B → `system.ai.meta-llama-3-3-70b-instruct`
-- C → `system.ai.gpt-oss-120b`
-- D → dedicated IKG GPT-OSS 20B and/or Llama 3.3 70B model services through Databricks Unity Gateway; fail closed if a requested model service is unavailable
-
-See `docs/16_unified_input_and_model_routing.md`.
-
-Lovable is not part of the IKG architecture.
-
-
-## LLM disclosure and Article 9 suitability
-
-The App must disclose every model route used by the PoC.
-
-| Information class | Model | Serving route | Confidentiality position | Article 9 / Class D position |
-|---|---|---|---|---|
-| A | Meta Llama 3.3 70B Instruct | Databricks `system.ai.meta-llama-3-3-70b-instruct` | Public / non-sensitive | Not approved for protected Class D evidence |
-| B | Meta Llama 3.3 70B Instruct | Databricks `system.ai.meta-llama-3-3-70b-instruct` | Published / non-sensitive | Not approved for protected Class D evidence |
-| C | OpenAI GPT-OSS 120B | Databricks-hosted `system.ai.gpt-oss-120b` | Internal / restricted | Not automatically approved for Article 9 evidence |
-| D | OpenAI GPT-OSS 20B | Dedicated Databricks endpoint | Protected / confidential | Conditionally suitable only after endpoint approval |
-| D | Meta Llama 3.3 70B Instruct | Dedicated Databricks endpoint | Protected / confidential | Conditionally suitable only after endpoint approval |
-
-The Article 9 column is an internal processing-governance classification, not a
-legal certification.
-
-For Class D, the system must fail closed until the selected endpoint's
-networking, access control, logging, retention, data flow and organisational /
-legal / security approval have been validated.
-
-See:
-
-- `docs/15_data_protection_confidentiality.md`
-- `docs/19_current_poc_functional_specification.md`
-
+Technical capability is not equivalent to processing authorisation.
 
 ## Retention and repository cleanliness
 
-The PoC uses a minimised retention model:
+The PoC follows a minimised-retention approach for transient analytical material. The authoritative confidentiality and retention requirements are documented in `docs/15_data_protection_confidentiality.md`.
 
-- raw direct-text temporary payload → purge after successful extraction;
-- raw Class D source ingress → maximum 24 hours;
-- derived/digested analytical artefacts → 72 hours by default;
-- validation/benchmark cases → retained only by explicit decision.
-
-An hourly cleanup Job purges expired Delta/Neo4j analytical artefacts.
-
-GitHub is code/documentation only. Investigation evidence, model outputs,
-temporary exports and generated case artefacts are not repository content.
+GitHub remains code/documentation only. Investigation evidence, generated case artefacts, temporary exports and raw model-output dumps are not repository content.
