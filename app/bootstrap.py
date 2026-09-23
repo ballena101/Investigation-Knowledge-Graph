@@ -1,19 +1,17 @@
-"""Databricks App bootstrap for incremental shared-policy adoption.
+"""Databricks App bootstrap for shared IKF policy modules.
 
-The canonical deterministic governance logic lives in ``src/ikf``. During the
-transition away from the historical monolithic ``app.py``, this bootstrap
-loads that package and applies a strict, tested source transformation so the
-running App calls the shared policy modules without requiring a risky one-shot
-rewrite of the full Streamlit application.
+The canonical deterministic governance logic lives in ``src/ikf``.
 
-Two source layouts are supported:
+Supported layouts:
 
-1. repository checkout: ``app/`` beside ``src/``;
-2. generated Databricks App bundle: ``src/`` inside the deployed App folder.
+1. repository checkout: ``app/`` beside ``src/`` — the strict transitional
+   source transformation is applied in memory;
+2. generated Databricks App bundle: ``src/`` inside the deployed App folder
+   and ``.ikf_shared_policy_materialized`` present — the App source was already
+   transformed during the local bundle build and is executed directly.
 
-If neither layout contains the shared package, the legacy App still starts
-unchanged. That fallback is temporary and should be removed once the generated
-bundle is the only supported deployment source.
+The generated bundle is the preferred deployment source because policy
+adoption is then validated before any Databricks compute is used.
 """
 
 from __future__ import annotations
@@ -24,6 +22,7 @@ import sys
 
 APP_DIR = Path(__file__).resolve().parent
 APP_FILE = APP_DIR / "app.py"
+MATERIALIZED_MARKER = APP_DIR / ".ikf_shared_policy_materialized"
 
 SRC_CANDIDATES = (
     APP_DIR.parent / "src",
@@ -41,9 +40,10 @@ if SRC_DIR is not None:
     if src_text not in sys.path:
         sys.path.insert(0, src_text)
 
-    from ikf.app_adoption import transform_app_source
+    if not MATERIALIZED_MARKER.is_file():
+        from ikf.app_adoption import transform_app_source
 
-    source, _applied_policy_adoptions = transform_app_source(source)
+        source, _applied_policy_adoptions = transform_app_source(source)
 
 code = compile(source, str(APP_FILE), "exec")
 exec(code, {"__name__": "__main__", "__file__": str(APP_FILE)})
