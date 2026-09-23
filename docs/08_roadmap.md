@@ -1,12 +1,73 @@
-# Roadmap
+# IKF roadmap
 
-## Phase 0 — Reference methodology demonstrator
+_Last updated: 2026-09-23_
 
-Status: complete / retained as benchmark.
+## 1. Current direction
 
-Reference case:
+IKF is the investigator-facing orchestration, analysis, review and validated-knowledge layer.
 
-- Commodore Clipper 2010.
+MAIRA remains the canonical investigation-evidence layer for published investigation material, passages, provenance, governed terminology and governed retrieval.
+
+The current priority is **baseline consolidation and economical validation**, not broad feature expansion.
+
+The engineering rule is:
+
+> **Validate locally and in GitHub first. Use Databricks only for integration proof that genuinely requires the Databricks runtime, governed cloud resources or deployed model services.**
+
+See `30_cost_efficient_validation_strategy.md`.
+
+## 2. Capability objectives
+
+IKF development is now organised around seven stable objectives.
+
+### O1 — Evidence integrity
+
+Every analytical conclusion must remain traceable to source evidence.
+
+### O2 — Investigator augmentation
+
+AI supports identification, organisation, comparison and questioning of investigation information without replacing investigator judgement.
+
+### O3 — Governed knowledge creation
+
+Machine-generated candidate knowledge must remain distinguishable from human-validated knowledge.
+
+### O4 — Cross-case intelligence
+
+Validated structured knowledge should support similar-case retrieval, comparison and later recurring-pattern analysis.
+
+### O5 — Controlled classification
+
+EMCIP and SHIELD mappings remain governed proposals until the required human decision is recorded.
+
+### O6 — Privacy and confidentiality by design
+
+Processing routes must minimise unnecessary exposure and respect information classification.
+
+### O7 — Measurable quality
+
+The project must evaluate grounding, semantic precision/recall, completeness/coverage, unsupported inference, causal overreach, privacy leakage and model stability rather than only whether an LLM produces plausible output.
+
+## 3. Product capability model
+
+The current investigator-facing architecture is:
+
+1. **Analyse Documents** — question-independent structured analysis and processing status;
+2. **Findings & Evidence** — item-level evidence inspection and cited source pages;
+3. **Knowledge Graph** — graph exploration and evidence-scoped graph questions;
+4. **Ask / Compare LLMs** — scoped questions over processed evidence or governed reference documents;
+5. **Review & Validate** — relationship, EMCIP and SHIELD governance;
+6. **News & Alerts** — external signals kept separate from validated investigation knowledge.
+
+The Knowledge Graph is a central representation, but it is not the definition of the product.
+
+## 4. Phase history
+
+### Phase 0 — Reference methodology demonstrator
+
+**Status: complete / retained as benchmark.**
+
+Reference case: Commodore Clipper 2010.
 
 Delivered:
 
@@ -20,73 +81,110 @@ Delivered:
 Purpose now:
 
 - methodology reference;
-- validation benchmark candidate;
-- evidence/causality exemplar.
+- regression/benchmark asset;
+- evidence and relationship-governance exemplar.
 
-## Phase 1 — Current Class D dual-model PoC
+### Phase 1 — Generic evidence-grounded PoC
 
-Status: active.
+**Status: substantially implemented; consolidation/validation active.**
 
-Goal:
+Delivered or code-complete capabilities include:
 
-Allow an investigator to supply protected/confidential source material and a
-question, run one or two privacy-oriented models against identical evidence,
-and compare evidence-grounded knowledge graphs.
-
-Implemented in repository:
-
-- document and direct-text inputs;
-- encrypted direct-text ingress;
+- document and direct-text ingress;
 - A/B/C/D information classes;
-- GPT-OSS 20B Class D route;
-- Llama 3.3 70B Class D route;
-- model choice: 20B / 70B / both;
-- evidence extraction once;
+- MAIRA-first Class-B document/passages route;
 - independent model-run namespaces;
-- side-by-side output rendering;
-- privacy-validation stage;
-- de-identified output by default;
-- 5-question/day Llama limit;
-- administrator-only quota reset;
-- automated Lakeflow comparison workflow;
-- Class D comparison finalizer.
+- structured analytical extraction;
+- evidence/page provenance;
+- explicit QuestionRun workflow;
+- scoped Ask / Compare;
+- reference-context separation;
+- generic relationship review;
+- EMCIP governed mapping workflow;
+- SHIELD two-gate workflow;
+- Knowledge Graph workspace;
+- similar MAIRA case retrieval;
+- privacy/classification pre-screen;
+- Class-D protected-data route and safeguards;
+- coverage-preserving graph/relationship improvements.
 
-Environment/deployment work still required:
+The remaining work in this phase is not primarily new capability development. It is consolidation, automated regression testing and economical runtime proof.
 
-- deploy/register approved open-weight models;
-- create/approve dedicated serving endpoints;
-- attach `class_d_analysis_job` to the App;
-- configure encryption/admin secrets;
-- validate networking, logging and retention;
-- implement and test automatic Class D source purge within the 24-hour maximum;
-- run the first end-to-end Class D comparison.
+## 5. Current milestone — IKF baseline consolidation
 
-## Phase 2 — Model validation and review
+### M1 — Documentation and architecture consolidation
 
-Goal:
+- keep GitHub as the authoritative project record;
+- maintain one current architecture and one current operational status view;
+- clearly mark historical/superseded PoC descriptions;
+- avoid adding parallel canonical models to MAIRA;
+- keep News, REFERENCE_CONTEXT, EMCIP and SHIELD source roles distinct.
 
-Move from "the pipeline runs" to "model behaviour is measured."
+### M2 — Local-first refactoring and regression testing
 
-Add/complete:
+- progressively move stable business rules from `app/app.py` and Databricks-only notebooks into `src/ikf/`;
+- expand `tests/` beyond the current classification pre-screen test;
+- add deterministic fixtures for passages, citations, QuestionRuns, graphs, reviews, EMCIP proposals and SHIELD decisions;
+- test retrieval boundaries, provenance and governance rules without live model calls where possible;
+- replay persisted benchmark/model artefacts for downstream regression testing.
 
-- generic relationship review for model-run graphs;
-- benchmark dataset versioning;
-- evidence-grounding metrics;
-- relationship precision/recall;
-- causal-overreach false-positive metric;
-- privacy-leakage metric;
-- graph completeness;
-- model stability/repeatability;
-- side-by-side human preference/acceptance data;
-- locked test-set governance.
+### M3 — Release-candidate freeze
 
-See:
+A Databricks deployment should occur only after:
 
-`docs/18_model_validation_and_feedback.md`
+- local/unit/contract tests pass;
+- frozen benchmark replay passes;
+- documentation is updated;
+- the release candidate is explicitly frozen for integration validation.
 
-## Phase 3 — Controlled learning loop
+### M4 — Economical Databricks integration proof
 
-Use human-validated graphs as:
+Default target for a normal validation session:
+
+- one App deployment;
+- one fresh representative Class-B MAIRA analysis;
+- reuse that analysis across all applicable read-only validators;
+- one scoped QuestionRun when Ask integration needs proof;
+- no LLM rerun for presentation-only, graph-layout or deterministic-governance validation;
+- reuse existing SHIELD and REFERENCE_CONTEXT indexes unless their indexing implementation changed;
+- run Class-D live inference only when Class D itself is the milestone under test.
+
+Databricks is therefore an integration-proof environment, not the routine development/debugging environment.
+
+## 6. Validation status model
+
+All important capabilities should eventually be tracked using the same maturity states:
+
+1. **Designed**
+2. **Code complete**
+3. **Local validated**
+4. **Runtime validated**
+5. **Benchmark validated** — where model behaviour is relevant
+6. **Production ready**
+
+This prevents `code complete` from being confused with deployed proof while also avoiding unnecessary cloud execution for deterministic logic that can be validated locally.
+
+## 7. Model-quality and benchmark work
+
+The next evaluation framework should generalise the existing controlled benchmark methodology.
+
+Required measures include:
+
+- semantic relationship precision and recall;
+- evidence grounding;
+- graph/extraction completeness and coverage;
+- unsupported-inference rate;
+- causal-overreach rate;
+- human amendment/rejection/acceptance rates;
+- model repeatability/stability;
+- privacy leakage;
+- citation/provenance correctness.
+
+Frozen evidence, retrieval snapshots and adjudicated gold should be reused wherever possible rather than regenerating model outputs.
+
+## 8. Controlled learning loop
+
+After the baseline is stable, human-validated material may be used progressively as:
 
 1. evaluation ground truth;
 2. retrieval knowledge;
@@ -95,91 +193,73 @@ Use human-validated graphs as:
 
 Fine-tuning is optional and later.
 
-Critical rule:
+A benchmark case used for training/examples cannot simultaneously remain an independent test case for the same model/version.
 
-A benchmark case used for training/examples cannot simultaneously serve as an
-independent test case for the same model/version.
+## 9. Future functional expansion
 
-## Phase 4 — Heterogeneous investigation evidence
+### Heterogeneous investigation evidence
 
-Extend source support to:
+Extend operational support beyond published PDF reports to evidence such as:
 
 - interview transcripts;
 - witness statements;
 - VDR / communications transcripts;
-- procedures;
+- procedures and manuals;
 - correspondence;
 - technical documentation;
 - images/diagrams where an approved multimodal route exists.
 
-## Phase 5 — Corpus and cross-case knowledge
+### Cross-case knowledge
 
-Add:
+Move beyond individual similar-case retrieval toward:
 
-- graph normalisation across cases;
-- cross-case traversal;
+- normalised cross-case graph traversal;
 - recurring-factor analysis;
-- similarity search;
+- recurring safety-issue patterns;
 - corroboration / contradiction;
-- recommendations/actions chain.
+- recommendation/action chains;
+- pattern discovery over human-validated knowledge.
 
-## Phase 6 — Production hardening
+### News & Alerts
 
-Requirements include:
+Complete the external-signals capability without mixing unvalidated alerts with validated investigation knowledge.
 
-- stronger PII/NER validation;
-- access control;
+News should remain a separate source class/workspace and may link to cases or vessels only with explicit provenance and status labels.
+
+## 10. Production hardening
+
+Production-readiness work includes:
+
+- access-control verification;
 - audit logging;
-- retries;
 - endpoint/version governance;
-- performance and cost testing;
-- enforced raw Class D source purge within 24 hours;
-- retention/deletion policy for Delta derivatives, model outputs, logs and backups;
-- private networking validation;
-- review workload metrics;
-- production monitoring;
-- GitHub-native deployment and retirement of the transitional workspace source.
+- stronger PII/NER validation;
+- Class-D networking/security approval;
+- retention/deletion verification;
+- monitoring and operational alerts;
+- retry/failure handling;
+- performance and cost monitoring;
+- deployment/rollback procedure;
+- GitHub-native deployment discipline;
+- review-workload metrics.
 
+## 11. Immediate work order
 
-## Consolidated integration priority — 2026-09-21
+Until the baseline milestone is complete, the recommended order is:
 
-The implementation sequence is now governed by
-`docs/23_maira_bosuil_integration_plan.md`.
+1. consolidate current architecture/documentation;
+2. increase local modularisation and automated tests;
+3. reuse frozen benchmark outputs to validate downstream behaviour;
+4. freeze one release candidate;
+5. perform one economical Databricks integration session;
+6. record capability maturity from that session;
+7. fix failures locally wherever possible;
+8. only then resume major capability expansion.
 
-Key correction: IKF must converge on MAIRA for investigation-document passages,
-EMCIP controlled vocabulary, governed query specifications, terminology
-normalisation, deterministic retrieval and supported deterministic relationship
-assessment. IKF must not build parallel substitutes for those capabilities.
+## 12. Cost-control principle
 
-Bosuil remains an external design reference only. Its useful ideas are evaluated
-as measurable improvements inside the MAIRA→IKF architecture rather than
-introduced as a third runtime stack.
+A notebook number or validator does not imply a separate Databricks run.
 
-Immediate priorities are:
+Read-only validators should reuse persisted analyses, QuestionRuns, retrieval snapshots, graphs and review artefacts. A live model call should occur only when the behaviour under test materially depends on the model, prompt, model context, retrieval result or endpoint itself.
 
-1. finish one clean generic A/B end-to-end App run;
-2. migrate the IKF document path to canonical MAIRA passages;
-3. generalise relationship and EMCIP review to generated analyses;
-4. consume the governed MAIRA EMCIP registry for mapping;
-5. add versioned Directive/IMO reference-context retrieval;
-6. add Class-D pre-flight fail-closed detection;
-7. after human validation of a contributing factor, let the LLM suggest SHIELD classification and require a separate human validation of that SHIELD mapping.
-
-## Capability-based App interface — 2026-09-22
-
-The App now presents five direct user capabilities rather than requiring a
-linear traversal of the whole pipeline:
-
-1. News & Alerts;
-2. Analyse Documents;
-3. Compare LLMs;
-4. Review & Validate;
-5. Findings & Knowledge.
-
-The knowledge graph remains central underneath and available as an optional
-view. The LLM will be embedded contextually in News & Alerts and Findings &
-Knowledge. Any LLM-assisted graph correction must remain a proposal until a
-human approves it. Functions that are not connected yet are presented only as
-disabled, clearly labelled previews.
-
-See `docs/24_simple_capability_ui.md`.
+See `30_cost_efficient_validation_strategy.md` for the authoritative validation policy.
