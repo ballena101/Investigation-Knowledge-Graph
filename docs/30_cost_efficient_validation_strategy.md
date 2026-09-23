@@ -12,6 +12,24 @@ The default engineering rule is:
 
 This rule applies to new development, regression testing, UI changes, retrieval logic, graph logic, review workflows and release validation.
 
+## 0. Mandatory cost gate before cloud validation
+
+Before any new IKF Databricks validation session, perform the following steps in order:
+
+1. run the read-only billing audit in `sql/02_databricks_cost_audit.sql`;
+2. record the current usage/cost baseline by billing origin product, SKU and Lakeflow job/run where available;
+3. confirm whether the IKF Databricks App is currently running and stop it when it is not required for the planned validation;
+4. confirm that no dedicated model-serving or other continuously billed resource is being kept active solely for development convenience;
+5. define the exact cloud checks required for the release candidate;
+6. reuse existing persisted analyses, retrieval snapshots, QuestionRuns and model outputs wherever possible;
+7. only then start the minimum necessary Databricks integration proof.
+
+The billing audit is intentionally read-only. Running the audit must not trigger an IKF analysis, a model inference call or a Lakeflow processing Job.
+
+The query reports **effective Databricks list-price cost** from `system.billing.usage` joined to `system.billing.list_prices`. It is a development-cost visibility measure, not necessarily the final invoice amount: negotiated discounts, committed-use agreements, cloud-provider charges and taxes may differ.
+
+The project should maintain a simple cost baseline across release-candidate validation sessions so that unexpected spend can be detected before further cloud execution.
+
 ## 1. Validation hierarchy
 
 IKF uses four validation layers, in this order.
@@ -91,11 +109,13 @@ Recommended sequence:
 3. replay frozen benchmark fixtures;
 4. resolve failures locally;
 5. freeze the release candidate;
-6. deploy once to Databricks;
-7. run the smallest representative integration test set;
-8. record PASS/FAIL and cloud-specific findings;
-9. return to local development for corrections where possible;
-10. redeploy only when a cloud-dependent correction genuinely requires it.
+6. run the mandatory cost gate and record the cost baseline;
+7. deploy once to Databricks;
+8. run the smallest representative integration test set;
+9. record PASS/FAIL and cloud-specific findings;
+10. record the post-session cost delta when billing records become available;
+11. return to local development for corrections where possible;
+12. redeploy only when a cloud-dependent correction genuinely requires it.
 
 ## 3. Reuse one analysis across multiple validators
 
@@ -175,6 +195,8 @@ A normal release-candidate cloud session should aim to use the minimum set of li
 
 Default target:
 
+- run the cost audit first;
+- ensure the App is stopped before and after the session unless it is actively required;
 - one App deployment;
 - one representative Class-B MAIRA analysis;
 - reuse that analysis across read-only validators;
