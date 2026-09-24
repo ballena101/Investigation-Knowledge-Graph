@@ -4994,10 +4994,10 @@ analysis_edge_styles = [
 
 
 def type_d_transcript_access():
-    # The app runs with a service identity. Never use its Volume grant as the
-    # end user's authority to view protected transcripts.
-    user = get_current_user_key()
-    return user != "unknown" and user in TYPE_D_TRANSCRIPT_REVIEWERS
+    # The protected IKF App access boundary authorises Type-D transcript use.
+    # We still require a resolved end-user identity so every review remains
+    # attributable; the App service identity alone is never sufficient.
+    return get_current_user_key() != "unknown"
 
 
 def list_type_d_transcripts():
@@ -5424,7 +5424,7 @@ with tab_news:
 with tab_transcriptions:
     st.subheader("Type D audio transcriptions")
     if not type_d_transcript_access():
-        st.info("Transcripts are available to designated Type D reviewers only.")
+        st.info("Type D transcript access requires a resolved authenticated App user identity.")
     else:
         try:
             transcript_files = list_type_d_transcripts()
@@ -5505,10 +5505,147 @@ with tab_transcriptions:
 with tab_new_analysis:
     st.subheader("Analyse Documents")
     st.caption(
-        "Prepare and analyse a governed evidence set from indexed documents or "
-        "direct text. Questions are asked later in Ask / Compare LLMs so the "
-        "evidence structure does not depend on one initial question."
+        "Prepare and analyse a governed evidence set from indexed documents, "
+        "reviewed Type D audio transcripts or direct text. Questions are asked later "
+        "in Ask / Compare LLMs so the evidence structure does not depend on one initial question."
     )
+
+    with st.expander("Audio / reviewed transcript — Class D", expanded=False):
+        st.caption(
+            "Audio recordings and their transcripts are always handled as Class D. "
+            "A machine transcript can be inspected here, but it cannot support Findings, "
+            "Evidence, Knowledge Graph relationships or SHIELD classification until a user "
+            "has listened to the original audio and confirmed/corrected the transcript."
+        )
+
+        if not type_d_transcript_access():
+            st.error(
+                "Your App user identity could not be resolved. Type D audio review is blocked."
+            )
+        else:
+            analysis_audio_transcripts = list_type_d_transcripts()
+            if not analysis_audio_transcripts:
+                st.info(
+                    "No machine transcripts are available in the governed Type D transcript store yet."
+                )
+            else:
+                selected_analysis_audio_transcript = st.selectbox(
+                    "Available Type D transcript",
+                    options=analysis_audio_transcripts,
+                    format_func=lambda path: path.name,
+                    key="analysis_audio_transcript_selector",
+                )
+
+                try:
+                    analysis_audio_record = read_type_d_transcript(
+                        selected_analysis_audio_transcript
+                    )
+                    analysis_audio_text = transcript_text_with_timestamps(
+                        analysis_audio_record
+                    )
+
+                    st.caption(
+                        f"Source: {analysis_audio_record.get('source_name', 'unknown')} · "
+                        f"Model: {analysis_audio_record.get('model', 'unknown')} · "
+                        f"Status: {analysis_audio_record.get('status', 'unknown')}"
+                    )
+
+                    if analysis_audio_record.get("status") == "MACHINE_GENERATED_UNVERIFIED":
+                        st.warning(
+                            "Machine-generated transcript — not validated evidence. "
+                            "Listen to the original audio and correct uncertain or inaudible spans before use."
+                        )
+
+                    analysis_audio_verified = False
+                    analysis_audio_path = Path(
+                        analysis_audio_record.get("source_path") or ""
+                    )
+                    if analysis_audio_path.is_file():
+                        with analysis_audio_path.open("rb") as analysis_audio_file:
+                            analysis_audio_bytes = analysis_audio_file.read()
+                        if (
+                            hashlib.sha256(analysis_audio_bytes).hexdigest()
+                            == analysis_audio_record.get("source_sha256")
+                        ):
+                            analysis_audio_verified = True
+                            st.audio(analysis_audio_bytes)
+                        else:
+                            st.error(
+                                "Original audio hash does not match transcript provenance. Review is blocked."
+                            )
+                    else:
+                        st.error(
+                            "Original audio is unavailable. Review is blocked because the source cannot be verified."
+                        )
+
+                    st.text_area(
+                        "Timestamped machine transcript",
+                        analysis_audio_text,
+                        height=260,
+                        disabled=True,
+                        key="analysis_audio_machine_transcript",
+                    )
+
+                    analysis_audio_reviewed_text = st.text_area(
+                        "Reviewed transcript for this analysis",
+                        value=analysis_audio_text,
+                        height=320,
+                        key=(
+                            "analysis_audio_review_"
+                            + selected_analysis_audio_transcript.name
+                        ),
+                        help=(
+                            "Correct only after listening. Keep timestamps, mark inaudible spans explicitly, "
+                            "and do not infer missing words from context or an LLM."
+                        ),
+                    )
+
+                    analysis_audio_confirmed = st.checkbox(
+                        "I listened to the original audio and checked this transcript; corrections and inaudible spans are explicit.",
+                        key=(
+                            "analysis_audio_confirm_"
+                            + selected_analysis_audio_transcript.name
+                        ),
+                    )
+
+                    if st.button(
+                        "Use reviewed audio transcript in this analysis",
+                        type="primary",
+                        disabled=not (
+                            analysis_audio_verified
+                            and analysis_audio_confirmed
+                            and analysis_audio_reviewed_text.strip()
+                        ),
+                        key="analysis_audio_use_reviewed",
+                    ):
+                        reviewed_audio_text = analysis_audio_reviewed_text.strip()
+                        reviewed_audio_hash = save_transcript_review(
+                            analysis_audio_record,
+                            reviewed_audio_text,
+                        )
+                        st.session_state["transcript_analysis_origin"] = {
+                            "source_sha256": analysis_audio_record["source_sha256"],
+                            "source_name": analysis_audio_record.get("source_name"),
+                            "source_path": analysis_audio_record.get("source_path"),
+                            "model": analysis_audio_record["model"],
+                            "text_hash": reviewed_audio_hash,
+                        }
+                        st.session_state["analysis_input_mode"] = "Direct text"
+                        st.session_state["analysis_information_class"] = "D"
+                        st.session_state["analysis_direct_text"] = reviewed_audio_text
+                        st.success(
+                            "Reviewed audio transcript loaded as the Class D source for Analyse Documents."
+                        )
+                        st.rerun()
+
+                except (
+                    OSError,
+                    ValueError,
+                    PermissionError,
+                    json.JSONDecodeError,
+                ) as exc:
+                    st.error("The Type D transcript could not be loaded safely.")
+                    st.caption(str(exc))
 
     try:
         source_documents = load_source_documents()
