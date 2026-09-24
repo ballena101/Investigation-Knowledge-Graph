@@ -1,16 +1,18 @@
-"""Deterministic Timeline V0.1 adoption for the IKF Streamlit App.
+"""Timeline V0.3 adoption for the IKF Streamlit App.
 
-The timeline is a governed representation of investigator-reviewed chronology.
-V0.1 never infers a date/time from free text and never invokes an LLM.  It can
-link a human-validated timeline event to an existing KG Event candidate while
-preserving the evidence references already attached to that KG node.
+The Timeline is a chronological projection of the same evidence-derived Event
+nodes and FOLLOWED_BY relationships used by the Knowledge Graph.  It therefore
+appears by default after analysis without requiring an investigator to build it
+manually.  Investigator-reviewed timeline events remain an overlay that can
+validate, amend or add precision without replacing the source-derived view.
+
+No additional LLM call is made by the Timeline page.
 """
 
 from __future__ import annotations
 
 
-TIMELINE_ADOPTION_VERSION = "IKF_APP_TIMELINE_ADOPTION_V0.1"
-
+TIMELINE_ADOPTION_VERSION = "IKF_APP_TIMELINE_ADOPTION_V0.3"
 
 _IMPORT_ANCHOR = "from neo4j import GraphDatabase\n"
 _IMPORT_REPLACEMENT = '''from neo4j import GraphDatabase
@@ -19,8 +21,10 @@ from ikf.timeline import (
     RELATIVE_PRECISIONS,
     TIMELINE_PHASES,
     TIMELINE_VERSION,
+    align_audio_offset,
     format_relative_seconds,
     normalise_timeline_event,
+    project_default_timeline,
     timeline_sort_key,
 )
 '''
@@ -32,8 +36,7 @@ _HELPERS = r'''
 def load_timeline_events(analysis_id):
     query = """
     MATCH (:AnalysisGroup {analysis_id: $analysis_id})
-          -[:HAS_TIMELINE_EVENT]->
-          (t:TimelineEvent)
+          -[:HAS_TIMELINE_EVENT]->(t:TimelineEvent)
     OPTIONAL MATCH (t)-[:REPRESENTS]->(n:KGNode)
     RETURN
         t.timeline_event_id AS timeline_event_id,
@@ -54,55 +57,186 @@ def load_timeline_events(analysis_id):
         toString(t.created_at) AS created_at,
         n.node_id AS source_node_id,
         n.label AS source_node_label
-    ORDER BY
-        CASE t.time_basis
-            WHEN 'ABSOLUTE' THEN 0
-            WHEN 'RELATIVE_AUDIO' THEN 1
-            ELSE 2
-        END,
-        t.event_time_start,
-        t.relative_start_s,
-        t.created_at
+    ORDER BY t.created_at
     """
     with get_driver().session() as session:
         rows = [
             record.data()
-            for record in session.run(
-                query,
-                analysis_id=analysis_id,
-            )
+            for record in session.run(query, analysis_id=analysis_id)
         ]
     return sorted(rows, key=timeline_sort_key)
 
 
-@st.cache_data(ttl=30)
-def load_timeline_event_candidates(analysis_id):
+@st.cache_data(ttl=20)
+def load_timeline_context(analysis_id):
     query = """
-    MATCH (n:KGNode {
-        analysis_id: $analysis_id,
-        node_kind: 'Event'
-    })
-    WHERE NOT EXISTS {
-        MATCH (:AnalysisGroup {analysis_id: $analysis_id})
-              -[:HAS_TIMELINE_EVENT]->
-              (:TimelineEvent)-[:REPRESENTS]->(n)
-    }
+    MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
     RETURN
-        n.node_id AS node_id,
-        n.label AS label,
-        properties(n)["description"] AS description,
-        coalesce(properties(n)["evidence_references"], []) AS evidence_references,
-        coalesce(properties(n)["evidence_locations"], []) AS evidence_locations
-    ORDER BY n.label
+        properties(a)["analysis_summary"] AS analysis_summary,
+        coalesce(properties(a)["key_findings"], []) AS key_findings,
+        coalesce(properties(a)["uncertainties"], []) AS uncertainties,
+        coalesce(properties(a)["source_conflicts"], []) AS source_conflicts,
+        properties(a)["timeline_audio_anchor"] AS timeline_audio_anchor,
+        properties(a)["timeline_audio_anchor_source"] AS timeline_audio_anchor_source,
+        properties(a)["timeline_audio_anchor_reviewed_by"] AS timeline_audio_anchor_reviewed_by
     """
     with get_driver().session() as session:
-        return [
-            record.data()
-            for record in session.run(
-                query,
-                analysis_id=analysis_id,
+        record = session.run(query, analysis_id=analysis_id).single()
+    return record.data() if record else {}
+
+
+def _timeline_evidence_order_key(event):
+    parsed = []
+    for value in event.get("evidence_locations") or []:
+        item = parse_evidence_location(value)
+        if item is None:
+            continue
+        page = item.get("page_start")
+        parsed.append(
+            (
+                str(item.get("document_id") or ""),
+                int(page) if page is not None else 10**9,
             )
-        ]
+        )
+    if parsed:
+        return min(parsed) + (str(event.get("label") or "").casefold(),)
+    return ("~", 10**9, str(event.get("label") or "").casefold())
+
+
+@st.cache_data(ttl=15)
+def load_default_timeline_projection(analysis_id):
+    with get_driver().session() as session:
+        run_record = session.run(
+            """
+            MATCH (:AnalysisGroup {analysis_id: $analysis_id})-[:HAS_MODEL_RUN]->(m:ModelRun)
+            WHERE m.status = 'COMPLETED'
+            RETURN
+                m.model_run_id AS model_run_id,
+                m.model_key AS model_key,
+                toString(m.completed_at) AS completed_at
+            ORDER BY
+                CASE WHEN m.model_key = 'PRIMARY' THEN 0 ELSE 1 END,
+                m.completed_at DESC
+            LIMIT 1
+            """,
+            analysis_id=analysis_id,
+        ).single()
+
+        model_run_id = run_record["model_run_id"] if run_record else None
+
+        if model_run_id:
+            node_query = """
+            MATCH (n:KGNode {
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id,
+                node_kind: 'Event'
+            })
+            RETURN
+                n.node_id AS node_id,
+                n.label AS label,
+                properties(n)["description"] AS description,
+                n.model_run_id AS model_run_id,
+                coalesce(properties(n)["evidence_references"], []) AS evidence_references,
+                coalesce(properties(n)["evidence_locations"], []) AS evidence_locations,
+                coalesce(properties(n)["audio_evidence_locations"], []) AS audio_evidence_locations,
+                properties(n)["source_sequence_index"] AS source_sequence_index,
+                properties(n)["explicit_time_label"] AS explicit_time_label,
+                properties(n)["explicit_time_minutes"] AS explicit_time_minutes,
+                coalesce(properties(n)["timeline_time_conflict"], false) AS timeline_time_conflict
+            """
+            edge_query = """
+            MATCH (s:KGNode {
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id,
+                node_kind: 'Event'
+            })-[r:FOLLOWED_BY]->(t:KGNode {
+                analysis_id: $analysis_id,
+                model_run_id: $model_run_id,
+                node_kind: 'Event'
+            })
+            RETURN
+                s.node_id AS source_node_id,
+                t.node_id AS target_node_id,
+                properties(r)["edge_id"] AS edge_id,
+                properties(r)["edge_class"] AS edge_class,
+                coalesce(properties(r)["evidence_references"], []) AS evidence_references
+            """
+            events = [
+                record.data()
+                for record in session.run(
+                    node_query,
+                    analysis_id=analysis_id,
+                    model_run_id=model_run_id,
+                )
+            ]
+            edges = [
+                record.data()
+                for record in session.run(
+                    edge_query,
+                    analysis_id=analysis_id,
+                    model_run_id=model_run_id,
+                )
+            ]
+        else:
+            events = [
+                record.data()
+                for record in session.run(
+                    """
+                    MATCH (n:KGNode {analysis_id: $analysis_id, node_kind: 'Event'})
+                    RETURN
+                        n.node_id AS node_id,
+                        n.label AS label,
+                        properties(n)["description"] AS description,
+                        n.model_run_id AS model_run_id,
+                        coalesce(properties(n)["evidence_references"], []) AS evidence_references,
+                        coalesce(properties(n)["evidence_locations"], []) AS evidence_locations,
+                        coalesce(properties(n)["audio_evidence_locations"], []) AS audio_evidence_locations,
+                        properties(n)["source_sequence_index"] AS source_sequence_index,
+                        properties(n)["explicit_time_label"] AS explicit_time_label,
+                        properties(n)["explicit_time_minutes"] AS explicit_time_minutes,
+                        coalesce(properties(n)["timeline_time_conflict"], false) AS timeline_time_conflict
+                    """,
+                    analysis_id=analysis_id,
+                )
+            ]
+            edges = [
+                record.data()
+                for record in session.run(
+                    """
+                    MATCH (s:KGNode {analysis_id: $analysis_id, node_kind: 'Event'})
+                          -[r:FOLLOWED_BY]->
+                          (t:KGNode {analysis_id: $analysis_id, node_kind: 'Event'})
+                    RETURN
+                        s.node_id AS source_node_id,
+                        t.node_id AS target_node_id,
+                        properties(r)["edge_id"] AS edge_id,
+                        properties(r)["edge_class"] AS edge_class,
+                        coalesce(properties(r)["evidence_references"], []) AS evidence_references
+                    """,
+                    analysis_id=analysis_id,
+                )
+            ]
+
+    # Backward-compatible passage/page fallback for analyses created before
+    # source_sequence_index became a graph property.  This affects display order
+    # only; it does not create a FOLLOWED_BY fact.
+    missing_sequence = [
+        item for item in events
+        if item.get("source_sequence_index") in (None, "")
+    ]
+    for rank, item in enumerate(
+        sorted(missing_sequence, key=_timeline_evidence_order_key),
+        start=1,
+    ):
+        item["source_sequence_index"] = rank
+
+    projected, conflicts = project_default_timeline(events, edges)
+    return {
+        "model_run_id": model_run_id,
+        "events": projected,
+        "followed_by_edges": edges,
+        "conflicts": conflicts,
+    }
 
 
 def save_timeline_event(payload):
@@ -152,9 +286,7 @@ def save_timeline_event(payload):
         if event.get("source_node_id"):
             session.run(
                 """
-                MATCH (t:TimelineEvent {
-                    timeline_event_id: $timeline_event_id
-                })
+                MATCH (t:TimelineEvent {timeline_event_id: $timeline_event_id})
                 MATCH (n:KGNode {
                     analysis_id: $analysis_id,
                     node_id: $source_node_id,
@@ -170,6 +302,28 @@ def save_timeline_event(payload):
     return timeline_event_id
 
 
+def save_timeline_audio_anchor(analysis_id, anchor_iso, source_note):
+    reviewer = get_current_user_key()
+    if reviewer == "unknown":
+        raise PermissionError("A resolved user identity is required")
+    # validate before persistence
+    align_audio_offset(anchor_iso, 0)
+    with get_driver().session() as session:
+        session.run(
+            """
+            MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+            SET a.timeline_audio_anchor = $anchor_iso,
+                a.timeline_audio_anchor_source = $source_note,
+                a.timeline_audio_anchor_reviewed_by = $reviewer,
+                a.timeline_audio_anchor_reviewed_at = datetime()
+            """,
+            analysis_id=analysis_id,
+            anchor_iso=anchor_iso,
+            source_note=source_note,
+            reviewer=reviewer,
+        ).consume()
+
+
 def timeline_time_label(event):
     basis = event.get("time_basis")
     if basis == "ABSOLUTE":
@@ -177,9 +331,7 @@ def timeline_time_label(event):
         end = str(event.get("event_time_end") or "")
         if event.get("time_precision") == "DATE_ONLY":
             return start[:10]
-        if end:
-            return start + " → " + end
-        return start
+        return start + ((" → " + end) if end else "")
     if basis == "RELATIVE_AUDIO":
         start = format_relative_seconds(event.get("relative_start_s"))
         end = event.get("relative_end_s")
@@ -189,46 +341,19 @@ def timeline_time_label(event):
     return "Order only / no supported clock time"
 
 
-def timeline_chart_rows(events, time_basis):
-    rows = []
-    for event in events:
-        if event.get("time_basis") != time_basis:
-            continue
-        if time_basis == "ABSOLUTE":
-            start = event.get("event_time_start")
-            if not start:
-                continue
-            rows.append(
-                {
-                    "event": event.get("summary") or "Event",
-                    "phase": event.get("phase") or "UNASSIGNED",
-                    "start": start,
-                    "end": event.get("event_time_end"),
-                    "precision": event.get("time_precision") or "—",
-                    "event_type": event.get("event_type") or "EVENT",
-                }
-            )
-        elif time_basis == "RELATIVE_AUDIO":
-            start = event.get("relative_start_s")
-            if start is None:
-                continue
-            rows.append(
-                {
-                    "event": event.get("summary") or "Event",
-                    "phase": event.get("phase") or "UNASSIGNED",
-                    "start": float(start),
-                    "end": (
-                        float(event["relative_end_s"])
-                        if event.get("relative_end_s") is not None
-                        else None
-                    ),
-                    "start_clock": format_relative_seconds(start),
-                    "end_clock": format_relative_seconds(event.get("relative_end_s")),
-                    "precision": event.get("time_precision") or "—",
-                    "event_type": event.get("event_type") or "EVENT",
-                }
-            )
-    return rows
+def default_timeline_time_label(event, audio_anchor=None):
+    if event.get("explicit_time_label"):
+        return str(event["explicit_time_label"])
+    if event.get("relative_start_s") is not None:
+        relative = format_relative_seconds(event.get("relative_start_s"))
+        if audio_anchor:
+            try:
+                aligned = align_audio_offset(audio_anchor, event["relative_start_s"])
+                return relative + " · aligned " + aligned
+            except Exception:
+                pass
+        return relative + " from audio start"
+    return "Sequence only"
 '''
 
 _TABS_TUPLE_OLD = '''    tab_findings,
@@ -255,11 +380,11 @@ _HOME_TIMELINE_CARD = '''    c7, c8, c9 = st.columns(3)
         st.markdown("### Timeline")
         st.success("Active PoC")
         st.write(
-            "Build a human-validated chronology from explicit dates/times, "
-            "relative audio timestamps and existing event concepts."
+            "See an automatic evidence-derived chronology for every completed analysis, "
+            "then validate or refine it as an investigator."
         )
         st.caption(
-            "V0.1 never invents temporal precision and does not call an LLM."
+            "The timeline reuses KG events and evidence; no additional LLM call is made."
         )
 
     st.divider()
@@ -272,200 +397,199 @@ _TIMELINE_PANEL = r'''
 with tab_timeline:
     st.subheader("Timeline")
     st.caption(
-        "Human-validated chronology for the active analysis. V0.1 uses explicit "
-        "dates/times, relative audio offsets or order-only events; it does not infer "
-        "missing time information and does not invoke an LLM."
+        "Default chronology projected from the same evidence-derived Event nodes and "
+        "FOLLOWED_BY relationships used by the Knowledge Graph. Events remain visible "
+        "even when no clock time is known. Investigator validation can refine the view."
     )
 
     if not active_analysis_id or not active_analysis:
-        st.info(
-            "Create or select an active analysis to build its investigation timeline."
-        )
+        st.info("Create or select an active analysis to view its timeline.")
     else:
         timeline_analysis_id = active_analysis_id
+        projection = load_default_timeline_projection(timeline_analysis_id)
+        default_events = projection.get("events") or []
+        chronology_conflicts = projection.get("conflicts") or []
         timeline_events = load_timeline_events(timeline_analysis_id)
-        timeline_candidates = load_timeline_event_candidates(timeline_analysis_id)
+        timeline_context = load_timeline_context(timeline_analysis_id)
+        audio_anchor = timeline_context.get("timeline_audio_anchor")
+
+        validated_by_node = {}
+        for reviewed in timeline_events:
+            node_id = reviewed.get("source_node_id")
+            if node_id:
+                validated_by_node[node_id] = reviewed
 
         tm1, tm2, tm3, tm4 = st.columns(4)
-        tm1.metric("Validated events", len(timeline_events))
-        tm2.metric(
-            "Absolute time",
-            sum(1 for item in timeline_events if item.get("time_basis") == "ABSOLUTE"),
-        )
+        tm1.metric("Default events", len(default_events))
+        tm2.metric("Human validated", len(timeline_events))
         tm3.metric(
-            "Audio-relative",
-            sum(1 for item in timeline_events if item.get("time_basis") == "RELATIVE_AUDIO"),
+            "With supported time",
+            sum(
+                1 for item in default_events
+                if item.get("explicit_time_label")
+                or item.get("relative_start_s") is not None
+            ),
         )
-        tm4.metric("Unlinked KG event candidates", len(timeline_candidates))
+        tm4.metric("Chronology flags", len(chronology_conflicts))
 
-        absolute_rows = timeline_chart_rows(timeline_events, "ABSOLUTE")
-        if absolute_rows:
-            st.markdown("### Absolute chronology")
-            absolute_points = [row for row in absolute_rows if not row.get("end")]
-            absolute_ranges = [row for row in absolute_rows if row.get("end")]
-            absolute_layers = []
-            if absolute_ranges:
-                absolute_layers.append(
-                    {
-                        "data": {"values": absolute_ranges},
-                        "mark": {"type": "bar", "cornerRadius": 4, "height": 14},
-                        "encoding": {
-                            "x": {"field": "start", "type": "temporal", "title": "Time"},
-                            "x2": {"field": "end"},
-                            "y": {"field": "phase", "type": "nominal", "title": "Phase"},
-                            "color": {"field": "phase", "type": "nominal", "legend": None},
-                            "tooltip": [
-                                {"field": "event", "type": "nominal", "title": "Event"},
-                                {"field": "event_type", "type": "nominal", "title": "Type"},
-                                {"field": "precision", "type": "nominal", "title": "Precision"},
-                                {"field": "start", "type": "temporal", "title": "Start"},
-                                {"field": "end", "type": "temporal", "title": "End"},
-                            ],
-                        },
-                    }
-                )
-            if absolute_points:
-                absolute_layers.append(
-                    {
-                        "data": {"values": absolute_points},
-                        "mark": {"type": "point", "filled": True, "size": 120},
-                        "encoding": {
-                            "x": {"field": "start", "type": "temporal", "title": "Time"},
-                            "y": {"field": "phase", "type": "nominal", "title": "Phase"},
-                            "color": {"field": "phase", "type": "nominal", "legend": None},
-                            "tooltip": [
-                                {"field": "event", "type": "nominal", "title": "Event"},
-                                {"field": "event_type", "type": "nominal", "title": "Type"},
-                                {"field": "precision", "type": "nominal", "title": "Precision"},
-                                {"field": "start", "type": "temporal", "title": "Time"},
-                            ],
-                        },
-                    }
-                )
-            st.vega_lite_chart(
-                {"layer": absolute_layers, "height": 260},
-                use_container_width=True,
-            )
+        st.markdown("### Default chronology")
+        st.caption(
+            "Order priority: evidence-supported FOLLOWED_BY relationships first; "
+            "source passage/page order is used only as a display fallback where the "
+            "evidence provides no explicit temporal relation. SOURCE_ORDER does not "
+            "create a factual FOLLOWED_BY relationship."
+        )
 
-        relative_rows = timeline_chart_rows(timeline_events, "RELATIVE_AUDIO")
-        if relative_rows:
-            st.markdown("### Audio-relative chronology")
-            relative_points = [row for row in relative_rows if row.get("end") is None]
-            relative_ranges = [row for row in relative_rows if row.get("end") is not None]
-            relative_layers = []
-            if relative_ranges:
-                relative_layers.append(
-                    {
-                        "data": {"values": relative_ranges},
-                        "mark": {"type": "bar", "cornerRadius": 4, "height": 14},
-                        "encoding": {
-                            "x": {"field": "start", "type": "quantitative", "title": "Seconds from audio start"},
-                            "x2": {"field": "end"},
-                            "y": {"field": "phase", "type": "nominal", "title": "Phase"},
-                            "color": {"field": "phase", "type": "nominal", "legend": None},
-                            "tooltip": [
-                                {"field": "event", "type": "nominal", "title": "Event"},
-                                {"field": "event_type", "type": "nominal", "title": "Type"},
-                                {"field": "start_clock", "type": "nominal", "title": "Start"},
-                                {"field": "end_clock", "type": "nominal", "title": "End"},
-                                {"field": "precision", "type": "nominal", "title": "Precision"},
-                            ],
-                        },
-                    }
-                )
-            if relative_points:
-                relative_layers.append(
-                    {
-                        "data": {"values": relative_points},
-                        "mark": {"type": "point", "filled": True, "size": 120},
-                        "encoding": {
-                            "x": {"field": "start", "type": "quantitative", "title": "Seconds from audio start"},
-                            "y": {"field": "phase", "type": "nominal", "title": "Phase"},
-                            "color": {"field": "phase", "type": "nominal", "legend": None},
-                            "tooltip": [
-                                {"field": "event", "type": "nominal", "title": "Event"},
-                                {"field": "event_type", "type": "nominal", "title": "Type"},
-                                {"field": "start_clock", "type": "nominal", "title": "Audio time"},
-                                {"field": "precision", "type": "nominal", "title": "Precision"},
-                            ],
-                        },
-                    }
-                )
-            st.vega_lite_chart(
-                {"layer": relative_layers, "height": 240},
-                use_container_width=True,
-            )
-
-        if not timeline_events:
+        if not default_events:
             st.info(
-                "No human-validated timeline events exist yet. Add one below or "
-                "link an existing KG Event after checking its time against evidence."
+                "No Event nodes are available yet. The default timeline will appear "
+                "automatically when the analysis has produced its evidence-derived graph."
             )
         else:
-            st.markdown("### Validated event register")
             st.dataframe(
                 [
                     {
-                        "Time": timeline_time_label(item),
-                        "Phase": item.get("phase") or "UNASSIGNED",
-                        "Type": item.get("event_type") or "EVENT",
-                        "Event": item.get("summary") or "",
-                        "Precision": item.get("time_precision") or "—",
+                        "#": item.get("sequence_position"),
+                        "Time": default_timeline_time_label(item, audio_anchor),
+                        "Event": item.get("label") or "Event",
+                        "Order basis": item.get("ordering_basis") or "—",
                         "Evidence": len(item.get("evidence_references") or []),
-                        "Reviewed by": item.get("created_by") or "—",
+                        "Review": (
+                            "HUMAN_VALIDATED"
+                            if item.get("node_id") in validated_by_node
+                            else "DEFAULT_CANDIDATE"
+                        ),
+                        "Flag": "REVIEW" if item.get("ordering_conflict") else "",
                     }
-                    for item in timeline_events
+                    for item in default_events
                 ],
-                use_container_width=True,
                 hide_index=True,
+                use_container_width=True,
             )
 
-            selected_timeline_id = st.selectbox(
-                "Inspect validated event",
-                options=[item["timeline_event_id"] for item in timeline_events],
+            selected_default_node = st.selectbox(
+                "Inspect / validate default event",
+                options=[item["node_id"] for item in default_events],
                 format_func=lambda value: next(
-                    item.get("summary") or value
-                    for item in timeline_events
-                    if item["timeline_event_id"] == value
+                    (
+                        f"{item.get('sequence_position')}. {item.get('label') or value}"
+                        for item in default_events
+                        if item["node_id"] == value
+                    ),
+                    value,
                 ),
-                key="timeline_event_inspect_" + timeline_analysis_id,
+                key="timeline_default_event_" + timeline_analysis_id,
             )
-            selected_timeline_event = next(
-                item for item in timeline_events
-                if item["timeline_event_id"] == selected_timeline_id
+            selected_default = next(
+                item for item in default_events
+                if item["node_id"] == selected_default_node
             )
-            st.caption(
-                timeline_time_label(selected_timeline_event)
-                + " · "
-                + str(selected_timeline_event.get("review_status") or "HUMAN_VALIDATED")
-            )
-            if selected_timeline_event.get("source_node_label"):
-                st.write(
-                    "Linked KG event: "
-                    + str(selected_timeline_event["source_node_label"])
+
+            with st.container(border=True):
+                st.markdown("**" + str(selected_default.get("label") or "Event") + "**")
+                if selected_default.get("description"):
+                    st.write(selected_default["description"])
+                st.caption(
+                    "Position "
+                    + str(selected_default.get("sequence_position"))
+                    + " · "
+                    + default_timeline_time_label(selected_default, audio_anchor)
+                    + " · basis "
+                    + str(selected_default.get("ordering_basis") or "—")
                 )
-            if selected_timeline_event.get("evidence_references"):
-                st.markdown("**Supporting evidence**")
-                for reference in selected_timeline_event["evidence_references"]:
+                for reference in selected_default.get("evidence_references") or []:
                     st.write("• " + str(reference))
+                if selected_default.get("ordering_conflict"):
+                    st.warning("This event has a chronology flag and requires review.")
+
+        if chronology_conflicts:
+            with st.expander("Chronology conflicts / reconciliation", expanded=True):
+                for conflict in chronology_conflicts:
+                    st.warning(conflict.get("message") or conflict.get("conflict_type"))
+
+        source_conflicts = timeline_context.get("source_conflicts") or []
+        uncertainties = timeline_context.get("uncertainties") or []
+        if source_conflicts or uncertainties:
+            with st.expander("Source conflicts and uncertainties", expanded=False):
+                for value in source_conflicts:
+                    st.write("• Source conflict: " + str(value))
+                for value in uncertainties:
+                    st.write("• Uncertainty: " + str(value))
+
+        relative_default_events = [
+            item for item in default_events
+            if item.get("relative_start_s") is not None
+        ]
+        if relative_default_events:
+            with st.expander("Audio time alignment", expanded=False):
+                st.caption(
+                    "Optional V0.3 alignment: if the absolute start time of the recording "
+                    "is supported by evidence, store it once and IKF will display absolute "
+                    "times alongside the reviewed audio offsets."
+                )
+                current_anchor = str(audio_anchor or "")
+                anchor_value = st.text_input(
+                    "Recording start (ISO-8601)",
+                    value=current_anchor,
+                    placeholder="1997-02-12T09:40:00+00:00",
+                    key="timeline_audio_anchor_" + timeline_analysis_id,
+                )
+                anchor_source = st.text_input(
+                    "Evidence supporting recording start",
+                    value=str(timeline_context.get("timeline_audio_anchor_source") or ""),
+                    placeholder="e.g. coastguard log / recording metadata",
+                    key="timeline_audio_anchor_source_" + timeline_analysis_id,
+                )
+                if st.button(
+                    "Save reviewed audio alignment",
+                    disabled=not anchor_value.strip() or not anchor_source.strip(),
+                    key="timeline_audio_anchor_save_" + timeline_analysis_id,
+                ):
+                    try:
+                        save_timeline_audio_anchor(
+                            timeline_analysis_id,
+                            anchor_value.strip(),
+                            anchor_source.strip(),
+                        )
+                        load_timeline_context.clear()
+                        st.success("Audio alignment saved.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error("The audio alignment could not be saved.")
+                        st.exception(exc)
+
+        if timeline_events:
+            with st.expander("Investigator-reviewed timeline", expanded=False):
+                st.dataframe(
+                    [
+                        {
+                            "Time": timeline_time_label(item),
+                            "Phase": item.get("phase") or "UNASSIGNED",
+                            "Type": item.get("event_type") or "EVENT",
+                            "Event": item.get("summary") or "",
+                            "Evidence": len(item.get("evidence_references") or []),
+                            "Reviewed by": item.get("created_by") or "—",
+                        }
+                        for item in timeline_events
+                    ],
+                    hide_index=True,
+                    use_container_width=True,
+                )
 
         st.divider()
-        st.markdown("### Add validated event")
+        st.markdown("### Validate or refine chronology")
         st.caption(
-            "A timeline event is persisted only after you explicitly confirm that "
-            "its time/order is supported by the investigation evidence."
+            "The default timeline remains visible. Saving here creates a human-reviewed "
+            "overlay linked to the selected KG event; it does not erase source provenance."
         )
 
-        candidate_by_id = {
-            item["node_id"]: item
-            for item in timeline_candidates
-        }
+        candidate_by_id = {item["node_id"]: item for item in default_events}
         candidate_options = [""] + list(candidate_by_id)
         source_node_id = st.selectbox(
-            "Link an existing KG Event (optional)",
+            "Link default event (optional)",
             options=candidate_options,
             format_func=lambda value: (
-                "Manual / not linked to a KG event"
+                "Manual additional event"
                 if not value
                 else candidate_by_id[value].get("label") or value
             ),
@@ -477,7 +601,7 @@ with tab_timeline:
             "Event summary",
             value=source_candidate.get("label") or "",
             key="timeline_summary_" + timeline_analysis_id + "_" + (source_node_id or "manual"),
-            help="Use a concise, de-identified description. Do not infer missing facts.",
+            help="Use a concise, de-identified description grounded in available evidence.",
         )
         add_left, add_right = st.columns(2)
         with add_left:
@@ -491,32 +615,27 @@ with tab_timeline:
             event_type = st.selectbox(
                 "Event type",
                 options=[
-                    "EVENT",
-                    "ALARM",
-                    "FAILURE",
-                    "COMMUNICATION",
-                    "ACTION",
-                    "DISTRESS",
-                    "RESPONSE",
-                    "RESCUE",
-                    "FIRE",
-                    "COLLISION_CONTACT",
-                    "GROUNDING",
-                    "OTHER",
+                    "EVENT", "ALARM", "FAILURE", "COMMUNICATION", "ACTION",
+                    "DISTRESS", "RESPONSE", "RESCUE", "FIRE",
+                    "COLLISION_CONTACT", "GROUNDING", "OTHER",
                 ],
                 key="timeline_type_" + timeline_analysis_id,
             )
 
         basis_labels = {
+            "Order only / no supported clock time": "ORDER_ONLY",
             "Absolute date/time": "ABSOLUTE",
             "Relative to audio start": "RELATIVE_AUDIO",
-            "Order only / no supported clock time": "ORDER_ONLY",
         }
+        default_basis_label = "Order only / no supported clock time"
+        if source_candidate.get("relative_start_s") is not None:
+            default_basis_label = "Relative to audio start"
         basis_label = st.radio(
             "Time basis",
             options=list(basis_labels),
+            index=list(basis_labels).index(default_basis_label),
             horizontal=True,
-            key="timeline_basis_" + timeline_analysis_id,
+            key="timeline_basis_" + timeline_analysis_id + "_" + (source_node_id or "manual"),
         )
         event_time_basis = basis_labels[basis_label]
 
@@ -551,11 +670,7 @@ with tab_timeline:
                     datetime.min.time(),
                 ).isoformat()
             else:
-                event_time_start = datetime.combine(
-                    event_date,
-                    event_clock,
-                ).isoformat()
-
+                event_time_start = datetime.combine(event_date, event_clock).isoformat()
             if event_precision == "RANGE":
                 e1, e2 = st.columns(2)
                 with e1:
@@ -569,10 +684,7 @@ with tab_timeline:
                         "End time",
                         key="timeline_end_clock_" + timeline_analysis_id,
                     )
-                event_time_end = datetime.combine(
-                    end_date,
-                    end_clock,
-                ).isoformat()
+                event_time_end = datetime.combine(end_date, end_clock).isoformat()
 
         elif event_time_basis == "RELATIVE_AUDIO":
             event_precision = st.selectbox(
@@ -580,19 +692,25 @@ with tab_timeline:
                 options=list(RELATIVE_PRECISIONS),
                 key="timeline_precision_audio_" + timeline_analysis_id,
             )
+            suggested_start = float(source_candidate.get("relative_start_s") or 0.0)
+            suggested_end = source_candidate.get("relative_end_s")
             relative_start_s = st.number_input(
                 "Seconds from audio start",
                 min_value=0.0,
+                value=suggested_start,
                 step=1.0,
-                key="timeline_audio_start_" + timeline_analysis_id,
+                key="timeline_audio_start_" + timeline_analysis_id + "_" + (source_node_id or "manual"),
             )
             if event_precision == "RANGE":
                 relative_end_s = st.number_input(
                     "End seconds from audio start",
                     min_value=float(relative_start_s),
-                    value=float(relative_start_s),
+                    value=max(
+                        float(relative_start_s),
+                        float(suggested_end) if suggested_end is not None else float(relative_start_s),
+                    ),
                     step=1.0,
-                    key="timeline_audio_end_" + timeline_analysis_id,
+                    key="timeline_audio_end_" + timeline_analysis_id + "_" + (source_node_id or "manual"),
                 )
 
         evidence_references = list(source_candidate.get("evidence_references") or [])
@@ -606,12 +724,12 @@ with tab_timeline:
             evidence_references.append(manual_reference.strip())
 
         confirmed_timeline = st.checkbox(
-            "I checked the evidence and confirm that this time/order is supported; the timeline must not imply greater precision than the source.",
+            "I checked the available evidence and confirm that this event/order/time is supported; the reviewed timeline must not imply greater precision than the source.",
             key="timeline_confirm_" + timeline_analysis_id,
         )
 
         if st.button(
-            "Add validated timeline event",
+            "Save investigator timeline decision",
             type="primary",
             disabled=not confirmed_timeline,
             key="timeline_add_" + timeline_analysis_id,
@@ -646,17 +764,38 @@ with tab_timeline:
                             }
                         )
                         load_timeline_events.clear()
-                        load_timeline_event_candidates.clear()
-                        st.success("Validated timeline event added: " + timeline_event_id)
+                        st.success("Timeline decision saved: " + timeline_event_id)
                         st.rerun()
                     except Exception as exc:
-                        st.error("The timeline event could not be saved.")
+                        st.error("The timeline decision could not be saved.")
                         st.exception(exc)
+
+        st.divider()
+        st.markdown("### Evidence-based conclusion")
+        conclusion = str(timeline_context.get("analysis_summary") or "").strip()
+        key_findings = timeline_context.get("key_findings") or []
+        if conclusion:
+            st.write(conclusion)
+        elif key_findings:
+            st.write("Available analysed evidence supports the following findings:")
+        else:
+            st.info(
+                "The conclusion will appear automatically when the evidence analysis "
+                "summary is available."
+            )
+        if key_findings:
+            st.markdown("**Key findings from the analysed evidence**")
+            for finding in key_findings:
+                st.write("• " + str(finding))
+        if uncertainties:
+            st.caption(
+                "The conclusion must be read together with the uncertainties shown above."
+            )
 '''
 
 
 def transform_app_timeline_source(source: str) -> tuple[str, tuple[str, ...]]:
-    """Materialize Timeline V0.1 into the Streamlit App source."""
+    """Materialize Timeline V0.3 into the Streamlit App source."""
 
     applied: list[str] = []
 
@@ -668,7 +807,15 @@ def transform_app_timeline_source(source: str) -> tuple[str, tuple[str, ...]]:
     if _HELPER_ANCHOR not in source:
         raise RuntimeError("Timeline adoption could not locate helper anchor")
     source = source.replace(_HELPER_ANCHOR, _HELPERS + _HELPER_ANCHOR, 1)
-    applied.append("timeline_store_helpers")
+    applied.extend(
+        [
+            "timeline_store_helpers",
+            "default_graph_chronology_projection",
+            "chronology_conflict_detection",
+            "audio_absolute_alignment",
+            "evidence_based_timeline_conclusion",
+        ]
+    )
 
     if _TABS_TUPLE_OLD not in source:
         raise RuntimeError("Timeline adoption could not locate tab tuple")
@@ -681,11 +828,7 @@ def transform_app_timeline_source(source: str) -> tuple[str, tuple[str, ...]]:
 
     if _HOME_MILESTONE_ANCHOR not in source:
         raise RuntimeError("Timeline adoption could not locate Home milestone anchor")
-    source = source.replace(
-        _HOME_MILESTONE_ANCHOR,
-        _HOME_TIMELINE_CARD,
-        1,
-    )
+    source = source.replace(_HOME_MILESTONE_ANCHOR, _HOME_TIMELINE_CARD, 1)
     applied.append("timeline_home_card")
 
     if _KG_ANCHOR not in source:
