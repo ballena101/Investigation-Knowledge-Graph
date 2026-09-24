@@ -197,7 +197,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert manifest["ui_adoption_version"].startswith("IKF_APP_UI_ADOPTION_")
     assert manifest["workflow_adoption_version"] == "IKF_APP_WORKFLOW_ADOPTION_V0.1"
     assert manifest["simplification_adoption_version"] == (
-        "IKF_APP_SIMPLIFICATION_ADOPTION_V0.2"
+        "IKF_APP_SIMPLIFICATION_ADOPTION_V0.3"
     )
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert set(manifest["applied_policy_adoptions"]) == {
