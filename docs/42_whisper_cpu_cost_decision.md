@@ -19,15 +19,15 @@ The authenticated `large-v3` snapshot preparation completed successfully in 32.3
 
 A subsequent `large-v3` transcription of the first smoke-test recording exceeded 15 minutes on the 4-CPU serverless route and was stopped before completion. No successful `large-v3` transcript/runtime result is claimed from that run.
 
-## Duration correction
+## Correct source duration
 
 The first duration-probe implementation contained a PyAV unit-conversion error. `container.duration` is expressed in AV_TIME_BASE units and must be divided by `av.time_base`; the notebook multiplied instead, producing the impossible value `815700000000000.0` seconds.
 
-The corresponding source duration is approximately **815.7 seconds (13 minutes 35.7 seconds)**. Notebook 61 has been corrected to divide by `av.time_base`, print both seconds and minutes, and retain the stream-time-base fallback.
+The corrected source duration is **815.7 seconds (13 minutes 35.7 seconds)**.
 
-This changes the interpretation of the stopped `large-v3` run. Exceeding 15 minutes for ~13.6 minutes of audio implies a lower-bound RTF of only about **1.10**, not the extreme slowdown initially suspected. Because the run was stopped before completion, this remains a lower bound rather than a completed benchmark result.
+This changes the interpretation of the stopped `large-v3` run. Exceeding 15 minutes for 815.7 seconds of audio implies a lower-bound RTF of approximately **1.103**, not the extreme slowdown initially suspected. Because the run was stopped before completion, this remains a lower bound rather than a completed benchmark result.
 
-## Cost decision
+## Memory decision
 
 Do not increase notebook memory from 16 GB to 32 GB solely to improve transcription speed.
 
@@ -41,7 +41,7 @@ Use 32 GB only if one of the following is observed:
 
 ## Turbo preparation result
 
-The same governed persistent-cache path was then used to prepare `turbo`.
+The same governed persistent-cache path was used to prepare `turbo`.
 
 Observed result:
 
@@ -51,46 +51,58 @@ Observed result:
 - persistent snapshot revision: `0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf`;
 - local snapshot path: `/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/_model_cache/faster_whisper/models--mobiuslabsgmbh--faster-whisper-large-v3-turbo/snapshots/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf`.
 
-This confirms that the authenticated persistent-cache design is working for both candidate models and keeps repeat model-preparation overhead low.
+This confirms that the authenticated persistent-cache design is working and keeps repeat model-preparation overhead low.
 
-## Next controlled test
+## Completed turbo transcription benchmark
 
-The next smoke test keeps the same source audio and runs `turbo` only.
+The one-file `turbo` smoke test completed successfully on the same Standard v6 / 16 GB / 4-logical-CPU / CPU-INT8 route.
 
-Notebook 61:
+Observed notebook output:
 
-- uses the corrected source duration of approximately 815.7 seconds;
-- transcribes only `19970212-090-sv-gale-runner-mayday-call.wav` while `SMOKE_TEST=True`;
-- records transcription elapsed seconds;
-- calculates real-time factor (RTF):
-
-`RTF = transcription elapsed seconds / source audio seconds`
+- source: `19970212-090-sv-gale-runner-mayday-call.wav`;
+- source duration: **815.7 seconds**;
+- transcription elapsed: **696.13 seconds** (approximately **11 minutes 36 seconds**);
+- real-time factor: **0.8534**;
+- result: `DONE`;
+- output: `/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/type_d_transcripts/10915255195ae92e16c44ed93befdf5e45846e5d3dff5bb37f2c464d5d04cca0__turbo.json`.
 
 Interpretation:
 
-- RTF < 1: faster than real time;
-- RTF = 1: approximately real time;
-- RTF > 1: slower than real time.
+- RTF 0.8534 means the CPU route completed approximately **14.7% faster than real time**;
+- the `turbo` run completed at least about **22.6% faster** than the stopped `large-v3` observation at 15 minutes, because 15 minutes is only a lower bound for the incomplete `large-v3` run;
+- model preparation is no longer the bottleneck because the governed snapshot is cached and reusable;
+- on measured runtime alone, `turbo` is the current **provisional cost/performance winner** for the 4-CPU serverless route.
 
-Runtime/cost is not sufficient for model selection. The `turbo` transcript must still be checked against the audio for safety-critical fields, including vessel/call sign, coordinates/numbers, distress wording, instructions, negation, chronology and speaker attribution.
+This is not yet a production-model decision. Runtime/cost is only one axis.
 
-## Operating rule
+## Quality gate before expansion
 
 Do not run the full three-file/two-model matrix yet.
 
-First obtain:
+The completed `turbo` transcript must first be inspected against the authoritative audio, with targeted human listening for safety-critical fields including:
 
-1. `turbo` transcription elapsed time and RTF;
-2. human quality assessment of the same recording;
-3. Databricks billing attribution where available.
+- vessel and call sign;
+- coordinates, times and other numbers;
+- distress wording and urgency;
+- instructions and acknowledgements;
+- negation;
+- chronology;
+- speaker attribution;
+- omissions or hallucinated content in noisy/overlapping sections.
 
-Then compare `turbo` against the large-v3 baseline. Since large-v3 was stopped before completion, rerun it to completion only if its likely quality advantage justifies obtaining an exact benchmark after the turbo result is available.
+The JSON output should also be checked for the expected provenance fields, model identity, source hash, language metadata, segment timestamps and completion status without rerunning inference.
 
-Only then decide whether the production candidate should be:
+If `turbo` quality is acceptable, keep Standard v6 / 16 GB / CPU-INT8 as the provisional operating route and proceed to one additional representative recording before any broader batch processing.
 
-- `turbo` on serverless CPU;
-- `large-v3` on serverless CPU;
-- `large-v3` on a governed on-demand GPU route;
-- or another validated configuration.
+If quality is materially insufficient, obtain a completed `large-v3` benchmark on the same file only if the likely quality gain justifies the extra compute. Do not move to 32 GB merely for speed. A governed on-demand GPU comparison should be considered only after CPU quality/runtime evidence shows that higher-quality inference is required and CPU throughput is the limiting factor.
 
-The persistent cache remains part of the cost-control design so model artifacts are not repeatedly downloaded across serverless sessions.
+## Current decision
+
+Current provisional ranking after the completed smoke test:
+
+1. **`turbo` on Standard v6 CPU/INT8** — measured RTF 0.8534; preferred cost/performance candidate pending quality validation.
+2. **`large-v3` on Standard v6 CPU/INT8** — quality-reference candidate; incomplete runtime observation >15 minutes, lower-bound RTF >1.103.
+3. **32 GB serverless** — not justified at present; no memory-pressure evidence.
+4. **GPU route** — deferred until a demonstrated quality requirement justifies it.
+
+The persistent cache remains mandatory for the pilot so model artifacts are not repeatedly downloaded across serverless sessions.
