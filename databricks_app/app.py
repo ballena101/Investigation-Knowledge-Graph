@@ -30,7 +30,9 @@ from ikf.timeline import (
     timeline_sort_key,
 )
 from ikf.transcription_governance import (
+    PARAKEET_TDT_06B_V3,
     SUPPORTED_AUDIO_EXTENSIONS,
+    model_display_name,
     normalise_transcription_model,
     normalise_type_d_audio_path,
 )
@@ -6227,18 +6229,32 @@ with tab_transcriptions:
             )
 
             model = st.selectbox(
-                "Transcription model",
-                options=["turbo", "large-v3"],
+                "Transcription engine / model",
+                options=["turbo", PARAKEET_TDT_06B_V3, "large-v3"],
                 index=0,
-                format_func=lambda value: (
-                    "Whisper large-v3-turbo" if value == "turbo" else "Whisper large-v3"
-                ),
+                format_func=model_display_name,
                 key="type_d_audio_model",
                 help=(
-                    "Turbo is the current CPU cost/performance candidate. Machine output "
-                    "remains unverified regardless of model and must pass human review."
+                    "Whisper large-v3-turbo remains the default. NVIDIA Parakeet TDT "
+                    "0.6B v3 is an independent ASR technology for supported languages. "
+                    "All machine output remains unverified until human review."
                 ),
             )
+            run_independent_comparison = st.checkbox(
+                "Also run the independent Whisper / Parakeet comparison",
+                value=False,
+                key="type_d_audio_compare_engines",
+                help=(
+                    "Queues the alternative ASR engine on the same audio. Results remain "
+                    "separate; switch this selector to inspect either transcript. Only the "
+                    "human-reviewed transcript is published."
+                ),
+            )
+            if model == PARAKEET_TDT_06B_V3:
+                st.caption(
+                    "Parakeet TDT 0.6B v3 supports 25 published languages. Norwegian "
+                    "and Icelandic are not in its published language set; use Whisper for them."
+                )
 
             accepted_document = load_accepted_transcript_document(
                 selected_audio_path,
@@ -6307,6 +6323,39 @@ with tab_transcriptions:
             if transcription_run and transcription_run.get("error_message"):
                 st.error(transcription_run["error_message"])
 
+
+            alternative_model = (
+                "turbo" if model == PARAKEET_TDT_06B_V3 else PARAKEET_TDT_06B_V3
+            )
+            _alt_path, alternative_record = find_type_d_machine_transcript(
+                selected_audio_path,
+                alternative_model,
+            )
+            if machine_record and alternative_record:
+                st.markdown("#### Independent ASR comparison")
+                st.dataframe(
+                    [
+                        {
+                            "Engine/model": model_display_name(model),
+                            "Runtime (s)": machine_record.get("elapsed_s"),
+                            "RTF": machine_record.get("real_time_factor"),
+                            "Language": machine_record.get("detected_language") or "—",
+                        },
+                        {
+                            "Engine/model": model_display_name(alternative_model),
+                            "Runtime (s)": alternative_record.get("elapsed_s"),
+                            "RTF": alternative_record.get("real_time_factor"),
+                            "Language": alternative_record.get("detected_language") or "—",
+                        },
+                    ],
+                    hide_index=True,
+                    use_container_width=True,
+                )
+                st.caption(
+                    "These are independent machine outputs, not a consensus transcript. "
+                    "Switch the engine/model selector above to inspect and validate either result."
+                )
+
             if accepted_document:
                 st.success(
                     "Validated transcript is available as a Class D document: "
@@ -6340,15 +6389,47 @@ with tab_transcriptions:
                     key="start_selected_audio_transcription",
                 ):
                     try:
-                        new_run_id = create_transcription_run(
-                            source_path=selected_audio_path,
-                            source_name=selected_audio["name"],
-                            model=model,
-                        )
-                        job_run_id = trigger_type_d_transcription_job(new_run_id)
-                        st.success(
-                            "Transcription queued. Job run: " + job_run_id
-                        )
+                        models_to_run = [model]
+                        if run_independent_comparison:
+                            comparison_model = (
+                                "turbo"
+                                if model == PARAKEET_TDT_06B_V3
+                                else PARAKEET_TDT_06B_V3
+                            )
+                            if comparison_model not in models_to_run:
+                                models_to_run.append(comparison_model)
+
+                        queued_runs = []
+                        for requested_model in models_to_run:
+                            existing_path, _existing_record = find_type_d_machine_transcript(
+                                selected_audio_path,
+                                requested_model,
+                            )
+                            existing_run = load_latest_transcription_run(
+                                selected_audio_path,
+                                requested_model,
+                            )
+                            if existing_path or (
+                                existing_run
+                                and existing_run.get("status") in {"PENDING", "QUEUED", "RUNNING"}
+                            ):
+                                continue
+                            new_run_id = create_transcription_run(
+                                source_path=selected_audio_path,
+                                source_name=selected_audio["name"],
+                                model=requested_model,
+                            )
+                            job_run_id = trigger_type_d_transcription_job(new_run_id)
+                            queued_runs.append(
+                                model_display_name(requested_model) + ": " + job_run_id
+                            )
+
+                        if queued_runs:
+                            st.success("Transcription queued — " + " | ".join(queued_runs))
+                        else:
+                            st.info(
+                                "The requested machine transcript(s) already exist or are processing."
+                            )
                         st.rerun()
                     except Exception as exc:
                         st.error("The transcription could not be started.")
@@ -6360,6 +6441,14 @@ with tab_transcriptions:
                 st.warning(
                     "Machine-generated transcript — not validated evidence. "
                     "Listen to the original recording and correct uncertain or inaudible spans."
+                )
+                st.caption(
+                    "Engine: "
+                    + str(machine_record.get("engine") or "—")
+                    + " · version: "
+                    + str(machine_record.get("engine_version") or "—")
+                    + " · model: "
+                    + model_display_name(model)
                 )
 
                 try:

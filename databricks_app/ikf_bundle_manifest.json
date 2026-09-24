@@ -15,6 +15,14 @@
     "files_api_transport_imports",
     "ranged_files_api_download"
   ],
+  "applied_parakeet_adoptions": [
+    "parakeet_governance_imports",
+    "parakeet_transcript_discovery",
+    "parakeet_model_selector",
+    "independent_dual_engine_queue",
+    "independent_asr_comparison",
+    "asr_engine_provenance_display"
+  ],
   "applied_policy_adoptions": [
     "shared_imports",
     "class_d_llama_alias",
@@ -69,9 +77,10 @@
   ],
   "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.4",
   "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.1",
-  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.8",
+  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.9",
   "files_api_download_adoption_version": "IKF_APP_FILES_API_DOWNLOAD_V0.1",
-  "materialized_app_sha256": "7253f7b9b7113141bc7a32b27e9de9d1f9dfaeacda2ed165513cdce65a235dd8",
+  "materialized_app_sha256": "9d56a6e8fce4087d78e7a3d23152a1cd45a10fbccfda7d672d3f391afaf13e05",
+  "parakeet_adoption_version": "IKF_APP_PARAKEET_ADOPTION_V0.1",
   "shared_package_path": "src/ikf",
   "simplification_adoption_version": "IKF_APP_SIMPLIFICATION_ADOPTION_V0.4",
   "source_app_sha256": "4e190a128237e6c294d5f7231275280223520ce7ea112abeff598559ad6acf7a",
