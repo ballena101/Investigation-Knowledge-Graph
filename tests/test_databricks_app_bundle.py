@@ -35,6 +35,7 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
     shared = output / "src" / "ikf"
     for name in (
         "app_adoption.py",
+        "app_audio_adoption.py",
         "app_ui_adoption.py",
         "source_routing.py",
         "evidence_locations.py",
@@ -48,7 +49,7 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
         assert (shared / name).is_file(), name
 
 
-def test_bundle_materializes_shared_policy_and_ui_before_deployment(tmp_path):
+def test_bundle_materializes_policy_audio_and_ui_before_deployment(tmp_path):
     output = build_test_bundle(tmp_path)
     materialized = (output / "app.py").read_text(encoding="utf-8")
 
@@ -61,6 +62,12 @@ def test_bundle_materializes_shared_policy_and_ui_before_deployment(tmp_path):
     assert "validate_app_shield_review(" in materialized
     assert "validate_app_emcip_review(" in materialized
     assert "scope_graph_by_documents(" in materialized
+
+    assert 'return get_current_user_key() != "unknown"' in materialized
+    assert "Audio / reviewed transcript — Class D" in materialized
+    assert "Use reviewed audio transcript in this analysis" in materialized
+    assert "Machine-generated transcript — not validated evidence" in materialized
+    assert 'st.session_state["analysis_information_class"] = "D"' in materialized
 
     assert "import html" in materialized
     assert "Active analysis: {active_analysis_title}" in materialized
@@ -76,8 +83,9 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         (output / "ikf_bundle_manifest.json").read_text(encoding="utf-8")
     )
 
-    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.2"
+    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.3"
     assert manifest["adoption_version"].startswith("IKF_APP_SHARED_POLICY_ADOPTION_")
+    assert manifest["audio_adoption_version"].startswith("IKF_APP_AUDIO_ADOPTION_")
     assert manifest["ui_adoption_version"].startswith("IKF_APP_UI_ADOPTION_")
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert set(manifest["applied_policy_adoptions"]) == {
@@ -92,6 +100,11 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         "emcip_review",
         "graph_document_scope",
     }
+    assert set(manifest["applied_audio_adoptions"]) == {
+        "app_access_is_type_d_audio_boundary",
+        "analyse_documents_audio_review",
+        "transcription_access_message",
+    }
     assert set(manifest["applied_ui_adoptions"]) == {
         "html_escape_import",
         "active_analysis_header",
@@ -105,4 +118,5 @@ def test_bundled_bootstrap_prefers_materialized_source(tmp_path):
 
     assert 'APP_DIR / "src"' in bootstrap
     assert "MATERIALIZED_MARKER" in bootstrap
+    assert "transform_app_audio_source" in bootstrap
     assert (output / "src" / "ikf").is_dir()
