@@ -36,6 +36,7 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
     for name in (
         "app_adoption.py",
         "app_audio_adoption.py",
+        "app_audio_fixup.py",
         "app_timeline_adoption.py",
         "app_ui_adoption.py",
         "timeline.py",
@@ -79,6 +80,8 @@ def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_
     assert "Audio / reviewed transcript — Class D" not in materialized
     assert "Use reviewed audio transcript in this analysis" not in materialized
     assert 'st.session_state["analysis_information_class"] = "D"' not in materialized
+    assert "decrypt_direct_text(" not in materialized
+    assert "Fernet(" in materialized
 
     # Type-D audio listing/reading follows the same user-scoped Databricks Files
     # API pattern as MAIRA rather than direct local /Volumes browsing.
@@ -122,6 +125,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.5"
     assert manifest["adoption_version"].startswith("IKF_APP_SHARED_POLICY_ADOPTION_")
     assert manifest["audio_adoption_version"].startswith("IKF_APP_AUDIO_ADOPTION_")
+    assert manifest["audio_fixup_version"].startswith("IKF_APP_AUDIO_FIXUP_")
     assert manifest["timeline_adoption_version"].startswith("IKF_APP_TIMELINE_ADOPTION_")
     assert manifest["ui_adoption_version"].startswith("IKF_APP_UI_ADOPTION_")
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
@@ -146,6 +150,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         "transcript_review_publication",
         "class_d_transcript_catalogue_scope",
         "single_transcription_workspace",
+        "reviewed_transcript_decryption",
     }
     assert set(manifest["applied_timeline_adoptions"]) == {
         "timeline_imports",
@@ -168,5 +173,6 @@ def test_bundled_bootstrap_prefers_materialized_source(tmp_path):
     assert 'APP_DIR / "src"' in bootstrap
     assert "MATERIALIZED_MARKER" in bootstrap
     assert "transform_app_audio_source" in bootstrap
+    assert "transform_app_audio_fixup_source" in bootstrap
     assert "transform_app_timeline_source" in bootstrap
     assert (output / "src" / "ikf").is_dir()
