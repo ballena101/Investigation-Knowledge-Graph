@@ -1,10 +1,10 @@
 """Build the deployable IKF Databricks App source bundle.
 
 The generated bundle contains the investigator-facing App files plus the
-canonical ``src/ikf`` package. Governance, Type-D audio, Timeline and
-presentation transformations are materialized during the build, not in
-Databricks, so adoption can be compiled and regression-tested before cloud App
-runtime is used.
+canonical ``src/ikf`` package. Governance, user-scoped Files API transport,
+Type-D audio, Timeline and presentation transformations are materialized during
+the build, not in Databricks, so adoption can be compiled and regression-tested
+before cloud App runtime is used.
 """
 
 from __future__ import annotations
@@ -27,6 +27,10 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from ikf.app_adoption import ADOPTION_VERSION, transform_app_source
+from ikf.app_files_api_adoption import (
+    FILES_API_DOWNLOAD_ADOPTION_VERSION,
+    transform_app_files_api_source,
+)
 from ikf.app_audio_adoption import AUDIO_ADOPTION_VERSION, transform_app_audio_source
 from ikf.app_audio_fixup import AUDIO_FIXUP_VERSION, transform_app_audio_fixup_source
 from ikf.app_timeline_adoption import (
@@ -74,6 +78,9 @@ def build_bundle(output: Path) -> Path:
 
     original_app_source = (APP_SOURCE / "app.py").read_text(encoding="utf-8")
     transformed_app_source, applied_policy = transform_app_source(original_app_source)
+    transformed_app_source, applied_files_api = transform_app_files_api_source(
+        transformed_app_source
+    )
     transformed_app_source, applied_audio = transform_app_audio_source(transformed_app_source)
     transformed_app_source, applied_audio_fixup = transform_app_audio_fixup_source(
         transformed_app_source
@@ -96,6 +103,8 @@ def build_bundle(output: Path) -> Path:
     marker.write_text(
         ADOPTION_VERSION
         + "\n"
+        + FILES_API_DOWNLOAD_ADOPTION_VERSION
+        + "\n"
         + AUDIO_ADOPTION_VERSION
         + "\n"
         + AUDIO_FIXUP_VERSION
@@ -108,8 +117,9 @@ def build_bundle(output: Path) -> Path:
     )
 
     manifest = {
-        "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.5",
+        "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.6",
         "adoption_version": ADOPTION_VERSION,
+        "files_api_download_adoption_version": FILES_API_DOWNLOAD_ADOPTION_VERSION,
         "audio_adoption_version": AUDIO_ADOPTION_VERSION,
         "audio_fixup_version": AUDIO_FIXUP_VERSION,
         "timeline_adoption_version": TIMELINE_ADOPTION_VERSION,
@@ -117,6 +127,7 @@ def build_bundle(output: Path) -> Path:
         "source_app_sha256": _sha256_text(original_app_source),
         "materialized_app_sha256": _sha256_text(transformed_app_source),
         "applied_policy_adoptions": list(applied_policy),
+        "applied_files_api_adoptions": list(applied_files_api),
         "applied_audio_adoptions": list(applied_audio) + list(applied_audio_fixup),
         "applied_timeline_adoptions": list(applied_timeline),
         "applied_ui_adoptions": list(applied_ui),
@@ -135,6 +146,7 @@ def build_bundle(output: Path) -> Path:
         marker,
         output / MANIFEST_NAME,
         bundle_package / "app_adoption.py",
+        bundle_package / "app_files_api_adoption.py",
         bundle_package / "app_audio_adoption.py",
         bundle_package / "app_audio_fixup.py",
         bundle_package / "app_timeline_adoption.py",
