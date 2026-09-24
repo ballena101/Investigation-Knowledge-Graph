@@ -5970,40 +5970,18 @@ if active_analysis_ids:
             [2.6, 0.7, 0.8, 1.0]
         )
         active_analysis_title = html.escape(
-            str(
-                active_analysis.get(
-                    "analysis_title"
-                )
-                or active_analysis_id
-            )
+            str(active_analysis.get("analysis_title") or active_analysis_id)
         )
         active_analysis_class = html.escape(
-            str(
-                active_analysis.get(
-                    "information_class"
-                )
-                or "—"
-            )
+            str(active_analysis.get("information_class") or "—")
         )
         active_analysis_sources = html.escape(
             "Text"
-            if active_analysis.get(
-                "input_mode"
-            ) == "DIRECT_TEXT"
-            else str(
-                active_analysis.get(
-                    "document_count"
-                )
-                or 0
-            )
+            if active_analysis.get("input_mode") == "DIRECT_TEXT"
+            else str(active_analysis.get("document_count") or 0)
         )
         active_analysis_status = html.escape(
-            str(
-                active_analysis.get(
-                    "status"
-                )
-                or "UNKNOWN"
-            )
+            str(active_analysis.get("status") or "UNKNOWN")
         )
 
         with h1:
@@ -6015,9 +5993,7 @@ if active_analysis_ids:
                 ),
                 unsafe_allow_html=True,
             )
-            st.caption(
-                "ID: " + active_analysis_id
-            )
+            st.caption("ID: " + active_analysis_id)
 
         h2.markdown(
             (
@@ -6070,7 +6046,7 @@ else:
         "Findings & Evidence",
         "Timeline",
         "Knowledge Graph",
-        "Ask / Compare LLMs",
+        "Ask LLMs",
         "Review & Validate",
         "Terms of reference",
     ]
@@ -6115,7 +6091,7 @@ with tab_home:
         )
 
     with c3:
-        st.markdown("### Ask / Compare LLMs")
+        st.markdown("### Ask LLMs")
         st.success("Active PoC")
         st.write(
             "Ask questions about one processed case, one document or selected "
@@ -6577,7 +6553,7 @@ with tab_new_analysis:
     st.subheader("Analyse Documents")
     st.caption(
         "Prepare and analyse a governed evidence set from indexed documents or "
-        "direct text. Questions are asked later in Ask / Compare LLMs so the "
+        "direct text. Questions are asked later in Ask LLMs so the "
         "evidence structure does not depend on one initial question."
     )
 
@@ -7406,7 +7382,7 @@ with tab_new_analysis:
 
 @st.fragment
 def render_compare_llms():
-    st.subheader("Ask / Compare LLMs")
+    st.subheader("Ask LLMs")
     st.caption(
         "Use an already processed evidence set. Ask about the whole case, one "
         "document or selected documents; compare models only when needed."
@@ -7418,24 +7394,6 @@ def render_compare_llms():
         "answer with document/page citations. Model comparison is optional "
         "where the information-class policy allows it."
     )
-
-    if st.button(
-        "↻",
-        key="refresh_analysis_status",
-        help="Refresh question and analysis status",
-    ):
-        load_analysis_groups.clear()
-        load_analysis_sources.clear()
-        load_analysis_text_source.clear()
-        load_analysis_graph_counts.clear()
-        load_analysis_evidence_counts.clear()
-        load_analysis_result.clear()
-        load_analysis_graph.clear()
-        load_model_runs.clear()
-        load_model_run_graph.clear()
-        load_question_runs.clear()
-        load_question_model_runs.clear()
-        st.toast("Status refreshed")
 
     try:
         analysis_groups = load_analysis_groups()
@@ -7710,25 +7668,48 @@ def render_compare_llms():
                 + ask_scope_summary
             )
 
-            with st.form(
-                (
-                    "ask_question_form_"
-                    + selected_analysis_id
-                ),
-                clear_on_submit=False,
-            ):
-                ask_question_text = st.text_area(
-                    "Question",
-                    placeholder=(
-                        "Example: What factors contributed to the contact "
-                        "with the quay?"
+            ask_question_col, ask_refresh_col = st.columns([0.92, 0.08])
+            with ask_question_col:
+                with st.form(
+                    (
+                        "ask_question_form_"
+                        + selected_analysis_id
                     ),
-                    height=120,
-                )
-                ask_submitted = st.form_submit_button(
-                    "Ask",
-                    type="primary",
-                )
+                    clear_on_submit=False,
+                ):
+                    ask_question_text = st.text_area(
+                        "Question",
+                        placeholder=(
+                            "Example: What factors contributed to the contact "
+                            "with the quay?"
+                        ),
+                        height=120,
+                    )
+                    ask_submitted = st.form_submit_button(
+                        "Ask",
+                        type="primary",
+                    )
+
+            with ask_refresh_col:
+                st.caption("Refresh")
+                if st.button(
+                    "↻",
+                    key="refresh_analysis_status",
+                    help="Refresh question and answer status",
+                    use_container_width=True,
+                ):
+                    load_analysis_groups.clear()
+                    load_analysis_sources.clear()
+                    load_analysis_text_source.clear()
+                    load_analysis_graph_counts.clear()
+                    load_analysis_evidence_counts.clear()
+                    load_analysis_result.clear()
+                    load_analysis_graph.clear()
+                    load_model_runs.clear()
+                    load_model_run_graph.clear()
+                    load_question_runs.clear()
+                    load_question_model_runs.clear()
+                    st.toast("Question status refreshed")
 
             if ask_submitted:
                 ask_errors = []
@@ -7797,7 +7778,7 @@ def render_compare_llms():
                         load_question_model_runs.clear()
 
                         st.success(
-                            "Question queued. Use Refresh status above to "
+                            "Question queued. Use Refresh beside the question to "
                             "update the answer."
                         )
                         st.caption(
@@ -8002,7 +7983,7 @@ def render_compare_llms():
                     "RUNNING",
                 }:
                     st.info(
-                        "The question is being processed. Use Refresh status "
+                        "The question is being processed. Use Refresh beside the question "
                         "to update this view."
                     )
                 elif question_status == "FAILED":
@@ -10852,19 +10833,13 @@ with tab_review:
                     ]
                 )
 
-    st.markdown("**Supporting evidence**")
+    st.markdown("**Supporting evidence and human decision**")
+    review_evidence_col, review_decision_col = st.columns(2, gap="large")
 
-    evidence_left, evidence_right = st.columns(
-        [1.0, 1.2]
-    )
-
-    with evidence_left:
-        references = (
-            selected.get("evidence_references")
-            or []
-        )
-
+    with review_evidence_col:
+        references = selected.get("evidence_references") or []
         if references:
+            st.markdown("**Supporting evidence**")
             for reference in references:
                 st.write(f"• {reference}")
         else:
@@ -10873,43 +10848,23 @@ with tab_review:
                 or "No page-level source reference is available for this relationship."
             )
 
-        passage_ids = (
-            selected.get("passage_ids")
-            or []
-        )
+        passage_ids = selected.get("passage_ids") or []
         if passage_ids:
-            with st.expander(
-                "Technical evidence IDs",
-                expanded=False,
-            ):
+            with st.expander("Technical evidence IDs", expanded=False):
                 for passage_id in passage_ids:
-                    st.code(
-                        passage_id,
-                        language=None,
-                    )
+                    st.code(passage_id, language=None)
 
-    with evidence_right:
         review_locations = [
             parsed
             for parsed in (
                 parse_evidence_location(value)
-                for value in (
-                    selected.get(
-                        "evidence_locations"
-                    )
-                    or []
-                )
+                for value in (selected.get("evidence_locations") or [])
             )
             if parsed is not None
         ]
 
-        if (
-            selected_review_analysis_id
-            and review_locations
-        ):
-            review_sources = load_analysis_sources(
-                selected_review_analysis_id
-            )
+        if selected_review_analysis_id and review_locations:
+            review_sources = load_analysis_sources(selected_review_analysis_id)
             review_source_by_id = {
                 source["document_id"]: source
                 for source in review_sources
@@ -10917,17 +10872,11 @@ with tab_review:
 
             review_location_index = st.selectbox(
                 "Evidence page",
-                options=list(
-                    range(
-                        len(review_locations)
-                    )
-                ),
+                options=list(range(len(review_locations))),
                 format_func=lambda index: format_evidence_location(
                     review_locations[index],
                     review_source_by_id.get(
-                        review_locations[index][
-                            "document_id"
-                        ]
+                        review_locations[index]["document_id"]
                     ),
                 ),
                 key=(
@@ -10937,46 +10886,28 @@ with tab_review:
                 disabled=review_controls_disabled,
             )
 
-            review_location = review_locations[
-                review_location_index
-            ]
+            review_location = review_locations[review_location_index]
             review_source = review_source_by_id.get(
-                review_location[
-                    "document_id"
-                ]
+                review_location["document_id"]
             )
 
             if review_source:
-                review_path = review_source.get(
-                    "viewer_source_path"
-                )
+                review_path = review_source.get("viewer_source_path")
                 review_type = str(
-                    review_source.get(
-                        "source_type"
-                    )
-                    or ""
+                    review_source.get("source_type") or ""
                 ).upper()
 
-                if (
-                    review_type == "PDF"
-                    and review_path
-                ):
+                if review_type == "PDF" and review_path:
                     try:
-                        review_pdf = download_source_file_as_user(
-                            review_path
-                        )
+                        review_pdf = download_source_file_as_user(review_path)
                         review_excerpt = pdf_page_range_bytes(
                             review_pdf,
-                            review_location.get(
-                                "page_start"
-                            ),
-                            review_location.get(
-                                "page_end"
-                            ),
+                            review_location.get("page_start"),
+                            review_location.get("page_end"),
                         )
                         st.pdf(
                             review_excerpt,
-                            height=620,
+                            height=340,
                             key=(
                                 "relationship_review_pdf_"
                                 + hashlib.sha256(
@@ -10985,14 +10916,8 @@ with tab_review:
                                         + "|"
                                         + review_path
                                         + "|"
-                                        + str(
-                                            review_location.get(
-                                                "page_start"
-                                            )
-                                        )
-                                    ).encode(
-                                        "utf-8"
-                                    )
+                                        + str(review_location.get("page_start"))
+                                    ).encode("utf-8")
                                 ).hexdigest()[:16]
                             ),
                         )
@@ -11005,8 +10930,7 @@ with tab_review:
                         )
                 else:
                     st.caption(
-                        "A page citation exists, but this source is not "
-                        "available as an embedded PDF."
+                        "A page citation exists, but this source is not available as an embedded PDF."
                     )
             else:
                 st.caption(
@@ -11014,91 +10938,91 @@ with tab_review:
                 )
         elif selected_index is not None:
             st.caption(
-                "No page-level evidence location is stored for this "
-                "relationship. Older analyses may require rerunning."
+                "No page-level evidence location is stored for this relationship. "
+                "Older analyses may require rerunning."
             )
 
-    if latest:
-        st.markdown("**Latest human review**")
-        latest_text = (
-            f"{latest['decision']} · "
-            f"{latest['reviewed_at']} · "
-            f"{latest['reviewer_email'] or latest['reviewer_username'] or 'unknown'}"
-        )
-        st.write(latest_text)
-
-        if latest["amended_relationship"]:
-            st.write(
-                "Amended relationship:",
-                latest["amended_relationship"],
+    with review_decision_col:
+        if latest:
+            st.markdown("**Latest human review**")
+            latest_text = (
+                f"{latest['decision']} · "
+                f"{latest['reviewed_at']} · "
+                f"{latest['reviewer_email'] or latest['reviewer_username'] or 'unknown'}"
             )
+            st.write(latest_text)
 
-        if latest["review_comment"]:
-            st.write("Comment:", latest["review_comment"])
+            if latest["amended_relationship"]:
+                st.write(
+                    "Amended relationship:",
+                    latest["amended_relationship"],
+                )
 
-    st.divider()
+            if latest["review_comment"]:
+                st.write("Comment:", latest["review_comment"])
 
-    decision = st.radio(
-        "Human decision",
-        options=["VALIDATED", "REJECTED", "AMENDED"],
-        horizontal=True,
-        key="relationship_decision",
-    )
-
-    amended_relationship = None
-    if decision == "AMENDED":
-        amended_relationship = st.selectbox(
-            "Amended relationship",
-            options=[
-                "RESULTED_IN",
-                "CONTRIBUTED_TO",
-                "AFFECTED",
-                "FOLLOWED_BY",
-                "SUPPORTS",
-            ],
-            key="relationship_amended_value",
+        decision = st.radio(
+            "Human decision",
+            options=["VALIDATED", "REJECTED", "AMENDED"],
+            horizontal=True,
+            key="relationship_decision",
         )
 
-    comment = st.text_area(
-        "Review comment",
-        placeholder=(
-            "Optional for validation; strongly recommended for rejection "
-            "or amendment."
-        ),
-        key="relationship_review_comment",
-    )
+        amended_relationship = None
+        if decision == "AMENDED":
+            amended_relationship = st.selectbox(
+                "Amended relationship",
+                options=[
+                    "RESULTED_IN",
+                    "CONTRIBUTED_TO",
+                    "AFFECTED",
+                    "FOLLOWED_BY",
+                    "SUPPORTS",
+                ],
+                key="relationship_amended_value",
+            )
 
-    reviewer = get_reviewer_identity()
-    reviewer_display = (
-        reviewer["email"]
-        if reviewer["email"] != "unknown"
-        else reviewer["username"]
-    )
-    st.caption(f"Reviewer recorded as: {reviewer_display}")
+        comment = st.text_area(
+            "Review comment",
+            placeholder=(
+                "Optional for validation; strongly recommended for rejection "
+                "or amendment."
+            ),
+            key="relationship_review_comment",
+            height=100,
+        )
 
-    if st.button(
-        "Save human review",
-        type="primary",
-        disabled=review_controls_disabled,
-    ):
-        try:
-            review_id = save_relationship_review(
-                selected,
-                analysis_id=selected_review_analysis_id,
-                decision=decision,
-                amended_relationship=amended_relationship,
-                comment=comment.strip(),
-            )
-            st.success(
-                f"Review saved: {decision} — review ID {review_id}"
-            )
-            st.rerun()
-        except Exception as exc:
-            st.error(
-                "The review could not be saved to Neo4j. "
-                "The App credentials may be read-only."
-            )
-            st.exception(exc)
+        reviewer = get_reviewer_identity()
+        reviewer_display = (
+            reviewer["email"]
+            if reviewer["email"] != "unknown"
+            else reviewer["username"]
+        )
+        st.caption(f"Reviewer recorded as: {reviewer_display}")
+
+        if st.button(
+            "Save human review",
+            type="primary",
+            disabled=review_controls_disabled,
+        ):
+            try:
+                review_id = save_relationship_review(
+                    selected,
+                    analysis_id=selected_review_analysis_id,
+                    decision=decision,
+                    amended_relationship=amended_relationship,
+                    comment=comment.strip(),
+                )
+                st.success(
+                    f"Review saved: {decision} — review ID {review_id}"
+                )
+                st.rerun()
+            except Exception as exc:
+                st.error(
+                    "The review could not be saved to Neo4j. "
+                    "The App credentials may be read-only."
+                )
+                st.exception(exc)
 
 
 with tab_review:
@@ -12749,7 +12673,7 @@ capabilities:
    relationships, source pages and deterministic similar-case retrieval.
 3. **Knowledge Graph** — interactive graph exploration with document scope,
    concept/relationship filters, layout controls and graph-scoped questions.
-4. **Ask / Compare LLMs** — pose free-text questions against a completed
+4. **Ask LLMs** — pose free-text questions against a completed
    evidence set, optionally compare approved model routes, and retain citations.
 5. **Review & Validate** — human governance of relationships, assistant
    correction proposals, EMCIP mappings and SHIELD classifications.
