@@ -11,6 +11,10 @@
     "single_transcription_workspace",
     "reviewed_transcript_decryption"
   ],
+  "applied_files_api_adoptions": [
+    "files_api_transport_imports",
+    "ranged_files_api_download"
+  ],
   "applied_policy_adoptions": [
     "shared_imports",
     "class_d_llama_alias",
@@ -36,8 +40,9 @@
   ],
   "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.4",
   "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.1",
-  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.5",
-  "materialized_app_sha256": "a4e7ab734e4c6c77a631fd9747a0625454e49a3f939e9819eb9f43701c291083",
+  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.6",
+  "files_api_download_adoption_version": "IKF_APP_FILES_API_DOWNLOAD_V0.1",
+  "materialized_app_sha256": "d37b564cbd3791b8671885cceb1e188a5463890656fc7bcd2e4d39e10436fad9",
   "shared_package_path": "src/ikf",
   "source_app_sha256": "4e190a128237e6c294d5f7231275280223520ce7ea112abeff598559ad6acf7a",
   "timeline_adoption_version": "IKF_APP_TIMELINE_ADOPTION_V0.1",

@@ -6,6 +6,9 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
+import http.client
+import socket
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -1379,8 +1382,156 @@ def normalise_allowed_source_path(path):
     return normalized
 
 
+FILES_API_DOWNLOAD_CHUNK_BYTES = 4 * 1024 * 1024
+FILES_API_DOWNLOAD_MAX_ATTEMPTS = 3
+
+
+def _raise_source_files_api_http_error(exc):
+    if exc.code in {401, 403}:
+        raise PermissionError(
+            "You are not authorised to read this source document from its "
+            "Unity Catalog volume."
+        ) from exc
+    if exc.code == 404:
+        raise FileNotFoundError(
+            "The source document is no longer available at the registered "
+            "Unity Catalog path."
+        ) from exc
+    if exc.code == 412:
+        raise RuntimeError(
+            "The source file changed while it was being downloaded. Refresh "
+            "the source and try again."
+        ) from exc
+    raise RuntimeError(
+        f"Databricks Files API returned HTTP {exc.code}."
+    ) from exc
+
+
+def _source_files_api_metadata(url, token):
+    """Return Content-Length and Last-Modified with transient retries."""
+
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept-Encoding": "identity",
+        },
+        method="HEAD",
+    )
+    last_error = None
+    for attempt in range(FILES_API_DOWNLOAD_MAX_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                raw_length = response.headers.get("Content-Length")
+                if raw_length is None:
+                    raise OSError(
+                        "Databricks Files API did not return Content-Length metadata."
+                    )
+                total_size = int(raw_length)
+                if total_size < 0:
+                    raise OSError("Databricks Files API returned an invalid file size.")
+                return total_size, response.headers.get("Last-Modified")
+        except urllib.error.HTTPError as exc:
+            _raise_source_files_api_http_error(exc)
+        except (
+            http.client.IncompleteRead,
+            http.client.RemoteDisconnected,
+            ConnectionResetError,
+            TimeoutError,
+            socket.timeout,
+            urllib.error.URLError,
+            OSError,
+        ) as exc:
+            last_error = exc
+            if attempt + 1 >= FILES_API_DOWNLOAD_MAX_ATTEMPTS:
+                break
+            time.sleep(0.25 * (attempt + 1))
+
+    raise OSError(
+        "Databricks Files API metadata request failed after transient retries."
+    ) from last_error
+
+
+def _source_files_api_range(url, token, start, end, total_size, last_modified):
+    """Download and verify one byte range, retrying only that range."""
+
+    expected_length = end - start + 1
+    last_error = None
+
+    for attempt in range(FILES_API_DOWNLOAD_MAX_ATTEMPTS):
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept-Encoding": "identity",
+            "Range": f"bytes={start}-{end}",
+        }
+        if last_modified:
+            headers["If-Unmodified-Since"] = last_modified
+
+        request = urllib.request.Request(
+            url,
+            headers=headers,
+            method="GET",
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=90) as response:
+                status = getattr(response, "status", response.getcode())
+                content_range = response.headers.get("Content-Range")
+                body = response.read()
+
+            # RFC-compliant range response. Validate both coordinates and byte
+            # count before appending anything to the assembled file.
+            if status == 206:
+                expected_prefix = f"bytes {start}-{end}/"
+                if content_range and not content_range.startswith(expected_prefix):
+                    raise OSError(
+                        "Databricks Files API returned an unexpected Content-Range."
+                    )
+                if len(body) != expected_length:
+                    raise http.client.IncompleteRead(
+                        body,
+                        expected_length - len(body),
+                    )
+                return body, False
+
+            # Defensive fallback if an intermediary ignores Range but returns
+            # the complete file on the first request.
+            if status == 200 and start == 0 and len(body) == total_size:
+                return body, True
+
+            raise OSError(
+                "Databricks Files API did not honor the requested byte range."
+            )
+
+        except urllib.error.HTTPError as exc:
+            _raise_source_files_api_http_error(exc)
+        except (
+            http.client.IncompleteRead,
+            http.client.RemoteDisconnected,
+            ConnectionResetError,
+            TimeoutError,
+            socket.timeout,
+            urllib.error.URLError,
+            OSError,
+        ) as exc:
+            last_error = exc
+            if attempt + 1 >= FILES_API_DOWNLOAD_MAX_ATTEMPTS:
+                break
+            time.sleep(0.25 * (attempt + 1))
+
+    raise OSError(
+        "Databricks Files API download failed after retries for byte range "
+        f"{start}-{end}."
+    ) from last_error
+
+
 def download_source_file_as_user(path):
-    """Read a UC-volume file through Databricks Files API as the logged-in user."""
+    """Read a UC-volume file through Databricks Files API as the logged-in user.
+
+    Files are downloaded in verified 4 MiB ranges. A transient short read or
+    connection close retries only the affected range instead of restarting the
+    whole protected file download.
+    """
 
     normalized = normalise_allowed_source_path(path)
     token = get_user_access_token()
@@ -1392,44 +1543,38 @@ def download_source_file_as_user(path):
         )
 
     host = get_workspace_client().config.host.rstrip("/")
-    encoded_path = urllib.parse.quote(
-        normalized,
-        safe="/",
-    )
-    url = (
-        host
-        + "/api/2.0/fs/files"
-        + encoded_path
-    )
+    encoded_path = urllib.parse.quote(normalized, safe="/")
+    url = host + "/api/2.0/fs/files" + encoded_path
 
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Authorization": f"Bearer {token}",
-        },
-        method="GET",
-    )
+    total_size, last_modified = _source_files_api_metadata(url, token)
+    if total_size == 0:
+        return b""
 
-    try:
-        with urllib.request.urlopen(
-            request,
-            timeout=90,
-        ) as response:
-            return response.read()
-    except urllib.error.HTTPError as exc:
-        if exc.code in {401, 403}:
-            raise PermissionError(
-                "You are not authorised to read this source document "
-                "from its Unity Catalog volume."
-            ) from exc
-        if exc.code == 404:
-            raise FileNotFoundError(
-                "The source document is no longer available at the "
-                "registered Unity Catalog path."
-            ) from exc
-        raise RuntimeError(
-            f"Databricks Files API returned HTTP {exc.code}."
-        ) from exc
+    assembled = bytearray()
+    start = 0
+    while start < total_size:
+        end = min(
+            start + FILES_API_DOWNLOAD_CHUNK_BYTES - 1,
+            total_size - 1,
+        )
+        chunk, complete_file = _source_files_api_range(
+            url,
+            token,
+            start,
+            end,
+            total_size,
+            last_modified,
+        )
+        if complete_file:
+            return chunk
+        assembled.extend(chunk)
+        start = end + 1
+
+    if len(assembled) != total_size:
+        raise OSError(
+            "Databricks Files API download size did not match file metadata."
+        )
+    return bytes(assembled)
 
 
 def parse_evidence_location(value):
