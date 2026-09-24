@@ -6305,9 +6305,11 @@ with tab_transcriptions:
                     and latest_review.get("encryption_scheme") == "FERNET"
                 ):
                     try:
-                        reviewed_default = decrypt_direct_text(
-                            latest_review["encrypted_text"]
-                        )
+                        reviewed_default = Fernet(
+                            DIRECT_TEXT_ENCRYPTION_KEY.encode("utf-8")
+                        ).decrypt(
+                            latest_review["encrypted_text"].encode("utf-8")
+                        ).decode("utf-8")
                     except Exception:
                         reviewed_default = machine_text
 
