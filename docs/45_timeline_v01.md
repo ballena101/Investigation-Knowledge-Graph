@@ -115,8 +115,15 @@ This avoids adding a Databricks SQL warehouse resource merely to support App
 writes, which would add configuration and potential compute cost to the PoC.
 
 A Delta/Unity Catalog timeline table remains the intended analytical snapshot
-layer for cross-case metrics and future AI/BI reporting. The Delta layer should
-be materialized from the governed TimelineEvent register without rerunning LLMs.
+layer for cross-case metrics and future AI/BI reporting. The schema is defined
+by `notebooks/64_create_timeline_delta_schema.py` at:
+
+`bdw_analysis_prod.kg_poc.ikf_timeline_event`
+
+Notebook 64 is schema-only and idempotent; it performs no inference and does not
+copy or mutate Neo4j data. A later sync step should materialize only the governed
+`TimelineEvent` register into Delta without rerunning LLMs.
+
 Direct Delta-backed App persistence can be reconsidered if/when an existing SQL
 warehouse is attached to the App for other justified capabilities.
 
@@ -145,6 +152,41 @@ Timeline V0.1 performs:
 - no document re-parsing.
 
 It reuses the already persisted graph/evidence objects and Neo4j connection.
+
+## Implementation status — 24 September 2026
+
+### Done
+
+- deterministic timeline event contract (`src/ikf/timeline.py`);
+- Timeline App adoption (`src/ikf/app_timeline_adoption.py`);
+- active-analysis Timeline tab between Findings & Evidence and Knowledge Graph;
+- Home capability card;
+- human-validation gate before persistence;
+- optional linkage to existing `KGNode(node_kind='Event')` candidates;
+- evidence-reference/location carry-over from linked KG Event candidates;
+- absolute, relative-audio and order-only time bases;
+- explicit precision handling and range validation;
+- built-in Vega-Lite absolute and audio-relative chronology views;
+- validated event register with reviewer identity;
+- lean App bundle contract V0.4 and automatic materialisation;
+- deterministic unit/regression coverage;
+- Delta/UC analytical snapshot schema notebook 64;
+- CI regression PASS on the Timeline materialisation state.
+
+### Pending / planned sequence
+
+1. **Runtime validation after App redeploy** — confirm tab rendering, event save,
+   reload and active-analysis switching on persisted analyses.
+2. **Evidence opening from Timeline** — open the cited PDF page or audio timestamp
+   directly from a selected timeline event.
+3. **Reviewed-audio ingestion** — propose timeline candidates from already
+   human-reviewed transcript timestamps without another Whisper or LLM run.
+4. **Delta snapshot sync** — copy only human-validated TimelineEvent records into
+   `bdw_analysis_prod.kg_poc.ikf_timeline_event` for cross-case analytics.
+5. **Chronology consistency checks** — flag conflicts between validated timeline
+   order and reviewed `FOLLOWED_BY` KG relationships; do not auto-correct either.
+6. **Cross-source reconciliation** — compare report, audio and news timestamps while
+   keeping external/news context visually separate from investigation evidence.
 
 ## Follow-on versions
 
