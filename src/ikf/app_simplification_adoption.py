@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 
-SIMPLIFICATION_ADOPTION_VERSION = "IKF_APP_SIMPLIFICATION_ADOPTION_V0.1"
+SIMPLIFICATION_ADOPTION_VERSION = "IKF_APP_SIMPLIFICATION_ADOPTION_V0.2"
 
 
 _COMPACT_HEADER_AND_NOTICES = r'''st.title("Safety Investigation Knowledge & AI Support")
@@ -142,6 +142,33 @@ def transform_app_simplification_source(
         )
     applied.append("remove_legacy_transcript_reviewer_allowlist")
 
+    # Retire the historical Ollama compatibility alias. Class-D Llama now has
+    # one canonical Databricks service environment variable and code path.
+    legacy_endpoint_block = '''CLASS_D_OLLAMA_LLAMA70_URL = os.getenv("CLASS_D_OLLAMA_LLAMA70_URL")
+CLASS_D_LLAMA70_ENDPOINT = (
+    os.getenv("CLASS_D_LLAMA70_ENDPOINT")
+    or CLASS_D_OLLAMA_LLAMA70_URL
+)
+'''
+    canonical_endpoint_block = '''CLASS_D_LLAMA70_ENDPOINT = os.getenv(
+    "CLASS_D_LLAMA70_ENDPOINT"
+)
+'''
+    if legacy_endpoint_block not in source:
+        raise RuntimeError(
+            "IKF simplification adoption could not locate the legacy Ollama endpoint alias."
+        )
+    source = source.replace(
+        legacy_endpoint_block,
+        canonical_endpoint_block,
+        1,
+    )
+    source = source.replace(
+        "if CLASS_D_OLLAMA_LLAMA70_URL:",
+        "if CLASS_D_LLAMA70_ENDPOINT:",
+    )
+    applied.append("retire_ollama_endpoint_alias")
+
     source = source.replace(
         '"model_name": "Dedicated IKG GPT-OSS 20B and/or Llama 3.3 70B Databricks model services"',
         '"model_name": "Dedicated IKF GPT-OSS 20B and/or Llama 3.3 70B Databricks model services"',
@@ -170,10 +197,26 @@ def transform_app_simplification_source(
             "Only an IKG administrator can reset the Llama daily quota.",
             "Only an IKF administrator can reset the Llama daily quota.",
         ),
+        (
+            "concept/relationship filters, layout controls and graph-scoped questions.",
+            "concept/relationship filters, layout controls and the latest reviewed relationship state.",
+        ),
+        (
+            "correction proposals, EMCIP mappings and SHIELD classifications.",
+            "relationship validation and correction proposals, with SHIELD classification after human validation.",
+        ),
+        (
+            "Assistant outputs are proposals. Human relationship, EMCIP and SHIELD review\n"
+            "records remain append-only and authoritative according to their governed\n"
+            "workflow. Assistant correction checks never overwrite graph edges.",
+            "Assistant outputs remain proposals. Human relationship decisions are authoritative;\n"
+            "the displayed graph applies the latest reviews, while the raw AI graph is retained\n"
+            "for traceability. SHIELD is derived only after contributing-factor validation.",
+        ),
     )
     for old, new in wording_replacements:
         source = source.replace(old, new)
-    applied.append("remove_ikg_ollama_user_wording")
+    applied.append("remove_ikg_ollama_and_legacy_about_wording")
 
     # This was a static development milestone and therefore became stale as soon
     # as the project moved on. Operational users do not need repository/test state
