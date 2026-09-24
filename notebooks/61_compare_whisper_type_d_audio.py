@@ -41,11 +41,22 @@ DEVICE = 'cuda' if CUDA_DEVICES > 0 else 'cpu'
 COMPUTE_TYPE = 'float16' if DEVICE == 'cuda' else 'int8'
 CPU_THREADS = 0  # Let CTranslate2 use its default CPU-thread policy on serverless compute.
 
-print('IKF Whisper runtime')
+print('IKF Whisper runtime preflight')
 print('  device:', DEVICE)
 print('  compute_type:', COMPUTE_TYPE)
 print('  visible_cuda_devices:', CUDA_DEVICES)
 print('  logical_cpu_count:', os.cpu_count())
+print('  source_root:', SOURCE_ROOT)
+print('  output_root:', OUTPUT_ROOT)
+
+assert SOURCE_ROOT.is_dir(), 'Source volume is unavailable'
+assert OUTPUT_ROOT.is_dir(), (
+    'Restricted transcript output directory is unavailable. Create/authorise '
+    '/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/type_d_transcripts before running.'
+)
+assert all((SOURCE_ROOT / name).is_file() for name in FILES), 'One or more source files are missing'
+
+print('PRECHECK PASS — environment and required paths are visible. No transcription has run yet.')
 
 
 def sha256_file(path):
@@ -62,13 +73,14 @@ def atomic_json(path, value):
         json.dump(value, handle, ensure_ascii=False, indent=2)
     os.replace(temporary, path)
 
+# COMMAND ----------
 
-assert SOURCE_ROOT.is_dir(), 'Source volume is unavailable'
-assert OUTPUT_ROOT.is_dir(), (
-    'Restricted transcript output directory is unavailable. Create/authorise '
-    '/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/type_d_transcripts before running.'
-)
-assert all((SOURCE_ROOT / name).is_file() for name in FILES), 'One or more source files are missing'
+# MAGIC %md
+# MAGIC ## Execute the one-time model comparison
+# MAGIC
+# MAGIC Run this cell only after the preflight cell prints `PRECHECK PASS`.
+
+# COMMAND ----------
 
 for model_name in MODELS:
     model = WhisperModel(
