@@ -6890,7 +6890,7 @@ with tab_new_analysis:
                 errors.append(
                     "The dedicated GPT-OSS 20B endpoint is not configured."
                 )
-            if needs_llama70 and not CLASS_D_OLLAMA_LLAMA70_URL:
+            if needs_llama70 and not CLASS_D_LLAMA70_ENDPOINT:
                 errors.append(
                     "The dedicated Llama 3.3 70B Databricks model service is not configured."
                 )
