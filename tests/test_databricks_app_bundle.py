@@ -36,7 +36,9 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
     for name in (
         "app_adoption.py",
         "app_audio_adoption.py",
+        "app_timeline_adoption.py",
         "app_ui_adoption.py",
+        "timeline.py",
         "source_routing.py",
         "evidence_locations.py",
         "question_scope.py",
@@ -49,7 +51,7 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
         assert (shared / name).is_file(), name
 
 
-def test_bundle_materializes_policy_audio_and_ui_before_deployment(tmp_path):
+def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_path):
     output = build_test_bundle(tmp_path)
     materialized = (output / "app.py").read_text(encoding="utf-8")
 
@@ -79,6 +81,19 @@ def test_bundle_materializes_policy_audio_and_ui_before_deployment(tmp_path):
     assert "TYPE_D_TRANSCRIPT_ROOT.is_dir()" not in materialized
     assert "audio_path.open(\"rb\")" not in materialized
 
+    # Timeline V0.1 is a human-validation surface only. It reuses existing KG
+    # Event candidates and supports explicit absolute, relative-audio and
+    # order-only time bases without invoking a model.
+    assert '"Timeline"' in materialized
+    assert "load_timeline_events" in materialized
+    assert "load_timeline_event_candidates" in materialized
+    assert "Add validated timeline event" in materialized
+    assert "RELATIVE_AUDIO" in materialized
+    assert "ORDER_ONLY" in materialized
+    assert "st.vega_lite_chart" in materialized
+    assert "HAS_TIMELINE_EVENT" in materialized
+    assert "HUMAN_VALIDATED" in materialized
+
     assert "import html" in materialized
     assert "Active analysis: {active_analysis_title}" in materialized
     assert "color:#1f77b4" in materialized
@@ -93,9 +108,10 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         (output / "ikf_bundle_manifest.json").read_text(encoding="utf-8")
     )
 
-    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.3"
+    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.4"
     assert manifest["adoption_version"].startswith("IKF_APP_SHARED_POLICY_ADOPTION_")
     assert manifest["audio_adoption_version"].startswith("IKF_APP_AUDIO_ADOPTION_")
+    assert manifest["timeline_adoption_version"].startswith("IKF_APP_TIMELINE_ADOPTION_")
     assert manifest["ui_adoption_version"].startswith("IKF_APP_UI_ADOPTION_")
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert set(manifest["applied_policy_adoptions"]) == {
@@ -117,6 +133,13 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         "analyse_documents_audio_review",
         "transcription_access_message",
     }
+    assert set(manifest["applied_timeline_adoptions"]) == {
+        "timeline_imports",
+        "timeline_store_helpers",
+        "timeline_tab",
+        "timeline_home_card",
+        "timeline_workspace",
+    }
     assert set(manifest["applied_ui_adoptions"]) == {
         "html_escape_import",
         "active_analysis_header",
@@ -131,4 +154,5 @@ def test_bundled_bootstrap_prefers_materialized_source(tmp_path):
     assert 'APP_DIR / "src"' in bootstrap
     assert "MATERIALIZED_MARKER" in bootstrap
     assert "transform_app_audio_source" in bootstrap
+    assert "transform_app_timeline_source" in bootstrap
     assert (output / "src" / "ikf").is_dir()
