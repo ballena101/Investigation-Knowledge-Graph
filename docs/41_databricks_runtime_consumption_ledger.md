@@ -112,8 +112,6 @@ Interpretation and external call:
 
 ### Implementation change — authenticated persistent model cache — 2026-09-24
 
-This is a **configuration/code change, not yet a successful runtime event**.
-
 Notebook 61 was changed so future model preparation:
 - retrieves a read-only Hugging Face token from Unity Catalog secret `bdw_analysis_prod.kg_poc.huggingface_read_token`;
 - never prints or persists the token;
@@ -128,7 +126,38 @@ Current model repository mapping:
 - `large-v3` -> `Systran/faster-whisper-large-v3`;
 - `turbo` -> `mobiuslabsgmbh/faster-whisper-large-v3-turbo`.
 
-Expected cost effect:
+### Authenticated model preparation — successful — 2026-09-24
+
+Observed result:
+- model: `large-v3`;
+- repository: `Systran/faster-whisper-large-v3`;
+- authenticated Hugging Face access: confirmed by preflight (`hf_token_configured: True`);
+- preparation elapsed: **32.39 seconds**;
+- persistent local snapshot: `/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/_model_cache/faster_whisper/models--Systran--faster-whisper-large-v3/snapshots/edaa852ec7e145841d8ffdb056a99866b5f0a478`;
+- snapshot revision/hash component: `edaa852ec7e145841d8ffdb056a99866b5f0a478`;
+- the incidental `pyspark.databricks.pandas.usage_logger` JVM-not-initialised warning did not prevent model preparation; the authoritative completion marker was `MODEL READY`.
+
+Interpretation:
+- the authenticated persistent-cache design materially reduced the model-preparation wait compared with the earlier unauthenticated attempt;
+- future sessions should reuse this snapshot rather than download the model again, provided the Volume cache remains intact.
+
+### `large-v3` CPU transcription smoke test — runtime concern — 2026-09-24
+
+Observed while the first transcription cell was running:
+- model: `large-v3` from the persistent local snapshot;
+- compute: serverless CPU, 4 logical CPUs, INT8, Standard v6 / standard 16 GB memory;
+- source: `19970212-090-sv-gale-runner-mayday-call.wav`;
+- elapsed wall time observed by the user: **more than 15 minutes**;
+- no `DONE` completion marker had been reported at that point.
+
+Cost-control interpretation:
+- do not expand this configuration to the remaining recordings or models while its real-time factor is unknown;
+- stop the long-running smoke test rather than continue unbounded CPU consumption;
+- determine the source recording duration before classifying the run as intrinsically slow, because cost/performance should be assessed as transcription elapsed time divided by source-audio duration;
+- if the resulting real-time factor is poor, test `turbo` on the same recording before considering more CPU memory or GPU infrastructure;
+- do not infer that `large-v3` is unsuitable for quality reference use; the observation concerns this **4-CPU operating route**, not transcription quality.
+
+Expected cost effect of the cache design:
 - first successful authenticated download still consumes serverless runtime and outbound network activity;
 - subsequent runs should avoid re-downloading the complete cached snapshot when the Volume cache remains intact;
 - this should reduce repeated serverless wait time and external download traffic materially compared with ephemeral/anonymous loading;
