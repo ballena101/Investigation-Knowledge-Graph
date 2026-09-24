@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-PARAKEET_ADOPTION_VERSION = "IKF_APP_PARAKEET_ADOPTION_V0.2"
+PARAKEET_ADOPTION_VERSION = "IKF_APP_PARAKEET_ADOPTION_V0.3"
 
 
 def transform_app_parakeet_source(source: str) -> tuple[str, tuple[str, ...]]:
@@ -28,10 +28,15 @@ def transform_app_parakeet_source(source: str) -> tuple[str, tuple[str, ...]]:
     source = source.replace(import_old, import_new, 1)
     applied.append("parakeet_governance_imports")
 
-    source = source.replace(
-        r"(?:large-v3|turbo)\\.json",
-        r"(?:large-v3|turbo|parakeet-tdt-0\\.6b-v3)\\.json",
-    )
+    whisper_only_regex = '(?:large-v3|turbo)\\.json'
+    parakeet_regex = '(?:large-v3|turbo|parakeet-tdt-0\\.6b-v3)\\.json'
+    regex_count = source.count(whisper_only_regex)
+    if regex_count < 2:
+        raise RuntimeError(
+            "Parakeet adoption expected both transcript discovery/validation regexes; "
+            f"found {regex_count}."
+        )
+    source = source.replace(whisper_only_regex, parakeet_regex)
     applied.append("parakeet_transcript_discovery")
 
     model_old = '''            model = st.selectbox(

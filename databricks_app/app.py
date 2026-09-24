@@ -5148,7 +5148,7 @@ def list_type_d_transcripts():
         for entry in entries
         if not entry.get("is_directory")
         and re.fullmatch(
-            r"[0-9a-f]{64}__(?:large-v3|turbo)\.json",
+            r"[0-9a-f]{64}__(?:large-v3|turbo|parakeet-tdt-0\.6b-v3)\.json",
             str(entry.get("name") or ""),
         )
         and int(entry.get("file_size") or 0) <= 10 * 1024 * 1024
@@ -5168,7 +5168,7 @@ def read_type_d_transcript(path):
     path = Path(path)
     if not type_d_transcript_access() or path.parent != TYPE_D_TRANSCRIPT_ROOT:
         raise PermissionError("Class D transcript access denied")
-    if not re.fullmatch(r"[0-9a-f]{64}__(?:large-v3|turbo)\.json", path.name):
+    if not re.fullmatch(r"[0-9a-f]{64}__(?:large-v3|turbo|parakeet-tdt-0\.6b-v3)\.json", path.name):
         raise ValueError("Unexpected transcript filename")
 
     raw = download_source_file_as_user(str(path))
