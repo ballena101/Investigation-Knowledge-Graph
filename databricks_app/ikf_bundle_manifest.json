@@ -1,0 +1,24 @@
+{
+  "adoption_version": "IKF_APP_SHARED_POLICY_ADOPTION_V0.2",
+  "applied_policy_adoptions": [
+    "shared_imports",
+    "class_d_llama_alias",
+    "retention_policy",
+    "evidence_location_parser",
+    "source_catalogue_routing",
+    "question_scope",
+    "relationship_review",
+    "shield_gate2",
+    "emcip_review",
+    "graph_document_scope"
+  ],
+  "applied_ui_adoptions": [
+    "html_escape_import",
+    "active_analysis_header"
+  ],
+  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.2",
+  "materialized_app_sha256": "a2cfd2bbed5dcd72b0afc1c695ed849a8765b8245718468ccb4a64f453f82b22",
+  "shared_package_path": "src/ikf",
+  "source_app_sha256": "4e190a128237e6c294d5f7231275280223520ce7ea112abeff598559ad6acf7a",
+  "ui_adoption_version": "IKF_APP_UI_ADOPTION_V0.1"
+}
