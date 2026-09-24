@@ -13,6 +13,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: materialize-databricks-app-main
+  cancel-in-progress: true
+
 jobs:
   materialize:
     if: github.actor != 'github-actions[bot]'
@@ -27,11 +31,23 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Rebase on current main before build
+        shell: bash
+        run: |
+          git fetch origin main
+          git rebase origin/main
+
       - name: Build self-contained App source
         run: python scripts/build_databricks_app_bundle.py --output databricks_app
 
       - name: Validate materialized App source
         run: python -m compileall -q databricks_app/app.py databricks_app/src/ikf
+
+      - name: Remove validation bytecode
+        shell: bash
+        run: |
+          find databricks_app -type d -name __pycache__ -prune -exec rm -rf {} +
+          find databricks_app -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
 
       - name: Commit refreshed App source when changed
         shell: bash
@@ -44,4 +60,6 @@ jobs:
             exit 0
           fi
           git commit -m "Refresh lean Databricks App source"
+          git fetch origin main
+          git rebase origin/main
           git push origin HEAD:main
