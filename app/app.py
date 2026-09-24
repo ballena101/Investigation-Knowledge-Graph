@@ -7,6 +7,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 import fitz
 import streamlit as st
@@ -309,6 +310,14 @@ INFORMATION_CLASSES = {
 }
 
 APP_BUILD = "2026-09-22-direct-reference-ask-v28"
+TYPE_D_TRANSCRIPT_ROOT = Path(
+    "/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/type_d_transcripts"
+)
+TYPE_D_TRANSCRIPT_REVIEWERS = {
+    value.strip().lower()
+    for value in os.getenv("TYPE_D_TRANSCRIPT_REVIEWERS", "").split(",")
+    if value.strip()
+}
 
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
@@ -4969,6 +4978,107 @@ analysis_edge_styles = [
 ]
 
 
+def type_d_transcript_access():
+    # The app runs with a service identity. Never use its Volume grant as the
+    # end user's authority to view protected transcripts.
+    user = get_current_user_key()
+    return user != "unknown" and user in TYPE_D_TRANSCRIPT_REVIEWERS
+
+
+def list_type_d_transcripts():
+    if not type_d_transcript_access():
+        return []
+    if not TYPE_D_TRANSCRIPT_ROOT.is_dir():
+        return []
+    return sorted(
+        TYPE_D_TRANSCRIPT_ROOT.glob("*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+
+def read_type_d_transcript(path):
+    if not type_d_transcript_access() or path.parent != TYPE_D_TRANSCRIPT_ROOT:
+        raise PermissionError("Class D transcript access denied")
+    if not re.fullmatch(r"[0-9a-f]{64}__(?:large-v3|turbo)\.json", path.name):
+        raise ValueError("Unexpected transcript filename")
+    if path.stat().st_size > 10 * 1024 * 1024:
+        raise ValueError("Transcript exceeds the pilot size limit")
+    with path.open(encoding="utf-8") as handle:
+        record = json.load(handle)
+    if (record.get("classification") != "D"
+            or record.get("status") != "MACHINE_GENERATED_UNVERIFIED"
+            or record.get("source_sha256") != path.name.split("__")[0]
+            or record.get("model") != path.name.split("__")[1][:-5]
+            or not isinstance(record.get("segments"), list)):
+        raise ValueError("Transcript provenance or classification is invalid")
+    segments = record["segments"]
+    if any(not isinstance(item, dict) or not isinstance(item.get("text"), str)
+           or not isinstance(item.get("start_s"), (int, float))
+           or not isinstance(item.get("end_s"), (int, float))
+           or item["start_s"] < 0 or item["end_s"] < item["start_s"]
+           for item in segments):
+        raise ValueError("Transcript segments have invalid time offsets")
+    return record
+
+
+def transcript_text_with_timestamps(record):
+    def clock(seconds):
+        whole = int(seconds)
+        return f"{whole // 3600:02}:{whole // 60 % 60:02}:{whole % 60:02}"
+    return "\n".join(
+        f"[{clock(segment['start_s'])}–{clock(segment['end_s'])}] "
+        f"{segment['text'].strip()}"
+        for segment in record["segments"]
+    )
+
+
+def save_transcript_review(record, reviewed_text):
+    reviewer = get_current_user_key()
+    text_hash = hashlib.sha256(reviewed_text.encode("utf-8")).hexdigest()
+    with get_driver().session() as session:
+        session.run(
+            """
+            MERGE (r:TypeDTranscriptReview {
+                source_sha256: $source_sha256,
+                model: $model,
+                reviewed_text_sha256: $text_hash
+            })
+            ON CREATE SET r.reviewed_by = $reviewer,
+                r.reviewed_at = datetime(), r.status = 'HUMAN_REVIEWED'
+            """,
+            source_sha256=record["source_sha256"], model=record["model"],
+            text_hash=text_hash, reviewer=reviewer,
+        ).consume()
+    return text_hash
+
+
+def link_transcript_analysis(analysis_id, origin):
+    with get_driver().session() as session:
+        result = session.run(
+            """
+            MATCH (a:AnalysisGroup {analysis_id: $analysis_id, information_class: 'D'})
+            MATCH (r:TypeDTranscriptReview {
+                source_sha256: $source_sha256,
+                model: $model,
+                reviewed_text_sha256: $text_hash,
+                reviewed_by: $reviewer,
+                status: 'HUMAN_REVIEWED'
+            })
+            MERGE (a)-[:DERIVED_FROM_REVIEWED_TRANSCRIPT]->(r)
+            SET a.audio_source_sha256 = $source_sha256,
+                a.transcript_model = $model,
+                a.transcript_reviewed_text_sha256 = $text_hash
+            RETURN a.analysis_id AS analysis_id
+            """,
+            analysis_id=analysis_id, reviewer=get_current_user_key(),
+            source_sha256=origin["source_sha256"],
+            model=origin["model"], text_hash=origin["text_hash"],
+        ).single()
+    if result is None:
+        raise RuntimeError("Transcript review provenance could not be linked")
+
+
 # ACTIVE_ANALYSIS_CONTEXT
 #
 # One analysis is selected once and reused across Analyse Documents,
@@ -5112,6 +5222,7 @@ else:
 (
     tab_home,
     tab_news,
+    tab_transcriptions,
     tab_new_analysis,
     tab_findings,
     tab_knowledge_graph,
@@ -5122,6 +5233,7 @@ else:
     [
         "Home",
         "News & Alerts",
+        "Transcriptions",
         "Analyse Documents",
         "Findings & Evidence",
         "Knowledge Graph",
@@ -5263,6 +5375,87 @@ with tab_news:
             "it as NEWS_DASHBOARD_URL for this App."
         )
 
+with tab_transcriptions:
+    st.subheader("Type D audio transcriptions")
+    if not type_d_transcript_access():
+        st.info("Transcripts are available to designated Type D reviewers only.")
+    else:
+        try:
+            transcript_files = list_type_d_transcripts()
+            if not transcript_files:
+                st.info("No Whisper pilot results are available yet.")
+            else:
+                selected_transcript = st.selectbox(
+                    "Recording and model",
+                    transcript_files,
+                    format_func=lambda path: path.name,
+                    key="type_d_transcript_selection",
+                )
+                record = read_type_d_transcript(selected_transcript)
+                transcript_text = transcript_text_with_timestamps(record)
+                st.caption(
+                    f"{record['source_name']} · {record['model']} · "
+                    "Class D · machine generated, unverified"
+                )
+                st.caption("Source audio SHA-256: " + record["source_sha256"])
+                st.caption("Listen to the original recording when checking critical words and inaudible spans.")
+                audio_verified = False
+                audio_path = Path(record.get("source_path", ""))
+                if (audio_path.parent == Path(IKF_SOURCE_VOLUME_ROOT) / "audios"
+                        and audio_path.is_file()
+                        and audio_path.stat().st_size <= 100 * 1024 * 1024):
+                    with audio_path.open("rb") as audio_file:
+                        audio_bytes = audio_file.read()
+                    if hashlib.sha256(audio_bytes).hexdigest() == record["source_sha256"]:
+                        audio_verified = True
+                        st.audio(audio_bytes)
+                    else:
+                        st.error("Source audio hash does not match the transcript. Review is blocked.")
+                else:
+                    st.error("Source audio is unavailable for verification. Review is blocked.")
+                st.text_area("Timestamped machine transcript", transcript_text,
+                             height=320, disabled=True)
+                st.download_button(
+                    "Download machine transcript (.txt)",
+                    data=transcript_text.encode("utf-8"),
+                    file_name=f"{record['source_sha256'][:16]}_{record['model']}_unverified.txt",
+                    mime="text/plain", key="download_type_d_machine_transcript",
+                )
+                reviewed_text = st.text_area(
+                    "Corrected transcript for Class D analysis",
+                    value=transcript_text,
+                    height=320,
+                    key=f"type_d_review_{selected_transcript.name}",
+                    help="Check against the original audio. Mark inaudible spans explicitly; do not infer missing words.",
+                )
+                st.download_button(
+                    "Download edited transcript (.txt)",
+                    data=reviewed_text.encode("utf-8"),
+                    file_name=f"{record['source_sha256'][:16]}_{record['model']}_edited.txt",
+                    mime="text/plain", key="download_type_d_edited_transcript",
+                )
+                confirmed = st.checkbox(
+                    "I have listened to the audio and checked this text; corrections and inaudible spans are explicit.",
+                    key=f"type_d_confirm_{selected_transcript.name}",
+                )
+                if st.button("Use reviewed text in Class D analysis", disabled=not (confirmed and audio_verified)):
+                    if not reviewed_text.strip():
+                        st.error("A reviewed transcript is required.")
+                    else:
+                        reviewed_text = reviewed_text.strip()
+                        text_hash = save_transcript_review(record, reviewed_text)
+                        st.session_state["transcript_analysis_origin"] = {
+                            "source_sha256": record["source_sha256"],
+                            "model": record["model"], "text_hash": text_hash,
+                        }
+                        st.session_state["analysis_input_mode"] = "Direct text"
+                        st.session_state["analysis_information_class"] = "D"
+                        st.session_state["analysis_direct_text"] = reviewed_text
+                        st.success("Reviewed text is ready in Analyse Documents. Create the Class D analysis there.")
+        except (OSError, ValueError, PermissionError, json.JSONDecodeError) as exc:
+            st.error("The transcript could not be loaded safely.")
+            st.caption(str(exc))
+
 with tab_new_analysis:
     st.subheader("Analyse Documents")
     st.caption(
@@ -5320,6 +5513,7 @@ with tab_new_analysis:
         "Input source",
         options=["Documents", "Direct text"],
         horizontal=True,
+        key="analysis_input_mode",
         help=(
             "Both routes use the same evidence-grounded graph pipeline. "
             "Direct text is encrypted before temporary storage and purged "
@@ -5331,6 +5525,7 @@ with tab_new_analysis:
         "Information classification",
         options=list(INFORMATION_CLASSES),
         format_func=information_class_label,
+        key="analysis_information_class",
         help=(
             "This is a processing control, not only a label. It determines "
             "which model path the App is allowed to use."
@@ -5560,6 +5755,7 @@ with tab_new_analysis:
             direct_text = st.text_area(
                 "Text to analyse and map",
                 height=260,
+                key="analysis_direct_text",
                 placeholder=(
                     "Write or paste the material from which you want the "
                     "knowledge graph to be constructed."
@@ -5611,6 +5807,12 @@ with tab_new_analysis:
 
     if create_submitted:
         errors = []
+        transcript_origin = st.session_state.get("transcript_analysis_origin")
+        if transcript_origin and input_mode == "Direct text":
+            if information_class != "D":
+                errors.append("Reviewed audio transcripts must remain Class D.")
+            elif hashlib.sha256(direct_text.strip().encode("utf-8")).hexdigest() != transcript_origin["text_hash"]:
+                errors.append("The transcript changed after review. Review it again in Transcriptions before analysis.")
 
         if not analysis_title.strip():
             errors.append("Enter an analysis title.")
@@ -5762,6 +5964,9 @@ with tab_new_analysis:
                         ),
                         model_selection=class_d_model_selection,
                     )
+                    if transcript_origin:
+                        link_transcript_analysis(analysis_id, transcript_origin)
+                        st.session_state.pop("transcript_analysis_origin", None)
                     source_description = "direct text"
 
                 load_recent_analyses.clear()
