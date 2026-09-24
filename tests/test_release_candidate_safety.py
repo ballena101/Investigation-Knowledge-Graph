@@ -25,7 +25,6 @@ EXPECTED_APP_ENV_NAMES = {
     "ANALYSIS_JOB_ID",
     "CLASS_D_ANALYSIS_JOB_ID",
     "ASK_JOB_ID",
-    "EMCIP_MAPPING_JOB_ID",
     "SHIELD_PROPOSAL_JOB_ID",
     "RELATIONSHIP_CORRECTION_JOB_ID",
     "SIMILAR_CASES_JOB_ID",
@@ -47,7 +46,6 @@ EXPECTED_VALUE_FROM_RESOURCES = {
     "analysis_job",
     "class_d_analysis_job",
     "ask_job",
-    "emcip_mapping_job",
     "shield_proposal_job",
     "relationship_correction_job",
     "similar_cases_job",
@@ -81,17 +79,20 @@ def test_app_yaml_exposes_expected_release_candidate_environment_contract():
     text = APP_YAML.read_text(encoding="utf-8")
     assert _env_names_from_app_yaml(text) == EXPECTED_APP_ENV_NAMES
     assert "streamlit\n  - run\n  - bootstrap.py" in text
+    assert "EMCIP_MAPPING_JOB_ID" not in text
 
 
 def test_app_yaml_value_from_resource_contract_is_exact():
     text = APP_YAML.read_text(encoding="utf-8")
     assert _value_from_resources_from_app_yaml(text) == EXPECTED_VALUE_FROM_RESOURCES
+    assert "emcip_mapping_job" not in text
 
 
 def test_preflight_resource_contract_matches_app_yaml_value_from_bindings():
     app_yaml = APP_YAML.read_text(encoding="utf-8")
     preflight = PREFLIGHT_NOTEBOOK.read_text(encoding="utf-8")
     assert _required_app_resources_from_preflight(preflight) == _value_from_resources_from_app_yaml(app_yaml)
+    assert "Investigation KG - Propose EMCIP Mappings" not in preflight
 
 
 def test_class_d_llama_uses_canonical_app_resource_binding():
