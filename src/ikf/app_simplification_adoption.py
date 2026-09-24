@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 
-SIMPLIFICATION_ADOPTION_VERSION = "IKF_APP_SIMPLIFICATION_ADOPTION_V0.2"
+SIMPLIFICATION_ADOPTION_VERSION = "IKF_APP_SIMPLIFICATION_ADOPTION_V0.3"
 
 
 _COMPACT_HEADER_AND_NOTICES = r'''st.title("Safety Investigation Knowledge & AI Support")
@@ -111,8 +111,6 @@ def transform_app_simplification_source(
 
     applied: list[str] = []
 
-    # The build identifier is available in the bundle manifest. Showing a dated
-    # hard-coded string in the operational UI caused stale version information.
     source, build_count = re.subn(
         r'^APP_BUILD = "[^"]+"\n',
         "",
@@ -126,9 +124,6 @@ def transform_app_simplification_source(
         )
     applied.append("remove_stale_app_build_label")
 
-    # App access is now the Type-D transcript boundary. The historical separate
-    # reviewer allow-list is no longer consulted and should not remain as dead
-    # configuration in the deployed source.
     source, reviewer_count = re.subn(
         r'TYPE_D_TRANSCRIPT_REVIEWERS = \{\n.*?\n\}\n\n',
         "",
@@ -142,8 +137,9 @@ def transform_app_simplification_source(
         )
     applied.append("remove_legacy_transcript_reviewer_allowlist")
 
-    # Retire the historical Ollama compatibility alias. Class-D Llama now has
-    # one canonical Databricks service environment variable and code path.
+    # Transitional shared-policy adoption introduced this historical alias.
+    # Replace its definition and every remaining reference with the single
+    # canonical Databricks Class-D Llama endpoint variable.
     legacy_endpoint_block = '''CLASS_D_OLLAMA_LLAMA70_URL = os.getenv("CLASS_D_OLLAMA_LLAMA70_URL")
 CLASS_D_LLAMA70_ENDPOINT = (
     os.getenv("CLASS_D_LLAMA70_ENDPOINT")
@@ -164,8 +160,8 @@ CLASS_D_LLAMA70_ENDPOINT = (
         1,
     )
     source = source.replace(
-        "if CLASS_D_OLLAMA_LLAMA70_URL:",
-        "if CLASS_D_LLAMA70_ENDPOINT:",
+        "CLASS_D_OLLAMA_LLAMA70_URL",
+        "CLASS_D_LLAMA70_ENDPOINT",
     )
     applied.append("retire_ollama_endpoint_alias")
 
@@ -218,9 +214,6 @@ CLASS_D_LLAMA70_ENDPOINT = (
         source = source.replace(old, new)
     applied.append("remove_ikg_ollama_and_legacy_about_wording")
 
-    # This was a static development milestone and therefore became stale as soon
-    # as the project moved on. Operational users do not need repository/test state
-    # on the Home page.
     milestone_start = source.find(
         '    st.divider()\n    st.markdown("### Current validation milestone")\n'
     )
@@ -233,8 +226,6 @@ CLASS_D_LLAMA70_ENDPOINT = (
         source = source[:milestone_start] + source[milestone_end:]
         applied.append("remove_static_validation_milestone")
 
-    # The EMCIP UI has already been removed by the workflow adoption. Remove its
-    # obsolete tab alias/comment so the materialized source reflects the product.
     legacy_mapping_alias = '''# Relationship and EMCIP reviews are deliberately presented in one capability.
 # Re-entering the same Streamlit tab later appends the mapping-review section.
 tab_mapping_review = tab_review
@@ -244,9 +235,6 @@ tab_mapping_review = tab_review
         source = source.replace(legacy_mapping_alias, "", 1)
         applied.append("remove_legacy_emcip_tab_alias")
 
-    # The transcription workspace creates and validates a governed source. Once
-    # accepted, the transcript is analysed through Analyse Documents. The shorter
-    # label makes that distinction clearer.
     source = source.replace(
         '        "Transcriptions",\n',
         '        "Audio transcription",\n',
