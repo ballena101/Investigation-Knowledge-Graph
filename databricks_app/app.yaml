@@ -40,10 +40,6 @@ env:
   - name: CLASS_D_LLAMA70_ENDPOINT
     valueFrom: class_d_llama70_endpoint
 
-  # Temporary compatibility alias while legacy UI checks are retired.
-  - name: CLASS_D_OLLAMA_LLAMA70_URL
-    valueFrom: class_d_llama70_endpoint
-
   - name: DIRECT_TEXT_ENCRYPTION_KEY
     valueFrom: direct_text_encryption_key
 
