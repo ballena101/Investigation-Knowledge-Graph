@@ -137,9 +137,6 @@ def transform_app_simplification_source(
         )
     applied.append("remove_legacy_transcript_reviewer_allowlist")
 
-    # Transitional shared-policy adoption introduced this historical alias.
-    # Replace its definition and every remaining reference with the single
-    # canonical Databricks Class-D Llama endpoint variable.
     legacy_endpoint_block = '''CLASS_D_OLLAMA_LLAMA70_URL = os.getenv("CLASS_D_OLLAMA_LLAMA70_URL")
 CLASS_D_LLAMA70_ENDPOINT = (
     os.getenv("CLASS_D_LLAMA70_ENDPOINT")
@@ -192,6 +189,10 @@ CLASS_D_LLAMA70_ENDPOINT = (
         (
             "Only an IKG administrator can reset the Llama daily quota.",
             "Only an IKF administrator can reset the Llama daily quota.",
+        ),
+        (
+            "Use Knowledge Graph for diagram exploration and graph-scoped questions.",
+            "Use Knowledge Graph to view the reviewed relationships and their provenance.",
         ),
         (
             "concept/relationship filters, layout controls and graph-scoped questions.",
