@@ -53,6 +53,45 @@ def test_catalogue_filter_uses_ikf_for_class_a():
     assert [row["document_id"] for row in filtered] == ["ikf-1"]
 
 
+def test_explicit_class_d_transcript_is_only_visible_in_class_d():
+    rows = [
+        {
+            "document_id": "legacy-ikf",
+            "source_managed_by": "IKF",
+            "information_class": None,
+        },
+        {
+            "document_id": "validated-transcript",
+            "source_managed_by": "IKF",
+            "information_class": "D",
+            "source_type": "TXT",
+            "document_kind": "TRANSCRIPT",
+        },
+    ]
+
+    class_a = filter_catalogue_rows(rows, information_class="A")
+    class_c = filter_catalogue_rows(rows, information_class="C")
+    class_d = filter_catalogue_rows(rows, information_class="D")
+
+    assert [row["document_id"] for row in class_a] == ["legacy-ikf"]
+    assert [row["document_id"] for row in class_c] == ["legacy-ikf"]
+    assert [row["document_id"] for row in class_d] == [
+        "legacy-ikf",
+        "validated-transcript",
+    ]
+
+
+def test_explicit_class_mismatch_fails_closed_even_with_correct_manager():
+    rows = [
+        {
+            "document_id": "protected",
+            "source_managed_by": "IKF",
+            "information_class": "D",
+        }
+    ]
+    assert filter_catalogue_rows(rows, information_class="A") == []
+
+
 def test_invalid_information_class_fails_closed():
     with pytest.raises(ValueError):
         resolve_source_route("E", "Documents")
