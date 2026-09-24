@@ -51,7 +51,7 @@ EXPECTED_VALUE_FROM_RESOURCES = {
     "relationship_correction_job",
     "similar_cases_job",
     "class_d_gpt20_endpoint",
-    "class_d_ollama_llama70_url",
+    "class_d_llama70_endpoint",
     "direct_text_encryption_key",
     "ikg_admin_users",
 }
@@ -92,10 +92,17 @@ def test_preflight_resource_contract_matches_app_yaml_value_from_bindings():
     assert _required_app_resources_from_preflight(preflight) == _value_from_resources_from_app_yaml(app_yaml)
 
 
-def test_class_d_llama_has_canonical_endpoint_binding():
+def test_class_d_llama_uses_canonical_app_resource_binding():
     text = APP_YAML.read_text(encoding="utf-8")
-    assert "name: CLASS_D_LLAMA70_ENDPOINT" in text
-    assert "ikf-llama-3-3-70b-poc" in text
+    assert re.search(
+        r"name:\s*CLASS_D_LLAMA70_ENDPOINT\s*\n\s*valueFrom:\s*class_d_llama70_endpoint",
+        text,
+    )
+    assert re.search(
+        r"name:\s*CLASS_D_OLLAMA_LLAMA70_URL\s*\n\s*valueFrom:\s*class_d_llama70_endpoint",
+        text,
+    )
+    assert "valueFrom: class_d_ollama_llama70_url" not in text
 
 
 def test_notebook_60_remains_read_only_and_no_inference():
