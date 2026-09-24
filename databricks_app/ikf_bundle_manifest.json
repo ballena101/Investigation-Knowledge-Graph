@@ -34,7 +34,7 @@
     "active_analysis_header"
   ],
   "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.4",
-  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.4",
+  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.5",
   "materialized_app_sha256": "66684781df36fe36dadfafa640ccc717e4433299826bbc548076139b3702c909",
   "shared_package_path": "src/ikf",
   "source_app_sha256": "4e190a128237e6c294d5f7231275280223520ce7ea112abeff598559ad6acf7a",
