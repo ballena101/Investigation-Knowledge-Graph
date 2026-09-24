@@ -1,16 +1,9 @@
-"""Materialize NVIDIA Parakeet as an independent Type-D ASR option.
-
-This layer runs after the base audio workflow is materialized. It deliberately
-reuses the same TranscriptionRun, human review and Class-D publication path.
-The optional comparison mode launches two independent runs; it never merges
-machine transcripts automatically and never publishes either without human
-review.
-"""
+"""Materialize NVIDIA Parakeet as an independent Type-D ASR option."""
 
 from __future__ import annotations
 
 
-PARAKEET_ADOPTION_VERSION = "IKF_APP_PARAKEET_ADOPTION_V0.1"
+PARAKEET_ADOPTION_VERSION = "IKF_APP_PARAKEET_ADOPTION_V0.2"
 
 
 def transform_app_parakeet_source(source: str) -> tuple[str, tuple[str, ...]]:
@@ -79,8 +72,8 @@ def transform_app_parakeet_source(source: str) -> tuple[str, tuple[str, ...]]:
             )
             if model == PARAKEET_TDT_06B_V3:
                 st.caption(
-                    "Parakeet TDT 0.6B v3 supports 25 published languages. Norwegian "
-                    "and Icelandic are not in its published language set; use Whisper for them."
+                    "Parakeet supports 25 published languages. Norwegian and Icelandic "
+                    "are not in that set; use Whisper for those languages."
                 )
 '''
     if model_old not in source:
@@ -136,9 +129,7 @@ def transform_app_parakeet_source(source: str) -> tuple[str, tuple[str, ...]]:
                         if queued_runs:
                             st.success("Transcription queued — " + " | ".join(queued_runs))
                         else:
-                            st.info(
-                                "The requested machine transcript(s) already exist or are processing."
-                            )
+                            st.info("The requested transcript(s) already exist or are processing.")
 '''
     if run_old not in source:
         raise RuntimeError("Parakeet adoption could not locate transcription queue action")
@@ -178,8 +169,8 @@ def transform_app_parakeet_source(source: str) -> tuple[str, tuple[str, ...]]:
                     use_container_width=True,
                 )
                 st.caption(
-                    "These are independent machine outputs, not a consensus transcript. "
-                    "Switch the engine/model selector above to inspect and validate either result."
+                    "Independent machine outputs, not a consensus transcript. Switch the "
+                    "engine/model selector to inspect either result."
                 )
 '''
     if metrics_anchor not in source:
@@ -205,5 +196,28 @@ def transform_app_parakeet_source(source: str) -> tuple[str, tuple[str, ...]]:
         raise RuntimeError("Parakeet adoption could not locate transcript review warning")
     source = source.replace(review_anchor, review_insert, 1)
     applied.append("asr_engine_provenance_display")
+
+    whisper_caption = '''            st.caption(
+                "Transcription engine: faster-whisper 1.2.1 · "
+                "Whisper large-v3-turbo or large-v3. Machine output is Class D "
+                "and requires human review before publication or analysis."
+            )
+'''
+    dual_caption = '''            st.caption(
+                "Transcription engines: faster-whisper 1.2.1 (Whisper large-v3-turbo / "
+                "large-v3) and NVIDIA Parakeet TDT 0.6B v3 via Transformers 5.17.0. "
+                "Machine output is Class D and requires human review before publication."
+            )
+'''
+    if whisper_caption in source:
+        source = source.replace(whisper_caption, dual_caption, 1)
+        applied.append("dual_engine_disclosure")
+
+    source = source.replace(
+        "- Audio transcription uses **faster-whisper 1.2.1** with Whisper large-v3-turbo\n  or large-v3. Machine transcripts remain unverified until a person listens,\n  corrects and accepts them; the original recording remains authoritative.",
+        "- Audio transcription can use **faster-whisper 1.2.1** with Whisper large-v3-turbo/large-v3 or **NVIDIA Parakeet TDT 0.6B v3** through Transformers 5.17.0. Machine transcripts remain unverified until a person listens, corrects and accepts them; the original recording remains authoritative.",
+        1,
+    )
+    applied.append("parakeet_confidentiality_disclosure")
 
     return source, tuple(applied)
