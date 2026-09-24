@@ -29,6 +29,7 @@ EXPECTED_APP_ENV_NAMES = {
     "SHIELD_PROPOSAL_JOB_ID",
     "RELATIONSHIP_CORRECTION_JOB_ID",
     "SIMILAR_CASES_JOB_ID",
+    "TRANSCRIPTION_JOB_ID",
     "CLASS_D_GPT20_ENDPOINT",
     "CLASS_D_LLAMA70_ENDPOINT",
     "CLASS_D_OLLAMA_LLAMA70_URL",
@@ -50,6 +51,7 @@ EXPECTED_VALUE_FROM_RESOURCES = {
     "shield_proposal_job",
     "relationship_correction_job",
     "similar_cases_job",
+    "transcription_job",
     "class_d_gpt20_endpoint",
     "class_d_llama70_endpoint",
     "direct_text_encryption_key",
@@ -103,6 +105,14 @@ def test_class_d_llama_uses_canonical_app_resource_binding():
         text,
     )
     assert "valueFrom: class_d_ollama_llama70_url" not in text
+
+
+def test_transcription_job_uses_dedicated_can_manage_run_resource_binding():
+    text = APP_YAML.read_text(encoding="utf-8")
+    assert re.search(
+        r"name:\s*TRANSCRIPTION_JOB_ID\s*\n\s*valueFrom:\s*transcription_job",
+        text,
+    )
 
 
 def test_notebook_60_remains_read_only_and_no_inference():
