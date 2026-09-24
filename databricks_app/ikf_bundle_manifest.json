@@ -69,7 +69,7 @@
   "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.1",
   "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.8",
   "files_api_download_adoption_version": "IKF_APP_FILES_API_DOWNLOAD_V0.1",
-  "materialized_app_sha256": "2d27bf64f56810d1bd62fcb47199265e8924662e33bbe91a25592d1d3d913b39",
+  "materialized_app_sha256": "be41bc52985468af9cdcdb532a32a2570f1b6dc15b8bba1f5eecae4e2eee0a1c",
   "shared_package_path": "src/ikf",
   "simplification_adoption_version": "IKF_APP_SIMPLIFICATION_ADOPTION_V0.3",
   "source_app_sha256": "4e190a128237e6c294d5f7231275280223520ce7ea112abeff598559ad6acf7a",

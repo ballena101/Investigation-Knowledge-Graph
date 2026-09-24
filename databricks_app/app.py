@@ -8383,7 +8383,7 @@ with tab_findings:
         st.info(
             "This page is intentionally read-only: browse extracted knowledge, "
             "inspect investigation evidence and retrieve similar MAIRA cases. "
-            "Use Knowledge Graph for diagram exploration and graph-scoped questions."
+            "Use Knowledge Graph to view the reviewed relationships and their provenance."
         )
 
         findings_nodes_by_kind = {}
