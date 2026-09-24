@@ -10454,53 +10454,46 @@ with tab_review:
     st.markdown("**Assistant review status**")
     st.write(selected["evidence_status"] or "—")
 
-    if (
-        selected.get("model_run_id")
-        or selected["evidence_anchor"]
-    ):
+    if selected.get("model_run_id"):
         with st.expander(
             "Technical provenance",
             expanded=False,
         ):
-            if selected.get("model_run_id"):
-                st.markdown(
-                    "**Model run**"
-                )
-                st.code(
-                    selected["model_run_id"],
-                    language=None,
-                )
+            st.markdown("**Model run**")
+            st.code(
+                selected["model_run_id"],
+                language=None,
+            )
 
-            if selected["evidence_anchor"]:
-                st.markdown(
-                    "**Evidence anchor**"
-                )
-                st.write(
-                    selected[
-                        "evidence_anchor"
-                    ]
-                )
-
-    st.markdown("**Supporting evidence and human decision**")
+    st.markdown("**Evidence and human decision**")
     review_evidence_col, review_decision_col = st.columns(2, gap="large")
 
     with review_evidence_col:
-        references = selected.get("evidence_references") or []
-        if references:
-            st.markdown("**Supporting evidence**")
-            for reference in references:
-                st.write(f"• {reference}")
-        else:
-            st.info(
-                selected["evidence"]
-                or "No page-level source reference is available for this relationship."
-            )
-
+        st.markdown("**Evidence**")
         passage_ids = selected.get("passage_ids") or []
+        references = selected.get("evidence_references") or []
+
         if passage_ids:
-            with st.expander("Technical evidence IDs", expanded=False):
-                for passage_id in passage_ids:
-                    st.code(passage_id, language=None)
+            passage_index = st.selectbox(
+                "Evidence passage",
+                options=list(range(len(passage_ids))),
+                format_func=lambda index: (
+                    f"Passage {index + 1} · {passage_ids[index]}"
+                ),
+                key=(
+                    "relationship_review_passage_"
+                    + selected["edge_id"]
+                ),
+                disabled=review_controls_disabled,
+                help=(
+                    "Select the governed extracted passage linked to this relationship. "
+                    "The passage identifier is provenance, not a separate evidence type."
+                ),
+            )
+            selected_passage_id = passage_ids[passage_index]
+            st.caption("Selected passage: " + selected_passage_id)
+        elif selected_index is not None:
+            st.caption("No evidence passage identifier is stored for this relationship.")
 
         review_locations = [
             parsed
@@ -10584,10 +10577,20 @@ with tab_review:
                 st.caption(
                     "The cited document is not linked to the selected analysis."
                 )
+        elif references:
+            st.selectbox(
+                "Source reference",
+                options=references,
+                key=(
+                    "relationship_review_reference_"
+                    + selected["edge_id"]
+                ),
+                disabled=review_controls_disabled,
+            )
         elif selected_index is not None:
-            st.caption(
-                "No page-level evidence location is stored for this relationship. "
-                "Older analyses may require rerunning."
+            st.info(
+                selected["evidence"]
+                or "No page-level source reference is available for this relationship."
             )
 
     with review_decision_col:

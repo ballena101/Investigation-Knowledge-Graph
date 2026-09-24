@@ -53,6 +53,7 @@
     "active_analysis_header",
     "ask_llms_title",
     "ask_refresh_beside_question",
+    "simplify_review_provenance",
     "compact_relationship_review"
   ],
   "applied_workflow_adoptions": [
@@ -69,11 +70,11 @@
   "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.1",
   "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.8",
   "files_api_download_adoption_version": "IKF_APP_FILES_API_DOWNLOAD_V0.1",
-  "materialized_app_sha256": "4769c1947e01a0be6ba829d61d3c6182cf2dc7c3d6bc3a34169716f248c569ec",
+  "materialized_app_sha256": "800807dffc7c82217db1c7d667cdd2a85a03df839886e734b87371b4bb7b4aef",
   "shared_package_path": "src/ikf",
   "simplification_adoption_version": "IKF_APP_SIMPLIFICATION_ADOPTION_V0.3",
   "source_app_sha256": "4e190a128237e6c294d5f7231275280223520ce7ea112abeff598559ad6acf7a",
   "timeline_adoption_version": "IKF_APP_TIMELINE_ADOPTION_V0.3",
-  "ui_adoption_version": "IKF_APP_UI_ADOPTION_V0.2",
+  "ui_adoption_version": "IKF_APP_UI_ADOPTION_V0.3",
   "workflow_adoption_version": "IKF_APP_WORKFLOW_ADOPTION_V0.1"
 }
