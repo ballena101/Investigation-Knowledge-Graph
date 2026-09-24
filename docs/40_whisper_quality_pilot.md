@@ -13,12 +13,23 @@ the adapter for Whisper output must be reviewed and implemented separately.
 ## Controlled execution
 
 Create `/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/type_d_transcripts`
-with access limited to authorized Type D reviewers. Run notebook 61 manually
-with a single on-demand GPU worker, automatic termination and `faster-whisper`
-installed in the job environment. No always-on endpoint is needed. The pilot
-records a SHA-256 audio identity, model and decoding parameters, timestamps,
-language estimate and elapsed time per file. Existing output is skipped by
-source hash and model name. The source audio remains the authoritative record.
+with access limited to authorized Type D reviewers. Notebook 61 is now portable
+across the approved Databricks environments available to the user: it detects a
+visible NVIDIA GPU and uses CUDA/FP16 when one exists; otherwise it uses
+CPU/INT8. This allows the controlled pilot to run on Databricks serverless CPU
+when the user does not have classic cluster-creation rights and Serverless GPU /
+AI Runtime is not exposed by the workspace.
+
+The CPU route is a resource/permission fallback, not a statement that GPU is
+unnecessary for production throughput. If a governed GPU route is later made
+available, the selected validation subset should be repeated on CUDA/FP16 before
+the GPU production route is treated as runtime validated.
+
+`faster-whisper` must be installed as an environment dependency. No always-on
+endpoint is needed. The pilot records a SHA-256 audio identity, model and decoding
+parameters, selected device/compute type, timestamps, language estimate and
+elapsed time per file. Existing output is skipped by source hash and model name.
+The source audio remains the authoritative record.
 
 Before production use, pin dependency/model revisions and ensure the output
 directory is restricted. Never commit source audio or transcripts to GitHub.
@@ -26,6 +37,25 @@ Do not expose output in public notebook results, logs or app surfaces. The
 Type D access and retention owner must confirm the controls for protected
 statements, identities, derivative records, disclosure and deletion under
 Article 9 and applicable national rules.
+
+## Base environment decision
+
+For the serverless CPU pilot, a Databricks **Standard** base environment is
+sufficient when `faster-whisper` is added and shown as installed in Dependencies.
+The **ML** base environment is also compatible but is not required merely to run
+`faster-whisper` on CPU. Selecting an ML base environment does not itself provide
+a GPU. A GPU route is present only when Databricks exposes a Serverless GPU /
+Accelerator option or an authorised classic GPU compute resource.
+
+The notebook therefore must not assume `device='cuda'`. Its runtime selection is:
+
+```text
+visible NVIDIA GPU -> device=cuda, compute_type=float16
+no visible GPU     -> device=cpu,  compute_type=int8
+```
+
+This follows faster-whisper/CTranslate2 supported execution modes while keeping
+one governed quality-pilot notebook for both environments.
 
 ## Quality acceptance
 
@@ -85,11 +115,19 @@ No deployment or runtime verification was performed by the code change.
 
 ### Execution order and cost
 
-1. Check Volume grants and configure the allowlist; create the output directory
-   using an authorised job identity. Do not expand grants merely to run the pilot.
-2. Configure notebook 61 as an unscheduled on-demand GPU job with a timeout,
-   no retries and `faster-whisper` installed; run one comparison on three files.
-3. Inspect results in the app, review audio/text, compare critical-field errors
+1. Check Volume grants and configure the allowlist; create/authorise the output
+   directory. Do not expand grants merely to run the pilot.
+2. If Serverless GPU is unavailable and the user cannot create classic compute,
+   use serverless CPU. Select a current Standard base environment (or ML if the
+   workspace requires it) and confirm `faster-whisper` is shown as installed.
+3. Pull the current `main` version of notebook 61. It automatically selects
+   CPU/INT8 when no GPU is visible, so do not run an older CUDA-only copy.
+4. Run the pilot manually/unscheduled with no automatic retry. Inspect the first
+   runtime lines and confirm `device: cpu` and `compute_type: int8` before relying
+   on the results.
+5. Inspect results in the app, review audio/text, compare critical-field errors
    and elapsed/billed compute; select the model.
-4. Pin model/package revisions, implement governed Type D table persistence and
+6. If a governed GPU route later becomes available, repeat the selected validation
+   subset on CUDA/FP16 and compare critical-field quality and execution cost.
+7. Pin model/package revisions, implement governed Type D table persistence and
    downstream timestamp evidence binding for reusable production ingestion.
