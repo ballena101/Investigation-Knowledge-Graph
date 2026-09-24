@@ -40,8 +40,7 @@ REQUIRED_JOB_NAMES = (
 )
 
 # Keep this list aligned with every app.yaml `valueFrom` resource binding.
-# Both CLASS_D_LLAMA70_ENDPOINT and the temporary legacy Ollama environment alias
-# resolve to the same canonical App resource: class_d_llama70_endpoint.
+# Class-D Llama uses one canonical App resource: class_d_llama70_endpoint.
 REQUIRED_APP_RESOURCES = (
     "neo4j_uri",
     "neo4j_username",
