@@ -20,16 +20,16 @@ The following map records the principal resources and tools IKF may invoke, and 
 | Lakeflow Jobs | Analysis, Ask, Class-D, EMCIP, SHIELD, relationship correction, similar cases | Bound through `app/app.yaml`; live numeric IDs must be read from Databricks | Job/serverless compute + model calls triggered by tasks |
 | Job `803905874377828` — `Investigation KG - Automated Analysis` | Historical automated analysis chain | Known historical job | Job compute and downstream model/service use when executed |
 | Databricks serverless notebooks/jobs | Current preferred execution route for notebook 61 because the user cannot create classic compute | **Current Whisper pilot route: CPU serverless** | DBU consumption while notebook/job runs |
-| Serverless Base Environment Standard v5 | Python/runtime base for notebook 61 | **Recommended current base environment** | Standard serverless DBU; no GPU |
-| Serverless Base Environment ML v5 | Alternative serverless environment with ML packages preinstalled | Available but **not required** for notebook 61 | Does not itself add a GPU; may carry unnecessary package surface |
-| Serverless memory — Standard | REPL memory for notebook execution | **Recommended first setting: 16 GB** | Lower DBU emission than high-memory mode |
-| Serverless high memory | Larger notebook REPL memory | Use only after a reproducible out-of-memory failure; current Microsoft documentation lists 32 GB | Higher DBU emission rate |
+| Serverless Base Environment Standard v6 | Python/runtime base for notebook 61 | **Current validated base environment** | Standard serverless DBU; no GPU |
+| Serverless Base Environment ML v6 | Alternative serverless environment with ML packages preinstalled | Available but **not required** for notebook 61 | Does not itself add a GPU; may carry unnecessary package surface |
+| Serverless memory — Standard | REPL memory for notebook execution | **Current first setting: 16 GB** | Lower DBU emission than high-memory mode |
+| Serverless high memory | Larger notebook REPL memory | Use only after a reproducible out-of-memory failure; workspace-specific displayed size must be recorded | Higher DBU emission rate |
 | `faster-whisper==1.2.1` | Speech-to-text engine for Type-D audio | Installed as notebook/serverless dependency | Package installation + CPU runtime; no separate model-serving endpoint |
 | Whisper `large-v3` | High-quality transcription candidate | Pilot model in notebook 61 | CPU time and model download/cache |
 | Whisper `turbo` | Faster transcription candidate | Pilot comparison model in notebook 61 | CPU time and model download/cache |
 | Unity Catalog Volume `bdw_analysis_prod.kg_poc.investigation_sources` | Governed Type-D source/output storage | Reads audio and writes pilot transcript JSON | Storage plus compute used to read/write; volume itself is not a GPU resource |
 | `audios/` | Type-D source audio folder | Source for notebook 61 | Read operations during pilot |
-| `type_d_transcripts/` | Restricted pilot output folder | Required output route for notebook 61 | Write operations during pilot |
+| `type_d_transcripts/` | Restricted pilot output folder | Created and write/delete validated by notebook 61 preflight | Write operations during pilot |
 | Databricks Model Serving / system.ai routes | Governed LLM inference for analysis/Ask workflows | Used only by workflows that explicitly call them; not used by faster-whisper transcription | Token/model-serving cost when invoked |
 | Neo4j AuraDB | Knowledge-graph projection, traversal and review metadata | External service used by graph/review workflows | External Neo4j service cost, not Databricks DBU |
 | MAIRA governed corpus/retrieval | Published investigation evidence and retrieval | Read/integration dependency | Cost depends on Databricks read/retrieval/model execution used by the calling workflow |
@@ -44,22 +44,33 @@ The original preferred design was an on-demand GPU job. The user does not curren
 ```text
 Notebook 61
     -> Databricks serverless CPU
-    -> Standard base environment v5
+    -> Standard base environment v6
     -> standard memory initially (16 GB)
     -> faster-whisper 1.2.1
     -> device=cpu
     -> compute_type=int8
-    -> large-v3 + turbo one-time quality pilot
+    -> one-file/one-model smoke test first
+    -> large-v3 + turbo only after smoke-test GO
     -> restricted Unity Catalog transcript output
 ```
 
+Observed preflight runtime:
+
+- Standard v6;
+- 4 logical CPUs;
+- 0 visible CUDA devices;
+- CPU/INT8 selected automatically;
+- source Volume visible;
+- `type_d_transcripts` created successfully;
+- temporary output write/delete probe passed.
+
 Notebook 61 automatically detects whether CUDA is available. With no accelerator it runs `device="cpu"` and `compute_type="int8"`; if a governed GPU route becomes available later, it can use CUDA/FP16 without maintaining a separate transcription implementation.
 
-**ML v5 is not required for this CPU route.** The ML base environment preinstalls Databricks Runtime for Machine Learning Python/system packages, but `faster-whisper` is already declared as a dependency and the notebook does not require Spark ML. Selecting ML v5 does not create or expose a GPU.
+**ML v6 is not required for this CPU route.** The ML base environment preinstalls additional ML packages, but `faster-whisper` is declared as a dependency and the notebook does not require Spark ML. Selecting ML v6 does not create or expose a GPU.
 
-**Do not increase memory pre-emptively.** Start with the standard 16 GB serverless notebook memory. Notebook 61 processes the three audio files sequentially and does not use batch transcription. High-memory serverless should be enabled only if the run produces a reproducible out-of-memory condition. Current Azure Databricks documentation lists Standard as 16 GB total notebook memory and High as 32 GB, and states that high-memory serverless has a higher DBU emission rate. If the workspace UI displays a different high-memory amount, record the UI value and billing SKU in the execution record before selecting it.
+**Do not increase memory pre-emptively.** Start with the standard 16 GB serverless notebook memory. Notebook 61 processes audio sequentially and does not use batch transcription. High-memory serverless should be enabled only if the run produces a reproducible out-of-memory condition. If the workspace UI displays a different high-memory amount from public documentation, record the actual UI value and billing SKU before selecting it.
 
-The official `faster-whisper` documentation supports CPU INT8 execution and reports substantially lower memory use for INT8 than full precision in its published CPU benchmarks. The exact large-v3 memory requirement in the Databricks serverless environment must still be observed in the pilot; the project should not convert a one-time high-memory fallback into the default without evidence.
+The official `faster-whisper` route supports CPU INT8 execution. The exact large-v3 memory/runtime profile in the Databricks serverless environment is being measured by the pilot; the project must not convert a one-time high-memory fallback into the default without evidence.
 
 ## Databricks App
 
@@ -68,6 +79,21 @@ Known App name from the IKF deployment history:
 - `investigation-kg-poc`
 
 Billing records for Databricks Apps can expose `usage_metadata.app_name` and `usage_metadata.app_id`. Gate 0 should check the complete APPS result set and then identify the IKF App by name/ID.
+
+### Class-D model App resources
+
+The Class-D App integration should use existing Databricks model-serving resources with least privilege. Current App resource keys are:
+
+- `class_d_gpt20_endpoint` -> `CLASS_D_GPT20_ENDPOINT`;
+- `class_d_llama70_endpoint` -> `CLASS_D_LLAMA70_ENDPOINT`.
+
+The App service principal should receive **CAN QUERY** only for these model-serving resources unless a separate administrative need is approved.
+
+During the 2026-09-24 reconnection check, the App displayed that GPT-OSS 20B and the Llama service were not configured. Repository review showed that this is an **App resource-binding/configuration issue**, not evidence that the underlying model services need to be recreated. The Llama message also retained obsolete Ollama terminology even though the current PoC uses Databricks model services for both Class-D candidates.
+
+`app.yaml` and `app/app.yaml` now resolve both Class-D models through App resource keys. A temporary compatibility environment alias maps `CLASS_D_OLLAMA_LLAMA70_URL` to the same `class_d_llama70_endpoint` resource while the large Streamlit source is progressively modularised. No separate Ollama service should be created for the current PoC.
+
+Notebook `62_validate_class_d_app_model_resources.py` is a read-only preflight that lists App resources and visible IKF-related serving endpoint metadata without invoking either model or changing permissions.
 
 ## Lakeflow / Jobs
 
@@ -127,7 +153,7 @@ Current workspace selection / preferred available classic node type observed dur
 
 The Machine Learning runtime was selected because the proposed classic transcription workload was GPU accelerated, not because IKF requires Spark ML for transcription. On GPU clusters, Databricks Runtime 17.3 LTS ML provides the NVIDIA software stack required by GPU-accelerated Python workloads. `faster-whisper` uses CTranslate2 and can therefore execute Whisper inference on the NVIDIA GPU without IKF having to build and maintain a separate CUDA base environment.
 
-This logic applies to the **classic GPU design only**. It must not be confused with selecting the **ML v5 serverless CPU base environment**, which does not add an accelerator.
+This logic applies to the **classic GPU design only**. It must not be confused with selecting the **ML v6 serverless CPU base environment**, which does not add an accelerator.
 
 ### Performance and cost interpretation
 
@@ -152,15 +178,30 @@ Public/internal Databricks-hosted routes used by the application include:
 - `system.ai.meta-llama-3-3-70b-instruct`
 - `system.ai.gpt-oss-120b`
 
-Class-D dedicated endpoint names appearing in the repository/design include:
+### Class-D PoC services previously validated
 
-- `ikg-class-d-gpt-oss-20b`
-- `ikg-class-d-llama-3-3-70b`
-- `bdw_analysis_prod.kg_poc.ikf-llama-3-3-70b-poc` (current App configuration value for `CLASS_D_LLAMA70_ENDPOINT`)
+The controlled Class-D benchmark documentation records these two service/model identifiers as successfully connected through Databricks Unity Gateway:
 
-The endpoint-creation helper uses `scale_to_zero_enabled = True` and applies project/information-class tags when it creates custom endpoints. Existence does not mean the endpoint is approved for Class-D use.
+- GPT-OSS 20B: `bdw_analysis_prod.kg_poc.ikf-gpt-oss-20b-poc`;
+- Meta Llama 3.3 70B Instruct: `bdw_analysis_prod.kg_poc.ikf-llama-3-3-70b-poc`.
 
-Gate 0 must review **all** endpoint names returned by billing, including names not present in this inventory.
+Associated short PoC service names recorded in the project are:
+
+- `ikf-gpt-oss-20b-poc`;
+- `ikf-llama-3-3-70b-poc`.
+
+These were used in prior successful controlled dual-model tests. Their current READY state and App bindings must be verified before reuse, but they should **not be recreated merely because the App reports a missing environment/resource binding**.
+
+### Older custom-endpoint creation candidates
+
+The administrative helper also contains older candidate endpoint names:
+
+- `ikg-class-d-gpt-oss-20b`;
+- `ikg-class-d-llama-3-3-70b`.
+
+Those names belong to the optional custom-endpoint creation path and are not evidence that such endpoints are currently active. The helper has endpoint creation disabled by default and uses scale-to-zero when creation is explicitly approved.
+
+Gate 0 must review **all** endpoint/model-service names returned by billing, including names not present in this inventory.
 
 ## SQL / serverless notebook workloads
 
@@ -169,6 +210,7 @@ The billing table can expose `usage_metadata.notebook_path`, `job_name`, `job_id
 Known IKF notebook families include:
 
 - extraction/analysis: notebooks 15-16;
+- Class-D model validation/orchestration: notebooks 18-24;
 - MAIRA bridge/benchmark: notebooks 25-31;
 - App/MAIRA runtime validation: notebooks 32-35;
 - Ask: notebooks 36-38;
@@ -177,7 +219,8 @@ Known IKF notebook families include:
 - reference context / SHIELD: notebooks 44-48;
 - relationship correction: notebooks 49-51;
 - similar cases: notebooks 52-54;
-- consolidated/coverage validation: notebooks 55-60.
+- consolidated/coverage validation: notebooks 55-60;
+- Class-D App model resource validation: notebook 62.
 
 The presence of one of these notebook paths in billing does not automatically mean the run was unnecessary. Gate 0 is intended to identify the workload, associate it with a development action, and determine whether similar future runs can be avoided or reused.
 
