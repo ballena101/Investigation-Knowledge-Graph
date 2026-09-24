@@ -429,17 +429,31 @@ def transform_app_ui_source(source: str) -> tuple[str, tuple[str, ...]]:
     )
     applied.append("ask_refresh_beside_question")
 
-    start_count = source.count(_REVIEW_START)
-    if start_count != 1:
+    end_count = source.count(_REVIEW_END)
+    if end_count != 1:
         raise RuntimeError(
-            "IKF App UI adoption failed at relationship review evidence block: "
-            f"expected exactly one start marker, found {start_count}."
+            "IKF App UI adoption failed at relationship review boundary: "
+            f"expected exactly one end marker, found {end_count}."
         )
-    start = source.index(_REVIEW_START)
-    end = source.find(_REVIEW_END, start)
-    if end < 0:
+    end = source.index(_REVIEW_END)
+    start = source.rfind(_REVIEW_START, 0, end)
+    if start < 0:
         raise RuntimeError(
-            "IKF App UI adoption could not locate the end of the relationship review workspace."
+            "IKF App UI adoption could not locate the relationship review evidence block."
+        )
+    relationship_block = source[start:end]
+    required_markers = (
+        '"Evidence page"',
+        '"Human decision"',
+        '"Save human review"',
+    )
+    missing_markers = [
+        marker for marker in required_markers if marker not in relationship_block
+    ]
+    if missing_markers:
+        raise RuntimeError(
+            "IKF App UI adoption selected an unexpected review block; missing: "
+            + ", ".join(missing_markers)
         )
     source = source[:start] + _COMPACT_REVIEW + source[end:]
     applied.append("compact_relationship_review")
