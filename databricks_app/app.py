@@ -11263,11 +11263,6 @@ mixed with validated investigation knowledge.
   case fact.
 - SHIELD remains a separate persistent taxonomy corpus.
 
-### Human governance
-
-Assistant outputs remain proposals. Human relationship decisions are authoritative;
-the displayed graph applies the latest reviews, while the raw AI graph is retained
-for traceability. SHIELD is derived only after contributing-factor validation.
 
 ### Class D
 
@@ -11276,24 +11271,6 @@ evidence set. Llama 3.3 70B is limited to
 **{LLAMA_DAILY_QUESTION_LIMIT} questions per user per day** in the PoC.
 
 ### Validation status
-
-The consolidated release preflight has passed with zero warnings and zero
-errors. SHIELD and authoritative REFERENCE_CONTEXT corpora are indexed.
-Functional runtime validation proceeds capability by capability.
-
-The Commodore Clipper material remains a validation/reference asset in the
-project data and documentation; it is no longer presented as a primary
-operational App capability.
-
-### Compliance and privacy
-
-Class D processing is intended to respect the confidentiality requirements of
-Article 9 of Directive 2009/18/EC through controlled model routing,
-least-privilege storage, encrypted direct-text ingress, evidence provenance,
-de-identified output by default and a privacy-validation gate.
-
-This PoC is design-aligned / conditionally aligned and does not constitute a
-legal certification of compliance.
 
 ### Documentation
 
