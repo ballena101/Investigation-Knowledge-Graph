@@ -39,14 +39,27 @@ Use 32 GB only if one of the following is observed:
 2. reproducible memory pressure that prevents stable model execution;
 3. measured evidence that the higher-memory tier also changes effective compute in the specific workspace and reduces total billed cost enough to justify the higher DBU rate.
 
+## Turbo preparation result
+
+The same governed persistent-cache path was then used to prepare `turbo`.
+
+Observed result:
+
+- model: `turbo`;
+- repository: `mobiuslabsgmbh/faster-whisper-large-v3-turbo`;
+- preparation elapsed: **10.78 seconds**;
+- persistent snapshot revision: `0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf`;
+- local snapshot path: `/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/_model_cache/faster_whisper/models--mobiuslabsgmbh--faster-whisper-large-v3-turbo/snapshots/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf`.
+
+This confirms that the authenticated persistent-cache design is working for both candidate models and keeps repeat model-preparation overhead low.
+
 ## Next controlled test
 
-The next smoke test keeps the same source audio and changes only the Whisper model from `large-v3` to `turbo`.
+The next smoke test keeps the same source audio and runs `turbo` only.
 
-Notebook 61 now:
+Notebook 61:
 
-- probes source audio duration correctly from container metadata before inference;
-- prepares/reuses the persistent `turbo` snapshot using the same read-only Hugging Face secret;
+- uses the corrected source duration of approximately 815.7 seconds;
 - transcribes only `19970212-090-sv-gale-runner-mayday-call.wav` while `SMOKE_TEST=True`;
 - records transcription elapsed seconds;
 - calculates real-time factor (RTF):
@@ -67,11 +80,9 @@ Do not run the full three-file/two-model matrix yet.
 
 First obtain:
 
-1. corrected source duration for the smoke file;
-2. `turbo` model-preparation elapsed time;
-3. `turbo` transcription elapsed time and RTF;
-4. human quality assessment of the same recording;
-5. Databricks billing attribution where available.
+1. `turbo` transcription elapsed time and RTF;
+2. human quality assessment of the same recording;
+3. Databricks billing attribution where available.
 
 Then compare `turbo` against the large-v3 baseline. Since large-v3 was stopped before completion, rerun it to completion only if its likely quality advantage justifies obtaining an exact benchmark after the turbo result is available.
 
