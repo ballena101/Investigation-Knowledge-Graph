@@ -1,8 +1,9 @@
-"""Deterministic governance helpers for IKF Type-D audio transcription.
+"""Deterministic governance helpers for Type-D audio transcription.
 
 These helpers are deliberately runtime-agnostic. They validate audio-source
-paths, stable transcript-document identities and publication metadata without
-calling Databricks, Neo4j, Whisper or any LLM.
+paths, transcription-engine/model choices, language compatibility, stable
+transcript-document identities and publication metadata without calling
+Databricks, Neo4j, an ASR engine or any LLM.
 """
 
 from __future__ import annotations
@@ -12,19 +13,54 @@ import hashlib
 import re
 
 
-TRANSCRIPTION_WORKFLOW_VERSION = "IKF_TYPE_D_TRANSCRIPTION_V0.2"
+TRANSCRIPTION_WORKFLOW_VERSION = "IKF_TYPE_D_TRANSCRIPTION_V0.3"
 SUPPORTED_AUDIO_EXTENSIONS = frozenset({".wav", ".flac", ".mp3", ".m4a", ".ogg"})
-SUPPORTED_TRANSCRIPTION_MODELS = frozenset({"turbo", "large-v3"})
+WHISPER_TURBO = "turbo"
+WHISPER_LARGE_V3 = "large-v3"
+PARAKEET_TDT_06B_V3 = "parakeet-tdt-0.6b-v3"
+SUPPORTED_TRANSCRIPTION_MODELS = frozenset(
+    {WHISPER_TURBO, WHISPER_LARGE_V3, PARAKEET_TDT_06B_V3}
+)
+PARAKEET_SUPPORTED_LANGUAGES = frozenset(
+    {
+        "en", "es", "fr", "de", "bg", "hr", "cs", "da", "nl", "et",
+        "fi", "el", "hu", "it", "lv", "lt", "mt", "pl", "pt", "ro",
+        "sk", "sl", "sv", "ru", "uk",
+    }
+)
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
-def normalise_type_d_audio_path(path: str, *, audio_root: str) -> str:
-    """Return one governed audio path or fail closed.
+def transcription_engine(model: str) -> str:
+    value = normalise_transcription_model(model)
+    return "parakeet" if value == PARAKEET_TDT_06B_V3 else "faster-whisper"
 
-    V0.2 intentionally accepts only direct children of the configured audio
-    folder. Recursive browsing can be added later with an explicit catalogue
-    contract rather than silently widening the protected-source boundary.
+
+def model_display_name(model: str) -> str:
+    value = normalise_transcription_model(model)
+    return {
+        WHISPER_TURBO: "Whisper large-v3-turbo",
+        WHISPER_LARGE_V3: "Whisper large-v3",
+        PARAKEET_TDT_06B_V3: "NVIDIA Parakeet TDT 0.6B v3",
+    }[value]
+
+
+def parakeet_supports_language(language_code: str | None) -> bool:
+    """Return whether a known ISO-like language code is supported by Parakeet.
+
+    Unknown/empty language is not rejected here because language may be detected
+    only after transcription. The App should present Parakeet as a controlled
+    alternative and disclose its published language set.
     """
+
+    value = str(language_code or "").strip().lower()
+    if not value:
+        return True
+    return value in PARAKEET_SUPPORTED_LANGUAGES
+
+
+def normalise_type_d_audio_path(path: str, *, audio_root: str) -> str:
+    """Return one governed audio path or fail closed."""
 
     value = str(path or "").strip()
     root = str(audio_root or "").strip().rstrip("/")
@@ -88,12 +124,7 @@ def transcript_publication_properties(
     reviewed_text_sha256: str,
     byte_size: int,
 ) -> dict:
-    """Return SourceDocument metadata for an accepted reviewed transcript.
-
-    `source_type=TXT` deliberately reuses the existing document extraction path;
-    `document_kind=TRANSCRIPT` preserves the semantic origin without creating a
-    second analysis pipeline.
-    """
+    """Return SourceDocument metadata for an accepted reviewed transcript."""
 
     document_id = reviewed_transcript_document_id(
         source_sha256=source_sha256,
@@ -103,6 +134,7 @@ def transcript_publication_properties(
     if int(byte_size) < 1:
         raise ValueError("Accepted transcript must not be empty")
 
+    model = normalise_transcription_model(model)
     return {
         "document_id": document_id,
         "filename": reviewed_transcript_filename(source_name),
@@ -117,6 +149,7 @@ def transcript_publication_properties(
         "audio_source_name": PurePosixPath(str(source_name or "")).name,
         "audio_source_path": str(source_path or "").strip(),
         "audio_source_sha256": source_sha256.lower(),
-        "transcript_model": normalise_transcription_model(model),
+        "transcript_model": model,
+        "transcription_engine": transcription_engine(model),
         "transcription_workflow_version": TRANSCRIPTION_WORKFLOW_VERSION,
     }
