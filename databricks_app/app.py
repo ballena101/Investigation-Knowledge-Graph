@@ -101,10 +101,8 @@ ALLOWED_SOURCE_VOLUME_ROOTS = (
 PUBLIC_MODEL_SERVICE = "system.ai.meta-llama-3-3-70b-instruct"
 INTERNAL_MODEL_SERVICE = "system.ai.gpt-oss-120b"
 CLASS_D_GPT20_ENDPOINT = os.getenv("CLASS_D_GPT20_ENDPOINT")
-CLASS_D_OLLAMA_LLAMA70_URL = os.getenv("CLASS_D_OLLAMA_LLAMA70_URL")
-CLASS_D_LLAMA70_ENDPOINT = (
-    os.getenv("CLASS_D_LLAMA70_ENDPOINT")
-    or CLASS_D_OLLAMA_LLAMA70_URL
+CLASS_D_LLAMA70_ENDPOINT = os.getenv(
+    "CLASS_D_LLAMA70_ENDPOINT"
 )
 
 NEWS_DASHBOARD_URL = os.getenv("NEWS_DASHBOARD_URL")
@@ -6690,7 +6688,7 @@ with tab_new_analysis:
                 )
 
         if needs_llama70:
-            if CLASS_D_OLLAMA_LLAMA70_URL:
+            if CLASS_D_LLAMA70_ENDPOINT:
                 st.caption(
                     "Llama 3.3 70B Databricks model service: "
                     + CLASS_D_LLAMA70_ENDPOINT
@@ -11248,11 +11246,11 @@ capabilities:
 2. **Findings & Evidence** — read-only exploration of extracted findings,
    relationships, source pages and deterministic similar-case retrieval.
 3. **Knowledge Graph** — interactive graph exploration with document scope,
-   concept/relationship filters, layout controls and graph-scoped questions.
+   concept/relationship filters, layout controls and the latest reviewed relationship state.
 4. **Ask LLMs** — pose free-text questions against a completed
    evidence set, optionally compare approved model routes, and retain citations.
 5. **Review & Validate** — human governance of relationships, assistant
-   correction proposals, EMCIP mappings and SHIELD classifications.
+   relationship validation and correction proposals, with SHIELD classification after human validation.
 
 News & Alerts remains a separate external-signal capability and is not silently
 mixed with validated investigation knowledge.
@@ -11267,9 +11265,9 @@ mixed with validated investigation knowledge.
 
 ### Human governance
 
-Assistant outputs are proposals. Human relationship, EMCIP and SHIELD review
-records remain append-only and authoritative according to their governed
-workflow. Assistant correction checks never overwrite graph edges.
+Assistant outputs remain proposals. Human relationship decisions are authoritative;
+the displayed graph applies the latest reviews, while the raw AI graph is retained
+for traceability. SHIELD is derived only after contributing-factor validation.
 
 ### Class D
 
