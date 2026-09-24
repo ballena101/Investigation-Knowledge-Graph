@@ -95,25 +95,48 @@ What it still did **not** call:
 
 This successful preflight is the GO condition for the next controlled step: one audio file with one model (`large-v3`) on CPU/INT8. Do not expand to the full three-file/two-model comparison until that single smoke test succeeds and its runtime/cost/output are recorded.
 
-### Smoke test — model load/download initiated — 2026-09-24
+### Smoke test — unauthenticated model load/download initiated — 2026-09-24
 
 Observed notebook output:
 - `LOADING MODEL large-v3 device cpu compute_type int8`;
-- Hugging Face Hub warning that requests are unauthenticated and an `HF_TOKEN` would provide higher rate limits/faster downloads.
+- Hugging Face Hub warning that requests were unauthenticated and an `HF_TOKEN` would provide higher rate limits/faster downloads.
 
 Interpretation and external call:
 - `faster-whisper` began resolving/downloading the public CTranslate2 `large-v3` model from the Hugging Face Hub;
-- this is an external **model-artifact download**, not an upload of IKF audio;
-- the source audio remains in the Databricks Unity Catalog Volume and is not sent to Hugging Face by notebook 61;
-- no `HF_TOKEN` was configured for this pilot;
+- this was an external **model-artifact download**, not an upload of IKF audio;
+- the source audio remained in the Databricks Unity Catalog Volume and was not sent to Hugging Face by notebook 61;
+- no `HF_TOKEN` was configured for this attempt;
 - unauthenticated download of public model repositories is permitted but subject to anonymous rate limits;
-- this step consumes Databricks serverless CPU/runtime plus outbound network/model-download activity; actual Databricks DBUs/cost remain to be reconciled from billing;
-- transcription success/failure and elapsed inference time must be recorded only after the notebook produces a `DONE ...` line or an explicit error.
+- this step consumed Databricks serverless CPU/runtime plus outbound network/model-download activity; actual Databricks DBUs/cost remain to be reconciled from billing;
+- no successful transcription result was recorded from this attempt before the notebook design was changed.
 
-Operational follow-up after the pilot:
-- do not add a personal Hugging Face token merely to silence the warning;
-- if repeated runs are required, prefer a governed local/persisted model copy or cache with pinned revision/hash so IKF does not repeatedly depend on outbound Hugging Face downloads;
-- if authentication is later approved, use a narrowly scoped/read-only secret-managed token rather than embedding it in notebook code.
+### Implementation change — authenticated persistent model cache — 2026-09-24
+
+This is a **configuration/code change, not yet a successful runtime event**.
+
+Notebook 61 was changed so future model preparation:
+- retrieves a read-only Hugging Face token from Unity Catalog secret `bdw_analysis_prod.kg_poc.huggingface_read_token`;
+- never prints or persists the token;
+- creates/reuses persistent cache `/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/_model_cache/faster_whisper`;
+- performs a cache write/delete probe before download;
+- downloads only required faster-whisper model artifacts with `huggingface_hub.snapshot_download()`;
+- caches the snapshot in the governed Volume so later serverless sessions can reuse it;
+- loads inference from the returned local snapshot with `local_files_only=True`;
+- keeps the one-file/one-model `large-v3` smoke-test gate enabled.
+
+Current model repository mapping:
+- `large-v3` -> `Systran/faster-whisper-large-v3`;
+- `turbo` -> `mobiuslabsgmbh/faster-whisper-large-v3-turbo`.
+
+Expected cost effect:
+- first successful authenticated download still consumes serverless runtime and outbound network activity;
+- subsequent runs should avoid re-downloading the complete cached snapshot when the Volume cache remains intact;
+- this should reduce repeated serverless wait time and external download traffic materially compared with ephemeral/anonymous loading;
+- actual savings must be confirmed from runtime and billing rather than assumed.
+
+Longer-term architecture note:
+- the pilot cache is deliberately inside the existing governed `investigation_sources` Volume because write access is already validated;
+- after the pilot, model binaries should preferably move to a dedicated governed model-artifact Volume so model artifacts and investigation evidence remain logically separated.
 
 ## Whisper dependency and model execution
 
@@ -122,11 +145,13 @@ Planned notebook dependency:
 
 When the actual transcription cell runs, record separately:
 - dependency installation status;
-- whether model weights were downloaded or loaded from cache;
+- whether model weights were downloaded or loaded from persistent cache;
 - model name (`large-v3` or `turbo`);
+- Hugging Face repository ID;
+- model-preparation elapsed seconds;
 - audio file processed;
 - source audio SHA-256;
-- elapsed seconds;
+- transcription elapsed seconds;
 - serverless environment version;
 - memory mode;
 - success/failure;
@@ -172,9 +197,10 @@ Record a model endpoint here only when a run actually invokes it. Endpoint exist
 ### Unity Catalog / storage
 Current Type-D audio routes:
 - source: `bdw_analysis_prod.kg_poc.investigation_sources/audios`;
-- derived pilot output: `bdw_analysis_prod.kg_poc.investigation_sources/type_d_transcripts`.
+- derived pilot output: `bdw_analysis_prod.kg_poc.investigation_sources/type_d_transcripts`;
+- persistent Whisper model cache: `bdw_analysis_prod.kg_poc.investigation_sources/_model_cache/faster_whisper`.
 
-Original audio remains authoritative. Transcript files are derived Class-D material and must retain source identity/provenance and access controls.
+Original audio remains authoritative. Transcript files are derived Class-D material and must retain source identity/provenance and access controls. The model cache contains public model artifacts, not investigation evidence, despite its temporary pilot placement within the same governed Volume.
 
 ### Deferred GPU route
 A classic GPU route was explored but could not be created with the user's current permissions. The observed candidate was:
@@ -196,7 +222,7 @@ These may be called by IKF workflows but are not Databricks DBU resources themse
 - Neo4j AuraDB — knowledge graph persistence/query;
 - GitHub — authoritative source code/documentation;
 - MAIRA corpus/retrieval integration — may cause Databricks read/model compute depending on the calling workflow;
-- Hugging Face Hub — public Whisper/CTranslate2 model artifact download when notebook 61 loads a model by name and no governed local model copy is configured.
+- Hugging Face Hub — authenticated read-only public Whisper/CTranslate2 model artifact download during model preparation when the required snapshot is not already present in the persistent cache.
 
 ## Run-record template
 
@@ -229,7 +255,8 @@ For every material Databricks execution, append or persist an equivalent record 
 1. Prefer persisted analyses, retrieval snapshots and benchmark outputs over rerunning models.
 2. Keep GPU routes on-demand only; never attach a GPU to the continuously available IKF App.
 3. Use standard serverless memory first and increase memory only after a reproducible memory failure or measured need.
-4. Do not run full corpus/model comparisons until a single-file/single-model smoke test passes.
-5. Keep retries disabled for expensive experimental jobs unless a specific failure mode justifies them.
-6. Reconcile significant runs against `system.billing.usage` / pricing data rather than relying on estimates.
-7. Treat unexplained recurring consumption as a STOP condition before further cloud validation.
+4. Persist reusable public model artifacts in governed storage instead of repeatedly downloading them on ephemeral serverless sessions.
+5. Do not run full corpus/model comparisons until a single-file/single-model smoke test passes.
+6. Keep retries disabled for expensive experimental jobs unless a specific failure mode justifies them.
+7. Reconcile significant runs against `system.billing.usage` / pricing data rather than relying on estimates.
+8. Treat unexplained recurring consumption as a STOP condition before further cloud validation.
