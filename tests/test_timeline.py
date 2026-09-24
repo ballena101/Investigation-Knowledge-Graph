@@ -3,8 +3,10 @@ from __future__ import annotations
 import pytest
 
 from ikf.timeline import (
+    align_audio_offset,
     format_relative_seconds,
     normalise_timeline_event,
+    project_default_timeline,
     timeline_sort_key,
 )
 
@@ -105,3 +107,71 @@ def test_sort_keeps_unlike_time_bases_separate():
 
 def test_relative_clock_format():
     assert format_relative_seconds(589) == "00:09:49"
+
+
+def test_default_projection_respects_followed_by_before_source_fallback():
+    events = [
+        {"node_id": "e2", "label": "Second", "source_sequence_index": 1},
+        {"node_id": "e1", "label": "First", "source_sequence_index": 2},
+    ]
+    projected, conflicts = project_default_timeline(
+        events,
+        [{"source_node_id": "e1", "target_node_id": "e2"}],
+    )
+    assert [item["node_id"] for item in projected] == ["e1", "e2"]
+    assert projected[0]["ordering_basis"] == "FOLLOWED_BY"
+    assert conflicts == []
+
+
+def test_default_projection_uses_source_order_when_no_time_or_edge_exists():
+    events = [
+        {"node_id": "e2", "label": "Later passage", "source_sequence_index": 2},
+        {"node_id": "e1", "label": "Earlier passage", "source_sequence_index": 1},
+    ]
+    projected, conflicts = project_default_timeline(events, [])
+    assert [item["node_id"] for item in projected] == ["e1", "e2"]
+    assert all(item["ordering_basis"] == "SOURCE_ORDER" for item in projected)
+    assert conflicts == []
+
+
+def test_default_projection_surfaces_cycle_instead_of_hiding_it():
+    events = [
+        {"node_id": "e1", "label": "A", "source_sequence_index": 1},
+        {"node_id": "e2", "label": "B", "source_sequence_index": 2},
+    ]
+    projected, conflicts = project_default_timeline(
+        events,
+        [
+            {"source_node_id": "e1", "target_node_id": "e2"},
+            {"source_node_id": "e2", "target_node_id": "e1"},
+        ],
+    )
+    assert len(projected) == 2
+    assert conflicts[0]["conflict_type"] == "FOLLOWED_BY_CYCLE"
+    assert all(item["ordering_conflict"] for item in projected)
+
+
+def test_default_projection_uses_reviewed_audio_location_without_absolute_time():
+    audio_location = "audio|" + ("a" * 64) + "|589000|602500"
+    projected, conflicts = project_default_timeline(
+        [
+            {
+                "node_id": "e1",
+                "label": "Position transmitted",
+                "source_sequence_index": 1,
+                "audio_evidence_locations": [audio_location],
+            }
+        ],
+        [],
+    )
+    assert conflicts == []
+    assert projected[0]["ordering_basis"] == "RELATIVE_AUDIO"
+    assert projected[0]["relative_start_s"] == 589.0
+    assert projected[0]["relative_end_s"] == 602.5
+
+
+def test_audio_anchor_alignment_requires_explicit_anchor():
+    assert (
+        align_audio_offset("1997-02-12T09:40:00+00:00", 589)
+        == "1997-02-12T09:49:49+00:00"
+    )
