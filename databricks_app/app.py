@@ -333,7 +333,7 @@ INFORMATION_CLASSES = {
         "label": "D — Protected / Article 9 confidential evidence",
         "description": "Witness statements, identities, sensitive personal data, investigator notes/drafts, VTS/VDR material or equivalent protected evidence.",
         "model": None,
-        "model_name": "Dedicated IKF GPT-OSS 20B and/or Llama 3.3 70B Databricks model services",
+        "model_name": "Dedicated protected GPT-OSS 20B and/or Llama 3.3 70B Databricks model services",
         "data_flow": (
             "Class D uses a dedicated GPT-OSS 20B Databricks Model Serving endpoint "
             "and/or the dedicated Databricks Llama 3.3 70B model service. The investigator "
@@ -399,7 +399,7 @@ with st.expander(
             {
                 "Class": "D — Protected / Article 9",
                 "Model": "GPT-OSS 20B and/or Llama 3.3 70B",
-                "Route": "Dedicated IKF Databricks services",
+                "Route": "Dedicated protected Databricks services",
                 "Use": "Protected investigation evidence; no fallback to A/B/C",
             },
         ],
@@ -413,19 +413,20 @@ with st.expander(
     )
 
 with st.expander(
-    "Confidentiality and Article 9",
+    "Confidentiality, Article 9 and external tools",
     expanded=False,
 ):
     st.markdown(
         """
-IKF applies **Article 9-aligned handling rules** to protected investigation
-records in this PoC. This is a system-design and processing control, not a legal
-certification of compliance.
+This application applies **Article 9-aligned handling rules** to protected
+investigation records. This is a system-design and processing control, not a
+legal certification of compliance.
 
 - Original evidence remains authoritative and stays in governed storage.
 - Protected material uses **Class D** and dedicated model routes.
-- Machine audio transcripts remain unverified until a person listens, corrects
-  and accepts them.
+- Audio transcription uses **faster-whisper 1.2.1** with Whisper large-v3-turbo
+  or large-v3. Machine transcripts remain unverified until a person listens,
+  corrects and accepts them; the original recording remains authoritative.
 - AI-generated findings and relationships remain proposals; **human validation
   is authoritative** and drives the reviewed graph.
 - Analytical outputs minimise unnecessary personal data while preserving source
@@ -433,9 +434,14 @@ certification of compliance.
 
 These controls are designed to support the confidentiality requirements of
 **Article 9 of Directive 2009/18/EC, updated by Directive (EU) 2024/3017**, and
-the applicable data-protection framework. Detailed technical, retention and
-provider-specific controls remain in the project documentation rather than in
-the operational UI.
+the applicable data-protection framework.
+
+**External tools.** Third-party software, model weights, repositories and
+services remain subject to their own licences, terms, security commitments and
+availability. The application developer does not control those independent
+services or their outputs and cannot guarantee their continued availability or
+performance. This does not remove responsibility for the configuration,
+integration and controls implemented in this application.
         """
     )
 
@@ -613,7 +619,7 @@ def list_llama_daily_usage():
 def reset_llama_daily_usage(target_user_key):
     if not is_current_user_admin():
         raise PermissionError(
-            "Only an IKF administrator can reset the Llama daily quota."
+            "Only an application administrator can reset the Llama daily quota."
         )
 
     user_key = target_user_key.strip().lower()
@@ -6214,6 +6220,12 @@ with tab_transcriptions:
             )
             selected_audio = audio_by_path[selected_audio_path]
 
+            st.caption(
+                "Transcription engine: faster-whisper 1.2.1 · "
+                "Whisper large-v3-turbo or large-v3. Machine output is Class D "
+                "and requires human review before publication or analysis."
+            )
+
             model = st.selectbox(
                 "Transcription model",
                 options=["turbo", "large-v3"],
@@ -11240,7 +11252,7 @@ with tab_about:
         f"""
 ### Current Proof of Concept
 
-IKF separates the investigator workflow into five distinct operational
+The application separates the investigator workflow into distinct operational
 capabilities:
 
 1. **Analyse Documents** — prepare governed evidence, follow the four processing
@@ -11261,7 +11273,7 @@ mixed with validated investigation knowledge.
 ### Source ownership
 
 - Class B published investigation material is sourced from MAIRA.
-- Classes A/C/D use the governed IKF-managed source routes.
+- Classes A/C/D use governed application source routes.
 - REFERENCE_CONTEXT is a separate legal/IMO/technical layer and cannot prove a
   case fact.
 - SHIELD remains a separate persistent taxonomy corpus.
@@ -11272,8 +11284,6 @@ mixed with validated investigation knowledge.
 Class D may use GPT-OSS 20B, Llama 3.3 70B, or both against the same prepared
 evidence set. Llama 3.3 70B is limited to
 **{LLAMA_DAILY_QUESTION_LIMIT} questions per user per day** in the PoC.
-
-### Validation status
 
 ### Documentation
 
