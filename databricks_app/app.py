@@ -4995,32 +4995,121 @@ analysis_edge_styles = [
 
 def type_d_transcript_access():
     # The protected IKF App access boundary authorises Type-D transcript use.
-    # We still require a resolved end-user identity so every review remains
-    # attributable; the App service identity alone is never sufficient.
+    # Volume/file access itself is evaluated with the logged-in user's forwarded
+    # Databricks token, matching the existing MAIRA file-viewer route.
     return get_current_user_key() != "unknown"
+
+
+def list_uc_directory_as_user(path):
+    """List one UC-volume directory through Files API as the logged-in user."""
+
+    normalized = normalise_allowed_source_path(path)
+    token = get_user_access_token()
+    if not token:
+        raise PermissionError(
+            "No forwarded Databricks user token is available. "
+            "User authorization with the files scope is required."
+        )
+
+    host = get_workspace_client().config.host.rstrip("/")
+    encoded_path = urllib.parse.quote(
+        normalized,
+        safe="/",
+    )
+    base_url = (
+        host
+        + "/api/2.0/fs/directories"
+        + encoded_path
+    )
+
+    contents = []
+    page_token = None
+    while True:
+        url = base_url
+        if page_token:
+            url += "?" + urllib.parse.urlencode(
+                {"page_token": page_token}
+            )
+
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": "Bearer " + token,
+                "Accept": "application/json",
+            },
+            method="GET",
+        )
+
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=90,
+            ) as response:
+                payload = json.loads(
+                    response.read().decode("utf-8")
+                )
+        except urllib.error.HTTPError as exc:
+            if exc.code in {401, 403}:
+                raise PermissionError(
+                    "Your Databricks user does not have permission to list this governed Volume directory."
+                ) from exc
+            if exc.code == 404:
+                raise FileNotFoundError(
+                    "The governed Type D transcript directory does not exist."
+                ) from exc
+            raise OSError(
+                "Databricks Files API directory listing failed with HTTP "
+                + str(exc.code)
+            ) from exc
+
+        contents.extend(payload.get("contents") or [])
+        page_token = payload.get("next_page_token")
+        if not page_token:
+            break
+
+    return contents
 
 
 def list_type_d_transcripts():
     if not type_d_transcript_access():
         return []
-    if not TYPE_D_TRANSCRIPT_ROOT.is_dir():
-        return []
-    return sorted(
-        TYPE_D_TRANSCRIPT_ROOT.glob("*.json"),
-        key=lambda path: path.stat().st_mtime,
+
+    entries = list_uc_directory_as_user(
+        str(TYPE_D_TRANSCRIPT_ROOT)
+    )
+    candidates = [
+        entry
+        for entry in entries
+        if not entry.get("is_directory")
+        and re.fullmatch(
+            r"[0-9a-f]{64}__(?:large-v3|turbo)\.json",
+            str(entry.get("name") or ""),
+        )
+        and int(entry.get("file_size") or 0) <= 10 * 1024 * 1024
+    ]
+    candidates.sort(
+        key=lambda entry: int(entry.get("last_modified") or 0),
         reverse=True,
     )
+    return [
+        Path(entry["path"])
+        for entry in candidates
+        if entry.get("path")
+    ]
 
 
 def read_type_d_transcript(path):
+    path = Path(path)
     if not type_d_transcript_access() or path.parent != TYPE_D_TRANSCRIPT_ROOT:
         raise PermissionError("Class D transcript access denied")
     if not re.fullmatch(r"[0-9a-f]{64}__(?:large-v3|turbo)\.json", path.name):
         raise ValueError("Unexpected transcript filename")
-    if path.stat().st_size > 10 * 1024 * 1024:
+
+    raw = download_source_file_as_user(str(path))
+    if len(raw) > 10 * 1024 * 1024:
         raise ValueError("Transcript exceeds the pilot size limit")
-    with path.open(encoding="utf-8") as handle:
-        record = json.load(handle)
+
+    record = json.loads(raw.decode("utf-8"))
     if (record.get("classification") != "D"
             or record.get("status") != "MACHINE_GENERATED_UNVERIFIED"
             or record.get("source_sha256") != path.name.split("__")[0]
@@ -5035,6 +5124,30 @@ def read_type_d_transcript(path):
            for item in segments):
         raise ValueError("Transcript segments have invalid time offsets")
     return record
+
+
+def load_type_d_audio_bytes(record):
+    """Read and verify the original Class-D audio through the user-scoped Files API."""
+
+    source_path = normalise_allowed_source_path(
+        record.get("source_path") or ""
+    )
+    audio_root = IKF_SOURCE_VOLUME_ROOT.rstrip("/") + "/audios/"
+    if not source_path.startswith(audio_root):
+        raise PermissionError(
+            "The transcript source is outside the governed Type D audio directory."
+        )
+
+    audio_bytes = download_source_file_as_user(source_path)
+    if len(audio_bytes) > 100 * 1024 * 1024:
+        raise ValueError(
+            "Source audio exceeds the current App review size limit."
+        )
+    if hashlib.sha256(audio_bytes).hexdigest() != record.get("source_sha256"):
+        raise ValueError(
+            "Original audio hash does not match transcript provenance."
+        )
+    return audio_bytes
 
 
 def transcript_text_with_timestamps(record):
@@ -5428,16 +5541,8 @@ with tab_transcriptions:
     else:
         try:
             transcript_files = list_type_d_transcripts()
-            if not TYPE_D_TRANSCRIPT_ROOT.is_dir():
-                st.error(
-                    "The governed Type D transcript Volume is not visible to the App service principal. "
-                    "Add the Unity Catalog volume bdw_analysis_prod.kg_poc.investigation_sources "
-                    "to the Databricks App resources with Can read, then redeploy."
-                )
-            elif not transcript_files:
-                st.info(
-                    "The governed Type D transcript store is accessible, but it contains no machine transcript JSON files yet."
-                )
+            if not transcript_files:
+                st.info("No machine transcripts are visible through your current Databricks user access.")
             else:
                 selected_transcript = st.selectbox(
                     "Recording and model",
@@ -5454,19 +5559,15 @@ with tab_transcriptions:
                 st.caption("Source audio SHA-256: " + record["source_sha256"])
                 st.caption("Listen to the original recording when checking critical words and inaudible spans.")
                 audio_verified = False
-                audio_path = Path(record.get("source_path", ""))
-                if (audio_path.parent == Path(IKF_SOURCE_VOLUME_ROOT) / "audios"
-                        and audio_path.is_file()
-                        and audio_path.stat().st_size <= 100 * 1024 * 1024):
-                    with audio_path.open("rb") as audio_file:
-                        audio_bytes = audio_file.read()
-                    if hashlib.sha256(audio_bytes).hexdigest() == record["source_sha256"]:
-                        audio_verified = True
-                        st.audio(audio_bytes)
-                    else:
-                        st.error("Source audio hash does not match the transcript. Review is blocked.")
-                else:
-                    st.error("Source audio is unavailable for verification. Review is blocked.")
+                try:
+                    audio_bytes = load_type_d_audio_bytes(record)
+                    audio_verified = True
+                    st.audio(audio_bytes)
+                except (OSError, ValueError, PermissionError) as exc:
+                    st.error(
+                        "The original audio could not be loaded through your Databricks user access. Review is blocked."
+                    )
+                    st.caption(str(exc))
                 st.text_area("Timestamped machine transcript", transcript_text,
                              height=320, disabled=True)
                 st.download_button(
@@ -5530,17 +5631,19 @@ with tab_new_analysis:
             st.error(
                 "Your App user identity could not be resolved. Type D audio review is blocked."
             )
-        elif not TYPE_D_TRANSCRIPT_ROOT.is_dir():
-            st.error(
-                "The governed Type D transcript Volume is not visible to the App service principal. "
-                "Add the Unity Catalog volume bdw_analysis_prod.kg_poc.investigation_sources "
-                "to the Databricks App resources with Can read, then redeploy."
-            )
         else:
-            analysis_audio_transcripts = list_type_d_transcripts()
+            try:
+                analysis_audio_transcripts = list_type_d_transcripts()
+            except (OSError, ValueError, PermissionError, FileNotFoundError) as exc:
+                analysis_audio_transcripts = []
+                st.error(
+                    "The governed Type D transcript store could not be listed through your Databricks user access."
+                )
+                st.caption(str(exc))
+
             if not analysis_audio_transcripts:
                 st.info(
-                    "The governed Type D transcript store is accessible, but it contains no machine transcript JSON files yet."
+                    "No machine transcripts are visible through your current Databricks user access."
                 )
             else:
                 selected_analysis_audio_transcript = st.selectbox(
@@ -5571,26 +5674,17 @@ with tab_new_analysis:
                         )
 
                     analysis_audio_verified = False
-                    analysis_audio_path = Path(
-                        analysis_audio_record.get("source_path") or ""
-                    )
-                    if analysis_audio_path.is_file():
-                        with analysis_audio_path.open("rb") as analysis_audio_file:
-                            analysis_audio_bytes = analysis_audio_file.read()
-                        if (
-                            hashlib.sha256(analysis_audio_bytes).hexdigest()
-                            == analysis_audio_record.get("source_sha256")
-                        ):
-                            analysis_audio_verified = True
-                            st.audio(analysis_audio_bytes)
-                        else:
-                            st.error(
-                                "Original audio hash does not match transcript provenance. Review is blocked."
-                            )
-                    else:
-                        st.error(
-                            "Original audio is unavailable. Review is blocked because the source cannot be verified."
+                    try:
+                        analysis_audio_bytes = load_type_d_audio_bytes(
+                            analysis_audio_record
                         )
+                        analysis_audio_verified = True
+                        st.audio(analysis_audio_bytes)
+                    except (OSError, ValueError, PermissionError) as exc:
+                        st.error(
+                            "The original audio could not be loaded through your Databricks user access. Review is blocked."
+                        )
+                        st.caption(str(exc))
 
                     st.text_area(
                         "Timestamped machine transcript",
