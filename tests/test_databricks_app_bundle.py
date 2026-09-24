@@ -41,6 +41,7 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
         "app_timeline_adoption.py",
         "app_ui_adoption.py",
         "app_workflow_adoption.py",
+        "app_simplification_adoption.py",
         "timeline.py",
         "transcription_governance.py",
         "source_routing.py",
@@ -55,7 +56,7 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
         assert (shared / name).is_file(), name
 
 
-def test_bundle_materializes_policy_audio_timeline_ui_and_workflow_before_deployment(tmp_path):
+def test_bundle_materializes_policy_audio_timeline_ui_workflow_and_simplification_before_deployment(tmp_path):
     output = build_test_bundle(tmp_path)
     materialized = (output / "app.py").read_text(encoding="utf-8")
 
@@ -128,6 +129,25 @@ def test_bundle_materializes_policy_audio_timeline_ui_and_workflow_before_deploy
     assert 'decision == "AMENDED"' in materialized
     assert 'st.markdown("### Ask about this graph scope")' not in materialized
 
+    # Final simplification pass: one compact routing table plus one short
+    # confidentiality notice, with stale user-visible wording removed.
+    assert '"AI routing and information classes"' in materialized
+    assert '"Confidentiality and Article 9"' in materialized
+    assert "AI model routing and Article 9 suitability" not in materialized
+    assert "Compliance, confidentiality and AI-use notice" not in materialized
+    assert "Article 9-aligned handling rules" in materialized
+    assert "Dedicated IKF Databricks services" in materialized
+    assert "Dedicated IKG Databricks endpoint" not in materialized
+    assert "Controlled Ollama Llama 3.3 70B service is not configured" not in materialized
+    assert "Today's Ollama quota has been reset" not in materialized
+    assert "Only an IKG administrator" not in materialized
+    assert "TYPE_D_TRANSCRIPT_REVIEWERS" not in materialized
+    assert "APP_BUILD" not in materialized
+    assert "App build:" not in materialized
+    assert "### Current validation milestone" not in materialized
+    assert "Audio transcription" in materialized
+    assert "tab_mapping_review = tab_review" not in materialized
+
     # Timeline V0.3 is automatically projected from the existing KG/evidence
     # and remains editable/validatable without an additional LLM call.
     assert '"Timeline"' in materialized
@@ -162,7 +182,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         (output / "ikf_bundle_manifest.json").read_text(encoding="utf-8")
     )
 
-    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.7"
+    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.8"
     assert manifest["adoption_version"].startswith("IKF_APP_SHARED_POLICY_ADOPTION_")
     assert manifest["files_api_download_adoption_version"].startswith(
         "IKF_APP_FILES_API_DOWNLOAD_"
@@ -172,6 +192,9 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert manifest["timeline_adoption_version"] == "IKF_APP_TIMELINE_ADOPTION_V0.3"
     assert manifest["ui_adoption_version"].startswith("IKF_APP_UI_ADOPTION_")
     assert manifest["workflow_adoption_version"] == "IKF_APP_WORKFLOW_ADOPTION_V0.1"
+    assert manifest["simplification_adoption_version"] == (
+        "IKF_APP_SIMPLIFICATION_ADOPTION_V0.1"
+    )
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert set(manifest["applied_policy_adoptions"]) == {
         "shared_imports",
@@ -228,6 +251,15 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         "remove_graph_questions",
         "workflow_wording_cleanup",
     }
+    assert set(manifest["applied_simplification_adoptions"]) == {
+        "remove_stale_app_build_label",
+        "remove_legacy_transcript_reviewer_allowlist",
+        "compact_governance_notices",
+        "remove_ikg_ollama_user_wording",
+        "remove_static_validation_milestone",
+        "remove_legacy_emcip_tab_alias",
+        "clarify_audio_workspace_label",
+    }
     assert manifest["shared_package_path"] == "src/ikf"
 
 
@@ -242,4 +274,5 @@ def test_bundled_bootstrap_prefers_materialized_source(tmp_path):
     assert "transform_app_audio_fixup_source" in bootstrap
     assert "transform_app_timeline_source" in bootstrap
     assert "transform_app_workflow_source" in bootstrap
+    assert "transform_app_simplification_source" in bootstrap
     assert (output / "src" / "ikf").is_dir()
