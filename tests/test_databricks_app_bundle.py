@@ -88,7 +88,8 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert '"Reference weights": "~2.51 GB · ~0.6B parameters"' in materialized
     assert "815.7 s audio in 696.1 s · RTF 0.853" in materialized
     assert "Controlled runtime benchmark pending" in materialized
-    assert "Weight-file size is not the same as runtime memory or Databricks cost" in materialized
+    assert "Weight-file size is not the same as runtime memory" in materialized
+    assert "IKF runtime results are shown only after local validation" in materialized
 
     assert "refresh_transcription_" in materialized
     assert "refresh_transcript_publication_" in materialized
@@ -156,7 +157,6 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         "independent_dual_engine_queue",
         "independent_asr_comparison",
         "asr_engine_provenance_display",
-        "dual_engine_disclosure",
         "parakeet_confidentiality_disclosure",
     }
     assert manifest["timeline_adoption_version"] == "IKF_APP_TIMELINE_ADOPTION_V0.3"
