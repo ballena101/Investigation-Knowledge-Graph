@@ -39,6 +39,7 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
         "app_timeline_adoption.py",
         "app_ui_adoption.py",
         "timeline.py",
+        "transcription_governance.py",
         "source_routing.py",
         "evidence_locations.py",
         "question_scope.py",
@@ -65,15 +66,22 @@ def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_
     assert "validate_app_emcip_review(" in materialized
     assert "scope_graph_by_documents(" in materialized
 
-    assert 'return get_current_user_key() != "unknown"' in materialized
-    assert "Audio / reviewed transcript — Class D" in materialized
-    assert "Use reviewed audio transcript in this analysis" in materialized
-    assert "Machine-generated transcript — not validated evidence" in materialized
-    assert 'st.session_state["analysis_information_class"] = "D"' in materialized
+    # One transcription workspace: select any audio -> process -> review ->
+    # accept/publish. Accepted transcripts enter the ordinary Class-D catalogue;
+    # Analyse Documents must not carry a second audio-review panel.
+    assert 'TRANSCRIPTION_JOB_ID = os.getenv(' in materialized
+    assert "list_type_d_audio_sources" in materialized
+    assert "Transcribe selected audio" in materialized
+    assert "Accept validated transcript" in materialized
+    assert "CLASS D DOCUMENT AVAILABLE" in materialized
+    assert "document_kind = 'TRANSCRIPT'" in materialized
+    assert "properties(d)[\"information_class\"] AS information_class" in materialized
+    assert "Audio / reviewed transcript — Class D" not in materialized
+    assert "Use reviewed audio transcript in this analysis" not in materialized
+    assert 'st.session_state["analysis_information_class"] = "D"' not in materialized
 
-    # Type-D audio follows the same user-scoped Databricks Files API pattern
-    # already used for MAIRA source-file viewing. The deployable App must not
-    # rely on direct local /Volumes browsing for transcript/audio reads.
+    # Type-D audio listing/reading follows the same user-scoped Databricks Files
+    # API pattern as MAIRA rather than direct local /Volumes browsing.
     assert "/api/2.0/fs/directories" in materialized
     assert "download_source_file_as_user(str(path))" in materialized
     assert "load_type_d_audio_bytes" in materialized
@@ -81,9 +89,12 @@ def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_
     assert "TYPE_D_TRANSCRIPT_ROOT.is_dir()" not in materialized
     assert "audio_path.open(\"rb\")" not in materialized
 
-    # Timeline V0.1 is a human-validation surface only. It reuses existing KG
-    # Event candidates and supports explicit absolute, relative-audio and
-    # order-only time bases without invoking a model.
+    # Refresh controls belong beside the transcription/publication processing
+    # metrics, rather than as a detached page-level control.
+    assert "refresh_transcription_" in materialized
+    assert "refresh_transcript_publication_" in materialized
+
+    # Timeline V0.1 remains a human-validation surface only.
     assert '"Timeline"' in materialized
     assert "load_timeline_events" in materialized
     assert "load_timeline_event_candidates" in materialized
@@ -108,7 +119,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         (output / "ikf_bundle_manifest.json").read_text(encoding="utf-8")
     )
 
-    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.4"
+    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.5"
     assert manifest["adoption_version"].startswith("IKF_APP_SHARED_POLICY_ADOPTION_")
     assert manifest["audio_adoption_version"].startswith("IKF_APP_AUDIO_ADOPTION_")
     assert manifest["timeline_adoption_version"].startswith("IKF_APP_TIMELINE_ADOPTION_")
@@ -127,11 +138,14 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         "graph_document_scope",
     }
     assert set(manifest["applied_audio_adoptions"]) == {
+        "transcription_job_environment",
+        "transcription_governance_import",
         "app_access_is_type_d_audio_boundary",
-        "user_scoped_transcript_files_api",
-        "transcriptions_audio_files_api",
-        "analyse_documents_audio_review",
-        "transcription_access_message",
+        "user_scoped_audio_and_transcript_files_api",
+        "transcription_job_orchestration",
+        "transcript_review_publication",
+        "class_d_transcript_catalogue_scope",
+        "single_transcription_workspace",
     }
     assert set(manifest["applied_timeline_adoptions"]) == {
         "timeline_imports",
