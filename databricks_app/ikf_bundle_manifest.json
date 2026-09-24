@@ -30,6 +30,10 @@
   "applied_timeline_adoptions": [
     "timeline_imports",
     "timeline_store_helpers",
+    "default_graph_chronology_projection",
+    "chronology_conflict_detection",
+    "audio_absolute_alignment",
+    "evidence_based_timeline_conclusion",
     "timeline_tab",
     "timeline_home_card",
     "timeline_workspace"
@@ -45,9 +49,9 @@
   "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.1",
   "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.6",
   "files_api_download_adoption_version": "IKF_APP_FILES_API_DOWNLOAD_V0.1",
-  "materialized_app_sha256": "c0ec70e87904312424fcef884055cf9cff2fe66b72f4542de4e31534ebb5e985",
+  "materialized_app_sha256": "ca97aa0934dfd348ddaed39821741fdf9eca9c857421a40c179f3f5021ff3b47",
   "shared_package_path": "src/ikf",
   "source_app_sha256": "4e190a128237e6c294d5f7231275280223520ce7ea112abeff598559ad6acf7a",
-  "timeline_adoption_version": "IKF_APP_TIMELINE_ADOPTION_V0.1",
+  "timeline_adoption_version": "IKF_APP_TIMELINE_ADOPTION_V0.3",
   "ui_adoption_version": "IKF_APP_UI_ADOPTION_V0.2"
 }
