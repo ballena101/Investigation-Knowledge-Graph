@@ -95,6 +95,26 @@ What it still did **not** call:
 
 This successful preflight is the GO condition for the next controlled step: one audio file with one model (`large-v3`) on CPU/INT8. Do not expand to the full three-file/two-model comparison until that single smoke test succeeds and its runtime/cost/output are recorded.
 
+### Smoke test — model load/download initiated — 2026-09-24
+
+Observed notebook output:
+- `LOADING MODEL large-v3 device cpu compute_type int8`;
+- Hugging Face Hub warning that requests are unauthenticated and an `HF_TOKEN` would provide higher rate limits/faster downloads.
+
+Interpretation and external call:
+- `faster-whisper` began resolving/downloading the public CTranslate2 `large-v3` model from the Hugging Face Hub;
+- this is an external **model-artifact download**, not an upload of IKF audio;
+- the source audio remains in the Databricks Unity Catalog Volume and is not sent to Hugging Face by notebook 61;
+- no `HF_TOKEN` was configured for this pilot;
+- unauthenticated download of public model repositories is permitted but subject to anonymous rate limits;
+- this step consumes Databricks serverless CPU/runtime plus outbound network/model-download activity; actual Databricks DBUs/cost remain to be reconciled from billing;
+- transcription success/failure and elapsed inference time must be recorded only after the notebook produces a `DONE ...` line or an explicit error.
+
+Operational follow-up after the pilot:
+- do not add a personal Hugging Face token merely to silence the warning;
+- if repeated runs are required, prefer a governed local/persisted model copy or cache with pinned revision/hash so IKF does not repeatedly depend on outbound Hugging Face downloads;
+- if authentication is later approved, use a narrowly scoped/read-only secret-managed token rather than embedding it in notebook code.
+
 ## Whisper dependency and model execution
 
 Planned notebook dependency:
@@ -175,7 +195,8 @@ Databricks AI Transcribe Preview returned a workspace permission/feature-disable
 These may be called by IKF workflows but are not Databricks DBU resources themselves:
 - Neo4j AuraDB — knowledge graph persistence/query;
 - GitHub — authoritative source code/documentation;
-- MAIRA corpus/retrieval integration — may cause Databricks read/model compute depending on the calling workflow.
+- MAIRA corpus/retrieval integration — may cause Databricks read/model compute depending on the calling workflow;
+- Hugging Face Hub — public Whisper/CTranslate2 model artifact download when notebook 61 loads a model by name and no governed local model copy is configured.
 
 ## Run-record template
 
