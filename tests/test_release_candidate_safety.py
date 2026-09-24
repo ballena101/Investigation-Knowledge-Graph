@@ -31,7 +31,6 @@ EXPECTED_APP_ENV_NAMES = {
     "TRANSCRIPTION_JOB_ID",
     "CLASS_D_GPT20_ENDPOINT",
     "CLASS_D_LLAMA70_ENDPOINT",
-    "CLASS_D_OLLAMA_LLAMA70_URL",
     "DIRECT_TEXT_ENCRYPTION_KEY",
     "IKG_ADMIN_USERS",
     "LLAMA_DAILY_QUESTION_LIMIT",
@@ -80,12 +79,14 @@ def test_app_yaml_exposes_expected_release_candidate_environment_contract():
     assert _env_names_from_app_yaml(text) == EXPECTED_APP_ENV_NAMES
     assert "streamlit\n  - run\n  - bootstrap.py" in text
     assert "EMCIP_MAPPING_JOB_ID" not in text
+    assert "CLASS_D_OLLAMA_LLAMA70_URL" not in text
 
 
 def test_app_yaml_value_from_resource_contract_is_exact():
     text = APP_YAML.read_text(encoding="utf-8")
     assert _value_from_resources_from_app_yaml(text) == EXPECTED_VALUE_FROM_RESOURCES
     assert "emcip_mapping_job" not in text
+    assert "class_d_ollama_llama70_url" not in text
 
 
 def test_preflight_resource_contract_matches_app_yaml_value_from_bindings():
@@ -95,17 +96,13 @@ def test_preflight_resource_contract_matches_app_yaml_value_from_bindings():
     assert "Investigation KG - Propose EMCIP Mappings" not in preflight
 
 
-def test_class_d_llama_uses_canonical_app_resource_binding():
+def test_class_d_llama_uses_one_canonical_app_resource_binding():
     text = APP_YAML.read_text(encoding="utf-8")
     assert re.search(
         r"name:\s*CLASS_D_LLAMA70_ENDPOINT\s*\n\s*valueFrom:\s*class_d_llama70_endpoint",
         text,
     )
-    assert re.search(
-        r"name:\s*CLASS_D_OLLAMA_LLAMA70_URL\s*\n\s*valueFrom:\s*class_d_llama70_endpoint",
-        text,
-    )
-    assert "valueFrom: class_d_ollama_llama70_url" not in text
+    assert "CLASS_D_OLLAMA_LLAMA70_URL" not in text
 
 
 def test_transcription_job_uses_dedicated_can_manage_run_resource_binding():
