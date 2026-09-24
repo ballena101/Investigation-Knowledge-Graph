@@ -90,6 +90,8 @@ def test_publication_properties_force_class_d_and_available_catalogue():
     )
     assert props["information_class"] == "D"
     assert props["source_managed_by"] == "IKF"
-    assert props["source_type"] == "TRANSCRIPT"
+    assert props["source_repository"] == "IKF_TYPE_D_TRANSCRIPT"
+    assert props["source_type"] == "TXT"
+    assert props["document_kind"] == "TRANSCRIPT"
     assert props["catalogue_status"] == "AVAILABLE"
     assert props["audio_source_sha256"] == SHA_A
