@@ -63,10 +63,10 @@ MODEL_ALLOW_PATTERNS = (
 )
 
 # Cost-control gate.
-# large-v3 on the current 4-CPU serverless route exceeded 15 minutes on the first smoke
-# recording and was stopped before completion. The next controlled comparison therefore uses
-# the same audio with turbo. Do not expand to all files/models until the runtime and quality
-# of this one-file turbo run are observed.
+# The first large-v3 CPU/INT8 run was stopped after >15 minutes before completion. The source
+# recording is ~13.6 minutes, so this was only modestly slower than real time rather than the
+# severe slowdown initially suspected. The next controlled comparison still uses turbo on the
+# same audio because it gives a clean speed/quality comparison without expanding the matrix.
 SMOKE_TEST = True
 SMOKE_FILE = FILES[0]
 SMOKE_MODEL = 'turbo'
@@ -83,14 +83,21 @@ CPU_THREADS = 0  # Let CTranslate2 use its default CPU-thread policy on serverle
 def audio_duration_seconds(path):
     """Read container/stream metadata only; do not decode or transcribe audio."""
     with av.open(str(path)) as container:
+        # PyAV container.duration is expressed in AV_TIME_BASE units (microseconds), so
+        # convert to seconds by dividing by av.time_base. Do not multiply: that produces a
+        # value 10^12 too large.
         if container.duration is not None:
-            return float(container.duration * av.time_base)
+            duration_s = float(container.duration) / float(av.time_base)
+            if duration_s > 0:
+                return duration_s
 
         audio_streams = [stream for stream in container.streams if stream.type == 'audio']
         if audio_streams:
             stream = audio_streams[0]
             if stream.duration is not None and stream.time_base is not None:
-                return float(stream.duration * stream.time_base)
+                duration_s = float(stream.duration * stream.time_base)
+                if duration_s > 0:
+                    return duration_s
 
     return None
 
@@ -119,6 +126,7 @@ for filename in ACTIVE_FILES:
     print(
         '  audio_duration:', filename,
         'duration_s:', round(duration, 2) if duration is not None else 'unknown',
+        'duration_min:', round(duration / 60.0, 2) if duration is not None else 'unknown',
     )
 
 # Create the derived-transcript directory only if the executing identity already has
