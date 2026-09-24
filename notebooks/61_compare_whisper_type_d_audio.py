@@ -5,9 +5,11 @@
 # MAGIC Run manually on the minimum approved Databricks compute available. The notebook
 # MAGIC automatically uses CUDA/FP16 when an NVIDIA GPU is visible; otherwise it falls back
 # MAGIC to CPU/INT8 so the pilot can run on serverless CPU without cluster-creation rights.
-# MAGIC Install `faster-whisper` in the notebook/job environment. Pin package and model
-# MAGIC revisions after the pilot. This notebook does not publish transcripts or modify the
-# MAGIC knowledge graph. Never commit audio or generated transcripts to GitHub.
+# MAGIC Install `faster-whisper` in the notebook/job environment. Model artifacts are
+# MAGIC downloaded once into a persistent governed Volume cache using a read-only Hugging Face
+# MAGIC token stored as a Unity Catalog secret. The token is never printed or written to output.
+# MAGIC This notebook does not publish transcripts or modify the knowledge graph. Never commit
+# MAGIC audio, generated transcripts, model-cache contents or credentials to GitHub.
 # MAGIC
 # MAGIC Access: grant only designated Type D reviewers permission to read the audio and
 # MAGIC transcript storage. Audio and transcripts may contain protected witness statements,
@@ -25,15 +27,39 @@ from datetime import datetime, timezone
 
 import ctranslate2
 from faster_whisper import WhisperModel
+from huggingface_hub import snapshot_download
 
 SOURCE_ROOT = Path('/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/audios')
 OUTPUT_ROOT = Path('/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/type_d_transcripts')
+
+# Persistent pilot cache inside the already-governed IKF Volume. This avoids repeated
+# multi-GB model downloads across serverless notebook sessions. A separate dedicated model-
+# artifact Volume can replace this path later without changing the transcription outputs.
+MODEL_CACHE_ROOT = Path(
+    '/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/_model_cache/faster_whisper'
+)
+
+HF_SECRET_CATALOG = 'bdw_analysis_prod'
+HF_SECRET_SCHEMA = 'kg_poc'
+HF_SECRET_KEY = 'huggingface_read_token'
+
 FILES = (
     '19970212-090-sv-gale-runner-mayday-call.wav',
     'MV_Summit_Venture_Mayday_Call.flac',
     'Paul-Taverner-interview.mp3',
 )
 MODELS = ('large-v3', 'turbo')  # One-time comparison; retain only the selected model afterwards.
+MODEL_REPOS = {
+    'large-v3': 'Systran/faster-whisper-large-v3',
+    'turbo': 'mobiuslabsgmbh/faster-whisper-large-v3-turbo',
+}
+MODEL_ALLOW_PATTERNS = (
+    'config.json',
+    'preprocessor_config.json',
+    'model.bin',
+    'tokenizer.json',
+    'vocabulary.*',
+)
 
 # Cost-control gate. Keep True until one heavy-model transcription succeeds end-to-end.
 # This first smoke test intentionally uses one short distress-call recording + large-v3.
@@ -56,6 +82,7 @@ print('  visible_cuda_devices:', CUDA_DEVICES)
 print('  logical_cpu_count:', os.cpu_count())
 print('  source_root:', SOURCE_ROOT)
 print('  output_root:', OUTPUT_ROOT)
+print('  model_cache_root:', MODEL_CACHE_ROOT)
 print('  smoke_test:', SMOKE_TEST)
 print('  active_files:', ACTIVE_FILES)
 print('  active_models:', ACTIVE_MODELS)
@@ -81,7 +108,20 @@ if not OUTPUT_ROOT.exists():
 
 assert OUTPUT_ROOT.is_dir(), 'Transcript output path exists but is not a directory'
 
-# Verify write/delete capability without writing transcript content.
+# Create the persistent model-cache directory using the same existing governed Volume access.
+try:
+    MODEL_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+except Exception as exc:
+    raise PermissionError(
+        'The persistent Whisper model cache could not be created. The executing identity '
+        'needs WRITE VOLUME on bdw_analysis_prod.kg_poc.investigation_sources. '
+        'Do not fall back to an ephemeral cache for this pilot because that would cause '
+        'repeated multi-GB downloads. Original error: ' + repr(exc)
+    ) from exc
+
+assert MODEL_CACHE_ROOT.is_dir(), 'Whisper model-cache path is unavailable'
+
+# Verify transcript write/delete capability without writing transcript content.
 WRITE_PROBE = OUTPUT_ROOT / f'.ikf_write_probe_{os.getpid()}.tmp'
 try:
     with WRITE_PROBE.open('x', encoding='utf-8') as handle:
@@ -101,7 +141,48 @@ except Exception as exc:
         + repr(exc)
     ) from exc
 
-print('PRECHECK PASS — source files are visible and output write/delete access is confirmed. No transcription has run yet.')
+# Verify model-cache write/delete capability before attempting a large download.
+CACHE_WRITE_PROBE = MODEL_CACHE_ROOT / f'.ikf_cache_probe_{os.getpid()}.tmp'
+try:
+    with CACHE_WRITE_PROBE.open('x', encoding='utf-8') as handle:
+        handle.write('IKF_MODEL_CACHE_WRITE_PROBE\n')
+    CACHE_WRITE_PROBE.unlink()
+except Exception as exc:
+    try:
+        if CACHE_WRITE_PROBE.exists():
+            CACHE_WRITE_PROBE.unlink()
+    except Exception:
+        pass
+    raise PermissionError(
+        'The Whisper model-cache directory is visible but not writable. Do not continue '
+        'because an ephemeral model download would defeat the cost-control design. '
+        'Original error: ' + repr(exc)
+    ) from exc
+
+# Retrieve the read-only Hugging Face token from Unity Catalog secrets. Fail closed before
+# model download if it has not been configured. Never print, persist or pass this value to
+# transcript metadata.
+try:
+    HF_TOKEN = dbutils.secrets.get(
+        catalog=HF_SECRET_CATALOG,
+        schema=HF_SECRET_SCHEMA,
+        key=HF_SECRET_KEY,
+    )
+except Exception as exc:
+    raise RuntimeError(
+        'Hugging Face read token is not available. Create Unity Catalog secret '
+        'bdw_analysis_prod.kg_poc.huggingface_read_token and rerun only this preflight cell. '
+        'The token must be read-only and must never be committed to GitHub or printed. '
+        'Original error: ' + repr(exc)
+    ) from exc
+
+if not HF_TOKEN or not HF_TOKEN.strip():
+    raise RuntimeError(
+        'Unity Catalog secret bdw_analysis_prod.kg_poc.huggingface_read_token is empty.'
+    )
+
+print('  hf_token_configured: True')
+print('PRECHECK PASS — source/output/cache access and secret retrieval are confirmed. No model download or transcription has run yet.')
 
 
 def sha256_file(path):
@@ -118,30 +199,80 @@ def atomic_json(path, value):
         json.dump(value, handle, ensure_ascii=False, indent=2)
     os.replace(temporary, path)
 
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Prepare the selected model in the persistent cache
+# MAGIC
+# MAGIC Run this cell only after the preflight prints `PRECHECK PASS`.
+# MAGIC
+# MAGIC This cell downloads only missing model artifacts using the read-only Hugging Face
+# MAGIC token and persists them under `MODEL_CACHE_ROOT`. If the snapshot is already cached,
+# MAGIC Hugging Face reuses it rather than downloading the full model again. The returned local
+# MAGIC snapshot path is then used by the transcription cell so inference does not need Hub
+# MAGIC access.
+
+# COMMAND ----------
+
+MODEL_PATHS = {}
+
+for model_name in ACTIVE_MODELS:
+    repo_id = MODEL_REPOS[model_name]
+    print('PREPARING MODEL', model_name, 'repo', repo_id)
+    download_started = time.monotonic()
+
+    model_path = snapshot_download(
+        repo_id=repo_id,
+        cache_dir=str(MODEL_CACHE_ROOT),
+        token=HF_TOKEN,
+        allow_patterns=list(MODEL_ALLOW_PATTERNS),
+    )
+
+    download_elapsed = round(time.monotonic() - download_started, 2)
+    MODEL_PATHS[model_name] = model_path
+    print(
+        'MODEL READY', model_name,
+        'elapsed_s', download_elapsed,
+        'local_snapshot', model_path,
+    )
+
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Execute the controlled pilot
 # MAGIC
-# MAGIC Run this cell only after the preflight cell prints `PRECHECK PASS`.
+# MAGIC Run this cell only after the previous cell prints `MODEL READY`.
 # MAGIC
 # MAGIC While `SMOKE_TEST = True`, this cell processes only the first mayday recording with
-# MAGIC `large-v3`. This validates the heaviest candidate model, dependency/model loading,
-# MAGIC Volume read/write access and JSON persistence without launching all six combinations.
-# MAGIC After a successful smoke test, change `SMOKE_TEST = False`, rerun the preflight cell,
-# MAGIC and then run this cell once for the full three-file/two-model comparison.
+# MAGIC `large-v3`. The model is loaded exclusively from the persistent local snapshot prepared
+# MAGIC above; no Hugging Face token is supplied to inference. This validates the heaviest
+# MAGIC candidate model, audio decoding, CPU/GPU inference and JSON persistence without
+# MAGIC launching all six combinations.
+# MAGIC
+# MAGIC After a successful smoke test, change `SMOKE_TEST = False`, rerun the preflight and
+# MAGIC model-preparation cells, and then run this cell once for the full three-file/two-model
+# MAGIC comparison. Cached model snapshots should be reused.
 
 # COMMAND ----------
 
 for model_name in ACTIVE_MODELS:
-    print('LOADING MODEL', model_name, 'device', DEVICE, 'compute_type', COMPUTE_TYPE)
+    model_path = MODEL_PATHS.get(model_name)
+    if not model_path:
+        raise RuntimeError(
+            f'Model {model_name} has not been prepared. Run the model-cache cell first.'
+        )
+
+    print('LOADING LOCAL MODEL', model_name, 'device', DEVICE, 'compute_type', COMPUTE_TYPE)
     model = WhisperModel(
-        model_name,
+        model_path,
         device=DEVICE,
         compute_type=COMPUTE_TYPE,
         cpu_threads=CPU_THREADS,
         num_workers=1,
+        local_files_only=True,
     )
+
     for filename in ACTIVE_FILES:
         source = SOURCE_ROOT / filename
         source_hash = sha256_file(source)
@@ -182,6 +313,8 @@ for model_name in ACTIVE_MODELS:
             'created_at_utc': datetime.now(timezone.utc).isoformat(),
             'engine': 'faster-whisper',
             'model': model_name,
+            'model_repo': MODEL_REPOS[model_name],
+            'model_cache_root': str(MODEL_CACHE_ROOT),
             'device': DEVICE,
             'visible_cuda_devices': CUDA_DEVICES,
             'compute_type': COMPUTE_TYPE,
@@ -203,6 +336,7 @@ for model_name in ACTIVE_MODELS:
             'elapsed_s', elapsed,
             'output', destination,
         )
+
     del model
 
 # COMMAND ----------
