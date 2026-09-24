@@ -166,7 +166,11 @@ _ASK_FORM_WITH_REFRESH = '''            ask_question_col, ask_refresh_col = st.c
 '''
 
 _REVIEW_START = '    st.markdown("**Supporting evidence**")\n'
-_REVIEW_END = '\n\nwith tab_review:\n'
+_REVIEW_END = (
+    '\n\nwith tab_review:\n'
+    '    st.divider()\n'
+    '    st.markdown("### Optional relationship quality check")\n'
+)
 
 _COMPACT_REVIEW = r'''    st.markdown("**Supporting evidence and human decision**")
     review_evidence_col, review_decision_col = st.columns(2, gap="large")
@@ -433,7 +437,7 @@ def transform_app_ui_source(source: str) -> tuple[str, tuple[str, ...]]:
     if end_count != 1:
         raise RuntimeError(
             "IKF App UI adoption failed at relationship review boundary: "
-            f"expected exactly one end marker, found {end_count}."
+            f"expected exactly one optional-quality boundary, found {end_count}."
         )
     end = source.index(_REVIEW_END)
     start = source.rfind(_REVIEW_START, 0, end)
