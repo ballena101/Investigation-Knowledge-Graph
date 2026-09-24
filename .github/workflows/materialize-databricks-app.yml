@@ -1,0 +1,47 @@
+name: Materialize lean Databricks App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'src/ikf/**'
+      - 'scripts/build_databricks_app_bundle.py'
+      - '.github/workflows/materialize-databricks-app.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build self-contained App source
+        run: python scripts/build_databricks_app_bundle.py --output databricks_app
+
+      - name: Validate materialized App source
+        run: python -m compileall -q databricks_app/app.py databricks_app/src/ikf
+
+      - name: Commit refreshed App source when changed
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f databricks_app
+          if git diff --cached --quiet; then
+            echo "Lean Databricks App source is already current."
+            exit 0
+          fi
+          git commit -m "Refresh lean Databricks App source"
+          git push origin HEAD:main
