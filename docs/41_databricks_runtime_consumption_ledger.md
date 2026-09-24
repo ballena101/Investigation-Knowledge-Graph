@@ -13,7 +13,7 @@ Actual DBUs and monetary cost must still be reconciled against Databricks billin
 
 ## Current Whisper pilot — observed execution
 
-### Preflight run — 2026-09-24
+### Preflight run 1 — 2026-09-24
 
 Notebook:
 - `notebooks/61_compare_whisper_type_d_audio.py`
@@ -54,13 +54,46 @@ What the preflight did **not** call:
 - no Whisper transcription inference yet;
 - no `large-v3` or `turbo` model inference yet.
 
-The preflight therefore validates compute/source-path visibility only and identified the output-directory prerequisite. It is not evidence that the transcription model has run successfully.
-
 Notebook 61 was updated after this failure so that future preflight runs:
 - attempt to create `type_d_transcripts` only if the executing identity already has the required Unity Catalog permissions;
 - do **not** broaden permissions automatically;
 - perform a temporary write/delete probe before any model loading;
 - fail with a targeted `WRITE VOLUME` permission message if the directory cannot be created or written.
+
+### Preflight run 2 — successful storage/write validation — 2026-09-24
+
+Observed runtime remained:
+- Databricks **serverless CPU**;
+- Standard v6;
+- standard 16 GB notebook memory setting;
+- 4 logical CPUs;
+- 0 CUDA devices;
+- faster-whisper target runtime `cpu` / `int8`;
+- smoke test active with `19970212-090-sv-gale-runner-mayday-call.wav` + `large-v3`.
+
+Observed result:
+- source audio path visible;
+- output directory did not initially exist;
+- notebook successfully created `/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/type_d_transcripts` using the executing identity's existing governed permissions;
+- temporary write/delete probe succeeded;
+- preflight printed `PRECHECK PASS`;
+- therefore source read visibility and output create/write/delete capability were confirmed before model loading.
+
+What this successful preflight consumed/called:
+- Databricks serverless CPU notebook compute for the preflight cell;
+- Unity Catalog Volume directory creation plus a minimal temporary write/delete probe.
+
+What it still did **not** call:
+- no GPU or classic cluster;
+- no A100;
+- no Databricks model-serving endpoint;
+- no external transcription API;
+- no AI Transcribe;
+- no Neo4j/MAIRA/SHIELD/IKF analysis job;
+- no Whisper model inference yet;
+- no `large-v3` weights were loaded by the preflight cell itself.
+
+This successful preflight is the GO condition for the next controlled step: one audio file with one model (`large-v3`) on CPU/INT8. Do not expand to the full three-file/two-model comparison until that single smoke test succeeds and its runtime/cost/output are recorded.
 
 ## Whisper dependency and model execution
 
