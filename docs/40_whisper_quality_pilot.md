@@ -5,7 +5,7 @@
 AI Transcribe Preview is not enabled in the workspace. Notebook
 `61_compare_whisper_type_d_audio.py` compares faster-whisper `large-v3` and
 `turbo` on the three existing recordings. Number 40 was already used; the
-current repository has notebooks through 60. This pilot is not an unattended
+current repository has notebooks through 62. This pilot is not an unattended
 production ingestion route. It does not call notebook 39 or mark an analysis
 `EVIDENCE_READY`. Existing notebooks 38/39 assume `ai_transcribe()` output;
 the adapter for Whisper output must be reviewed and implemented separately.
@@ -38,9 +38,48 @@ Type D access and retention owner must confirm the controls for protected
 statements, identities, derivative records, disclosure and deletion under
 Article 9 and applicable national rules.
 
+## Authenticated Hugging Face download and persistent cache
+
+Notebook 61 now retrieves a **read-only Hugging Face token** from the Unity
+Catalog secret:
+
+`bdw_analysis_prod.kg_poc.huggingface_read_token`
+
+The secret value is never printed, included in transcript metadata, written to
+GitHub or stored in the model cache. The preflight fails closed if the secret is
+missing or empty.
+
+The selected faster-whisper CTranslate2 model snapshot is downloaded with
+Hugging Face `snapshot_download()` into the persistent governed cache:
+
+`/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/_model_cache/faster_whisper`
+
+This is a pilot placement inside the existing governed `investigation_sources`
+Volume so the current user can reuse already-approved `WRITE VOLUME` access.
+It avoids repeated multi-gigabyte downloads across ephemeral serverless notebook
+sessions. A separate model-artifact Volume is preferable for the longer-term
+architecture so model binaries are not logically mixed with investigation
+evidence; moving the cache later does not require changing transcript outputs.
+
+The pilot explicitly downloads only the model files needed by faster-whisper:
+`config.json`, `preprocessor_config.json`, `model.bin`, `tokenizer.json` and
+`vocabulary.*`. After the snapshot is present, the transcription cell loads the
+model from that local snapshot with `local_files_only=True`; inference therefore
+does not need Hugging Face access.
+
+Current repository mappings are:
+
+- `large-v3` -> `Systran/faster-whisper-large-v3`;
+- `turbo` -> `mobiuslabsgmbh/faster-whisper-large-v3-turbo`.
+
+The token improves authenticated Hub access and avoids anonymous-request rate
+limits, but it is not treated as a guarantee of higher network bandwidth. The
+persistent cache is the primary cost-control mechanism because it makes the
+large model artifact reusable after the first successful download.
+
 ## Base environment decision
 
-For the serverless CPU pilot, a Databricks **Standard** base environment is
+For the serverless CPU pilot, a Databricks **Standard v6** base environment is
 sufficient when `faster-whisper` is added and shown as installed in Dependencies.
 The **ML** base environment is also compatible but is not required merely to run
 `faster-whisper` on CPU. Selecting an ML base environment does not itself provide
@@ -78,12 +117,17 @@ only when opened. The full report control remains inside the opened viewer.
 
 ## Pending
 
-- Run the controlled pilot; record model versions, review results and billed usage.
+- Complete the authenticated persistent `large-v3` model download and controlled
+  single-file smoke test; record download/inference timing and billed usage.
+- Run the controlled model comparison; record model versions, review results and
+  billed usage.
 - Select one model, then map reviewed Whisper segments to the governed Type D
   audio/transcript tables and notebook 39 evidence contract without fabricated
   PDF page numbers.
 - Validate access and audit boundaries across source audio, transcripts,
   queries, extracted evidence and exports before enabling the app workflow.
+- After the pilot, move model binaries to a dedicated governed model-artifact
+  Volume and pin the accepted model snapshot/revision for reproducibility.
 
 ## App handoff (September 2026)
 
@@ -117,17 +161,25 @@ No deployment or runtime verification was performed by the code change.
 
 1. Check Volume grants and configure the allowlist; create/authorise the output
    directory. Do not expand grants merely to run the pilot.
-2. If Serverless GPU is unavailable and the user cannot create classic compute,
-   use serverless CPU. Select a current Standard base environment (or ML if the
-   workspace requires it) and confirm `faster-whisper` is shown as installed.
-3. Pull the current `main` version of notebook 61. It automatically selects
-   CPU/INT8 when no GPU is visible, so do not run an older CUDA-only copy.
-4. Run the pilot manually/unscheduled with no automatic retry. Inspect the first
-   runtime lines and confirm `device: cpu` and `compute_type: int8` before relying
-   on the results.
-5. Inspect results in the app, review audio/text, compare critical-field errors
+2. Create the read-only Hugging Face token as Unity Catalog secret
+   `bdw_analysis_prod.kg_poc.huggingface_read_token`. Never place the token in
+   notebook code, GitHub, transcript metadata or App configuration unless the
+   App later has a separate approved need for it.
+3. If Serverless GPU is unavailable and the user cannot create classic compute,
+   use serverless CPU. Select **Standard v6** and confirm `faster-whisper` is
+   shown as installed. Keep standard/16-GB memory unless a reproducible memory
+   failure proves a larger setting is required.
+4. Pull the current `main` version of notebook 61. It automatically selects
+   CPU/INT8 when no GPU is visible.
+5. Run only the preflight. Confirm `device: cpu`, `compute_type: int8`, cache
+   write access and `hf_token_configured: True`.
+6. Run the model-preparation cell. It downloads/reuses the selected model in the
+   persistent Volume cache and must print `MODEL READY` before inference.
+7. Run the controlled single-file transcription cell with `SMOKE_TEST = True`.
+   Do not expand to the full comparison until this completes successfully.
+8. Inspect results in the app, review audio/text, compare critical-field errors
    and elapsed/billed compute; select the model.
-6. If a governed GPU route later becomes available, repeat the selected validation
+9. If a governed GPU route later becomes available, repeat the selected validation
    subset on CUDA/FP16 and compare critical-field quality and execution cost.
-7. Pin model/package revisions, implement governed Type D table persistence and
-   downstream timestamp evidence binding for reusable production ingestion.
+10. Pin model/package revisions, implement governed Type D table persistence and
+    downstream timestamp evidence binding for reusable production ingestion.
