@@ -27,7 +27,14 @@ Observed runtime from notebook preflight:
 - faster-whisper device selected by notebook: `cpu`;
 - compute type selected by notebook: `int8`;
 - source path visible: `/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/audios`;
-- output path visible: `/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/type_d_transcripts`.
+- output path configured: `/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/type_d_transcripts`.
+
+Observed result:
+- source volume and runtime were visible;
+- smoke-test configuration was active: one audio file + `large-v3`;
+- preflight stopped before model inference because the restricted transcript output directory did not yet exist;
+- error: `AssertionError: Restricted transcript output directory is unavailable`;
+- no transcript was written and no Whisper model inference was started by this failed preflight.
 
 What this preflight consumed/called:
 - Databricks serverless notebook compute for the preflight cell;
@@ -47,7 +54,13 @@ What the preflight did **not** call:
 - no Whisper transcription inference yet;
 - no `large-v3` or `turbo` model inference yet.
 
-The preflight therefore validates compute/path visibility only. It is not evidence that the transcription model has run successfully.
+The preflight therefore validates compute/source-path visibility only and identified the output-directory prerequisite. It is not evidence that the transcription model has run successfully.
+
+Notebook 61 was updated after this failure so that future preflight runs:
+- attempt to create `type_d_transcripts` only if the executing identity already has the required Unity Catalog permissions;
+- do **not** broaden permissions automatically;
+- perform a temporary write/delete probe before any model loading;
+- fail with a targeted `WRITE VOLUME` permission message if the directory cannot be created or written.
 
 ## Whisper dependency and model execution
 
