@@ -109,10 +109,12 @@ def test_bundle_materializes_policy_audio_timeline_ui_workflow_and_simplificatio
     )
 
     assert 'review_evidence_col, review_decision_col = st.columns(2, gap="large")' in materialized
-    assert 'with st.expander("Technical evidence IDs", expanded=False):' in materialized
+    assert '"Evidence passage"' in materialized
+    assert 'with st.expander("Technical evidence IDs", expanded=False):' not in materialized
     assert '"Evidence page"' in materialized
     assert "height=340" in materialized
     assert "with review_decision_col:" in materialized
+    assert 'st.markdown("**Evidence anchor**")' not in materialized
 
     assert "### Brief analysis summary" in materialized
     assert "contextual orientation during extraction" in materialized
@@ -131,13 +133,13 @@ def test_bundle_materializes_policy_audio_timeline_ui_workflow_and_simplificatio
     assert 'st.markdown("### Ask about this graph scope")' not in materialized
 
     # Final simplification pass: one compact routing table plus one short
-    # confidentiality notice, with stale user-visible wording removed.
+    # confidentiality/external-tools notice, with stale user-visible wording removed.
     assert '"AI routing and information classes"' in materialized
-    assert '"Confidentiality and Article 9"' in materialized
+    assert '"Confidentiality, Article 9 and external tools"' in materialized
     assert "AI model routing and Article 9 suitability" not in materialized
     assert "Compliance, confidentiality and AI-use notice" not in materialized
     assert "Article 9-aligned handling rules" in materialized
-    assert "Dedicated IKF Databricks services" in materialized
+    assert "Dedicated protected Databricks services" in materialized
     assert "Dedicated IKG Databricks endpoint" not in materialized
     assert "Controlled Ollama Llama 3.3 70B service is not configured" not in materialized
     assert "Today's Ollama quota has been reset" not in materialized
@@ -150,6 +152,11 @@ def test_bundle_materializes_policy_audio_timeline_ui_workflow_and_simplificatio
     assert "tab_mapping_review = tab_review" not in materialized
     assert "graph-scoped questions" not in materialized
     assert "EMCIP mappings and SHIELD classifications" not in materialized
+    assert "faster-whisper 1.2.1" in materialized
+    assert "The application developer does not control those independent" in materialized
+    assert "the original recording remains authoritative" in materialized
+    assert "### Validation status" not in materialized
+    assert "IKF separates the investigator workflow" not in materialized
 
     # Timeline V0.3 is automatically projected from the existing KG/evidence
     # and remains editable/validatable without an additional LLM call.
@@ -194,10 +201,10 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert manifest["audio_adoption_version"].startswith("IKF_APP_AUDIO_ADOPTION_")
     assert manifest["audio_fixup_version"].startswith("IKF_APP_AUDIO_FIXUP_")
     assert manifest["timeline_adoption_version"] == "IKF_APP_TIMELINE_ADOPTION_V0.3"
-    assert manifest["ui_adoption_version"].startswith("IKF_APP_UI_ADOPTION_")
+    assert manifest["ui_adoption_version"] == "IKF_APP_UI_ADOPTION_V0.3"
     assert manifest["workflow_adoption_version"] == "IKF_APP_WORKFLOW_ADOPTION_V0.1"
     assert manifest["simplification_adoption_version"] == (
-        "IKF_APP_SIMPLIFICATION_ADOPTION_V0.3"
+        "IKF_APP_SIMPLIFICATION_ADOPTION_V0.4"
     )
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert set(manifest["applied_policy_adoptions"]) == {
@@ -243,6 +250,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         "active_analysis_header",
         "ask_llms_title",
         "ask_refresh_beside_question",
+        "simplify_review_provenance",
         "compact_relationship_review",
     }
     assert set(manifest["applied_workflow_adoptions"]) == {
@@ -260,6 +268,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         "remove_legacy_transcript_reviewer_allowlist",
         "retire_ollama_endpoint_alias",
         "compact_governance_notices",
+        "audio_engine_version_and_confidentiality",
         "remove_ikg_ollama_and_legacy_about_wording",
         "remove_static_validation_milestone",
         "remove_legacy_emcip_tab_alias",
