@@ -404,6 +404,173 @@ for model_name in ACTIVE_MODELS:
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Read-only inspection of the completed turbo smoke transcript
+# MAGIC
+# MAGIC This cell performs **no model loading and no inference**. It reads the existing
+# MAGIC Class-D transcript JSON and original audio only to verify provenance and prepare a
+# MAGIC targeted human listening review. The source recording remains authoritative.
+# MAGIC
+# MAGIC Run only this cell after pulling the notebook update. Do not rerun the transcription.
+
+# COMMAND ----------
+
+from pathlib import Path as _ReviewPath
+import hashlib as _review_hashlib
+import json as _review_json
+import re as _review_re
+
+REVIEW_JSON = _ReviewPath(
+    '/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/type_d_transcripts/'
+    '10915255195ae92e16c44ed93befdf5e45846e5d3dff5bb37f2c464d5d04cca0__turbo.json'
+)
+EXPECTED_SOURCE = _ReviewPath(
+    '/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/audios/'
+    '19970212-090-sv-gale-runner-mayday-call.wav'
+)
+EXPECTED_SOURCE_SHA256 = '10915255195ae92e16c44ed93befdf5e45846e5d3dff5bb37f2c464d5d04cca0'
+
+
+def _review_sha256(path):
+    digest = _review_hashlib.sha256()
+    with path.open('rb') as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _fmt_time(seconds):
+    seconds = max(0.0, float(seconds or 0.0))
+    minutes = int(seconds // 60)
+    remainder = seconds - minutes * 60
+    return f'{minutes:02d}:{remainder:05.2f}'
+
+
+assert REVIEW_JSON.is_file(), f'Completed turbo transcript not found: {REVIEW_JSON}'
+assert EXPECTED_SOURCE.is_file(), f'Original source audio not found: {EXPECTED_SOURCE}'
+
+with REVIEW_JSON.open('r', encoding='utf-8') as handle:
+    review = _review_json.load(handle)
+
+actual_source_hash = _review_sha256(EXPECTED_SOURCE)
+segments = list(review.get('segments') or [])
+
+provenance_checks = {
+    'classification_is_D': review.get('classification') == 'D',
+    'status_unverified': review.get('status') == 'MACHINE_GENERATED_UNVERIFIED',
+    'model_is_turbo': review.get('model') == 'turbo',
+    'engine_is_faster_whisper': review.get('engine') == 'faster-whisper',
+    'source_name_matches': review.get('source_name') == EXPECTED_SOURCE.name,
+    'json_source_hash_matches_expected': review.get('source_sha256') == EXPECTED_SOURCE_SHA256,
+    'original_audio_hash_matches_expected': actual_source_hash == EXPECTED_SOURCE_SHA256,
+    'segments_present': bool(segments),
+}
+
+segment_issues = []
+previous_end = 0.0
+for index, segment in enumerate(segments, start=1):
+    start_s = float(segment.get('start_s') or 0.0)
+    end_s = float(segment.get('end_s') or 0.0)
+    text = str(segment.get('text') or '').strip()
+    if end_s < start_s:
+        segment_issues.append(f'segment {index}: end before start')
+    if start_s + 0.05 < previous_end:
+        segment_issues.append(f'segment {index}: timestamp overlaps previous segment')
+    if not text:
+        segment_issues.append(f'segment {index}: empty text')
+    previous_end = max(previous_end, end_s)
+
+critical_pattern = _review_re.compile(
+    r'\b(?:mayday|pan[ -]?pan|distress|sinking|fire|collision|ground(?:ed|ing)?|'
+    r'abandon|help|coast\s*guard|radio|channel|position|latitude|longitude|'
+    r'north|south|east|west|degrees?|minutes?|knots?|vessel|ship|boat|not|no|unable|'
+    r'zero|one|two|three|four|five|six|seven|eight|nine|\d)\b',
+    flags=_review_re.IGNORECASE,
+)
+
+weak_segments = []
+critical_segments = []
+for index, segment in enumerate(segments, start=1):
+    text = str(segment.get('text') or '').strip()
+    avg_logprob = segment.get('avg_logprob')
+    no_speech_prob = segment.get('no_speech_prob')
+    weak = (
+        (avg_logprob is not None and float(avg_logprob) < -0.8)
+        or (no_speech_prob is not None and float(no_speech_prob) > 0.35)
+    )
+    if weak:
+        weak_segments.append((index, segment))
+    if critical_pattern.search(text):
+        critical_segments.append((index, segment))
+
+print('IKF TYPE-D TRANSCRIPT — READ-ONLY QUALITY INSPECTION')
+print('  transcript:', REVIEW_JSON)
+print('  source:', EXPECTED_SOURCE)
+print('  model:', review.get('model'))
+print('  model_repo:', review.get('model_repo'))
+print('  classification:', review.get('classification'))
+print('  status:', review.get('status'))
+print('  detected_language:', review.get('detected_language'))
+print('  language_probability:', review.get('language_probability'))
+print('  duration_s:', review.get('duration_s'))
+print('  elapsed_s:', review.get('elapsed_s'))
+print('  real_time_factor:', review.get('real_time_factor'))
+print('  segment_count:', len(segments))
+print('  weak_segment_count:', len(weak_segments))
+print('  critical_review_segment_count:', len(critical_segments))
+print('')
+print('PROVENANCE CHECKS')
+for name, passed in provenance_checks.items():
+    print(' ', 'PASS' if passed else 'FAIL', '—', name)
+
+if not all(provenance_checks.values()):
+    raise RuntimeError('Transcript provenance validation failed. Do not review or promote this transcript.')
+
+print('')
+print('SEGMENT STRUCTURE:', 'PASS' if not segment_issues else 'REVIEW')
+for issue in segment_issues[:20]:
+    print('  -', issue)
+if len(segment_issues) > 20:
+    print('  ...', len(segment_issues) - 20, 'additional issue(s)')
+
+print('')
+print('TARGETED LISTENING WINDOWS — LOW CONFIDENCE / HIGH NO-SPEECH')
+if weak_segments:
+    for index, segment in weak_segments:
+        print(
+            f'  [{index:03d}] {_fmt_time(segment.get("start_s"))}–{_fmt_time(segment.get("end_s"))}',
+            f'logprob={segment.get("avg_logprob")!r}',
+            f'no_speech={segment.get("no_speech_prob")!r}',
+            '|', str(segment.get('text') or '').strip(),
+        )
+else:
+    print('  none flagged by the pilot thresholds')
+
+print('')
+print('TARGETED LISTENING WINDOWS — SAFETY-CRITICAL WORDING / NUMBERS / NEGATION')
+for index, segment in critical_segments:
+    print(
+        f'  [{index:03d}] {_fmt_time(segment.get("start_s"))}–{_fmt_time(segment.get("end_s"))}',
+        '|', str(segment.get('text') or '').strip(),
+    )
+
+print('')
+print('FULL TIMESTAMPED MACHINE TRANSCRIPT — UNVERIFIED')
+for index, segment in enumerate(segments, start=1):
+    print(
+        f'[{index:03d}] {_fmt_time(segment.get("start_s"))}–{_fmt_time(segment.get("end_s"))}',
+        str(segment.get('text') or '').strip(),
+    )
+
+print('')
+print('QUALITY GATE STATUS — HUMAN LISTENING REQUIRED')
+print(
+    'Do not change MACHINE_GENERATED_UNVERIFIED or expose this transcript to general LLM, '
+    'SHIELD or graph routes until the critical and weak windows have been checked against the audio.'
+)
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Human quality gate and operating decision
 # MAGIC
 # MAGIC Compare each model against the *audio*, using selected clear and difficult passages
