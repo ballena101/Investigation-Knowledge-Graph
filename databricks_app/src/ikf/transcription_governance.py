@@ -88,7 +88,12 @@ def transcript_publication_properties(
     reviewed_text_sha256: str,
     byte_size: int,
 ) -> dict:
-    """Return the governed SourceDocument metadata for an accepted transcript."""
+    """Return SourceDocument metadata for an accepted reviewed transcript.
+
+    `source_type=TXT` deliberately reuses the existing document extraction path;
+    `document_kind=TRANSCRIPT` preserves the semantic origin without creating a
+    second analysis pipeline.
+    """
 
     document_id = reviewed_transcript_document_id(
         source_sha256=source_sha256,
@@ -101,9 +106,10 @@ def transcript_publication_properties(
     return {
         "document_id": document_id,
         "filename": reviewed_transcript_filename(source_name),
-        "source_type": "TRANSCRIPT",
+        "source_type": "TXT",
+        "document_kind": "TRANSCRIPT",
         "source_managed_by": "IKF",
-        "source_repository": "IKF",
+        "source_repository": "IKF_TYPE_D_TRANSCRIPT",
         "information_class": "D",
         "catalogue_status": "AVAILABLE",
         "sha256": reviewed_text_sha256.lower(),
