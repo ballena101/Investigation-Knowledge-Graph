@@ -6252,8 +6252,8 @@ with tab_transcriptions:
             )
             if model == PARAKEET_TDT_06B_V3:
                 st.caption(
-                    "Parakeet TDT 0.6B v3 supports 25 published languages. Norwegian "
-                    "and Icelandic are not in its published language set; use Whisper for them."
+                    "Parakeet supports 25 published languages. Norwegian and Icelandic "
+                    "are not in that set; use Whisper for those languages."
                 )
 
             accepted_document = load_accepted_transcript_document(
@@ -6352,8 +6352,8 @@ with tab_transcriptions:
                     use_container_width=True,
                 )
                 st.caption(
-                    "These are independent machine outputs, not a consensus transcript. "
-                    "Switch the engine/model selector above to inspect and validate either result."
+                    "Independent machine outputs, not a consensus transcript. Switch the "
+                    "engine/model selector to inspect either result."
                 )
 
             if accepted_document:
@@ -6427,9 +6427,7 @@ with tab_transcriptions:
                         if queued_runs:
                             st.success("Transcription queued — " + " | ".join(queued_runs))
                         else:
-                            st.info(
-                                "The requested machine transcript(s) already exist or are processing."
-                            )
+                            st.info("The requested transcript(s) already exist or are processing.")
                         st.rerun()
                     except Exception as exc:
                         st.error("The transcription could not be started.")
