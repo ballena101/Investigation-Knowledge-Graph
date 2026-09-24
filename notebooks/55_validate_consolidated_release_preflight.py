@@ -37,6 +37,7 @@ REQUIRED_JOB_NAMES = (
     "Investigation KG - SHIELD Proposals",
     "Investigation KG - Relationship Correction",
     "Investigation KG - Similar MAIRA Cases",
+    "Investigation KG - Type D Audio Transcription",
 )
 
 # Keep this list aligned with every app.yaml `valueFrom` resource binding.
@@ -53,6 +54,7 @@ REQUIRED_APP_RESOURCES = (
     "shield_proposal_job",
     "relationship_correction_job",
     "similar_cases_job",
+    "transcription_job",
     "class_d_gpt20_endpoint",
     "class_d_llama70_endpoint",
     "direct_text_encryption_key",
