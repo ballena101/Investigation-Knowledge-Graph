@@ -68,16 +68,12 @@ def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_
     assert "validate_app_emcip_review(" in materialized
     assert "scope_graph_by_documents(" in materialized
 
-    # User-scoped source-file reads retry verified byte ranges instead of relying
-    # on one large response.read().
     assert "FILES_API_DOWNLOAD_CHUNK_BYTES = 4 * 1024 * 1024" in materialized
     assert '"Range": f"bytes={start}-{end}"' in materialized
     assert 'headers["If-Unmodified-Since"] = last_modified' in materialized
     assert "http.client.IncompleteRead" in materialized
     assert "_source_files_api_range(" in materialized
 
-    # One transcription workspace: select any audio -> process -> review ->
-    # accept/publish. Accepted transcripts enter the ordinary Class-D catalogue.
     assert 'TRANSCRIPTION_JOB_ID = os.getenv(' in materialized
     assert "list_type_d_audio_sources" in materialized
     assert "Transcribe selected audio" in materialized
@@ -91,8 +87,6 @@ def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_
     assert "decrypt_direct_text(" not in materialized
     assert "Fernet(" in materialized
 
-    # Type-D audio listing/reading follows the same user-scoped Databricks Files
-    # API pattern as MAIRA rather than direct local /Volumes browsing.
     assert "/api/2.0/fs/directories" in materialized
     assert "download_source_file_as_user(str(path))" in materialized
     assert "load_type_d_audio_bytes" in materialized
@@ -100,34 +94,35 @@ def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_
     assert "TYPE_D_TRANSCRIPT_ROOT.is_dir()" not in materialized
     assert "audio_path.open(\"rb\")" not in materialized
 
-    # Refresh controls belong beside the processing/question controls.
     assert "refresh_transcription_" in materialized
     assert "refresh_transcript_publication_" in materialized
     assert "ask_question_col, ask_refresh_col = st.columns([0.92, 0.08])" in materialized
     assert materialized.count('key="refresh_analysis_status"') == 1
 
-    # Ask uses the simpler title while retaining optional multi-model operation.
     assert "Ask LLMs" in materialized
     assert "Ask / Compare LLMs" not in materialized
 
-    # Relationship review keeps evidence and the human decision side by side;
-    # technical IDs and the smaller evidence page are stacked in the left column.
     assert 'review_evidence_col, review_decision_col = st.columns(2, gap="large")' in materialized
     assert 'with st.expander("Technical evidence IDs", expanded=False):' in materialized
     assert '"Evidence page"' in materialized
     assert "height=340" in materialized
     assert "with review_decision_col:" in materialized
 
-    # Timeline V0.1 remains a human-validation surface only.
+    # Timeline V0.3 is automatically projected from the existing KG/evidence
+    # and remains editable/validatable without an additional LLM call.
     assert '"Timeline"' in materialized
-    assert "load_timeline_events" in materialized
-    assert "load_timeline_event_candidates" in materialized
-    assert "Add validated timeline event" in materialized
-    assert "RELATIVE_AUDIO" in materialized
-    assert "ORDER_ONLY" in materialized
-    assert "st.vega_lite_chart" in materialized
+    assert "load_default_timeline_projection" in materialized
+    assert "project_default_timeline" in materialized
+    assert "Default chronology" in materialized
+    assert "SOURCE_ORDER" in materialized
+    assert "FOLLOWED_BY" in materialized
+    assert "Chronology conflicts / reconciliation" in materialized
+    assert "Audio time alignment" in materialized
+    assert "Evidence-based conclusion" in materialized
+    assert "Save investigator timeline decision" in materialized
     assert "HAS_TIMELINE_EVENT" in materialized
     assert "HUMAN_VALIDATED" in materialized
+    assert "Add validated timeline event" not in materialized
 
     assert "import html" in materialized
     assert "Active analysis: {active_analysis_title}" in materialized
@@ -150,7 +145,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     )
     assert manifest["audio_adoption_version"].startswith("IKF_APP_AUDIO_ADOPTION_")
     assert manifest["audio_fixup_version"].startswith("IKF_APP_AUDIO_FIXUP_")
-    assert manifest["timeline_adoption_version"].startswith("IKF_APP_TIMELINE_ADOPTION_")
+    assert manifest["timeline_adoption_version"] == "IKF_APP_TIMELINE_ADOPTION_V0.3"
     assert manifest["ui_adoption_version"].startswith("IKF_APP_UI_ADOPTION_")
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert set(manifest["applied_policy_adoptions"]) == {
@@ -183,6 +178,10 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert set(manifest["applied_timeline_adoptions"]) == {
         "timeline_imports",
         "timeline_store_helpers",
+        "default_graph_chronology_projection",
+        "chronology_conflict_detection",
+        "audio_absolute_alignment",
+        "evidence_based_timeline_conclusion",
         "timeline_tab",
         "timeline_home_card",
         "timeline_workspace",
