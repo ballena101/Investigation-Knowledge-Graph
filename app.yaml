@@ -22,9 +22,6 @@ env:
   - name: ASK_JOB_ID
     valueFrom: ask_job
 
-  - name: EMCIP_MAPPING_JOB_ID
-    valueFrom: emcip_mapping_job
-
   - name: SHIELD_PROPOSAL_JOB_ID
     valueFrom: shield_proposal_job
 
