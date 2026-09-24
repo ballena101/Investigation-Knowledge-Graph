@@ -69,6 +69,16 @@ def test_bundle_materializes_policy_audio_and_ui_before_deployment(tmp_path):
     assert "Machine-generated transcript — not validated evidence" in materialized
     assert 'st.session_state["analysis_information_class"] = "D"' in materialized
 
+    # Type-D audio follows the same user-scoped Databricks Files API pattern
+    # already used for MAIRA source-file viewing. The deployable App must not
+    # rely on direct local /Volumes browsing for transcript/audio reads.
+    assert "/api/2.0/fs/directories" in materialized
+    assert "download_source_file_as_user(str(path))" in materialized
+    assert "load_type_d_audio_bytes" in materialized
+    assert "TYPE_D_TRANSCRIPT_ROOT.glob" not in materialized
+    assert "TYPE_D_TRANSCRIPT_ROOT.is_dir()" not in materialized
+    assert "audio_path.open(\"rb\")" not in materialized
+
     assert "import html" in materialized
     assert "Active analysis: {active_analysis_title}" in materialized
     assert "color:#1f77b4" in materialized
@@ -102,6 +112,8 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     }
     assert set(manifest["applied_audio_adoptions"]) == {
         "app_access_is_type_d_audio_boundary",
+        "user_scoped_transcript_files_api",
+        "transcriptions_audio_files_api",
         "analyse_documents_audio_review",
         "transcription_access_message",
     }
