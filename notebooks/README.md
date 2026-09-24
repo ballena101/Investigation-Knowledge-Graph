@@ -1,5 +1,11 @@
 # Databricks Notebooks
 
+Notebook `61_compare_whisper_type_d_audio.py` is an on-demand, single-GPU quality
+pilot for the three Type D audio files. It compares `large-v3` and `turbo` and
+writes restricted, unverified timestamped output; it does not replace the
+existing notebook 38/39 `ai_transcribe()` persistence/binding path. See
+`docs/40_whisper_quality_pilot.md` before running.
+
 These files use Databricks source format so they remain readable in Git and can
 be imported into Databricks.
 

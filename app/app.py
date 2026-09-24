@@ -333,6 +333,7 @@ st.set_page_config(
     page_title="Safety Investigation Knowledge & AI Support",
     page_icon="🔗",
     layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
 st.title("Safety Investigation Knowledge & AI Support")
@@ -7489,102 +7490,91 @@ with tab_findings:
                         ]
                     )
 
-                    st.markdown(
-                        "#### Source page"
-                    )
-
-                    if source is None:
-                        st.warning(
-                            "The supporting evidence exists, but its source "
-                            "document is not linked to this analysis."
-                        )
-                    else:
-                        source_path = source.get(
-                            "viewer_source_path"
-                        )
-                        source_type = str(
-                            source.get(
-                                "source_type"
-                            )
-                            or ""
-                        ).upper()
-
-                        if source_type != "PDF":
-                            st.info(
-                                "The supporting evidence is linked to the "
-                                "source document, but the embedded viewer "
-                                "currently supports PDF documents only."
-                            )
-                        elif not source_path:
+                    if st.toggle(
+                        "Source page",
+                        value=False,
+                        key=(
+                            "show_source_page_"
+                            + knowledge_analysis_id
+                            + "_"
+                            + findings_category
+                            + "_"
+                            + str(selected_evidence_index)
+                        ),
+                    ):
+                        if source is None:
                             st.warning(
-                                "No governed source-document path is "
-                                "registered for this supporting evidence."
+                                "The supporting evidence exists, but its source "
+                                "document is not linked to this analysis."
                             )
                         else:
-                            try:
-                                pdf_bytes = (
-                                    download_source_file_as_user(
-                                        source_path
-                                    )
+                            source_path = source.get(
+                                "viewer_source_path"
+                            )
+                            source_type = str(
+                                source.get(
+                                    "source_type"
                                 )
-                                excerpt_bytes = (
-                                    pdf_page_range_bytes(
-                                        pdf_bytes,
-                                        selected_location.get(
-                                            "page_start"
-                                        ),
-                                        selected_location.get(
-                                            "page_end"
-                                        ),
-                                    )
-                                )
+                                or ""
+                            ).upper()
 
-                                st.caption(
-                                    format_evidence_location(
-                                        selected_location,
-                                        source,
+                            if source_type != "PDF":
+                                st.info(
+                                    "The supporting evidence is linked to the "
+                                    "source document, but the embedded viewer "
+                                    "currently supports PDF documents only."
+                                )
+                            elif not source_path:
+                                st.warning(
+                                    "No governed source-document path is "
+                                    "registered for this supporting evidence."
+                                )
+                            else:
+                                try:
+                                    pdf_bytes = (
+                                        download_source_file_as_user(
+                                            source_path
+                                        )
                                     )
-                                )
-                                st.pdf(
-                                    excerpt_bytes,
-                                    height=720,
-                                    key=(
-                                        "evidence_pdf_"
-                                        + hashlib.sha256(
-                                            (
-                                                source_path
-                                                + "|"
-                                                + str(
-                                                    selected_location.get(
-                                                        "page_start"
-                                                    )
-                                                )
-                                                + "|"
-                                                + str(
-                                                    selected_location.get(
-                                                        "page_end"
-                                                    )
-                                                )
-                                            ).encode(
-                                                "utf-8"
-                                            )
-                                        ).hexdigest()[
-                                            :16
-                                        ]
-                                    ),
-                                )
+                                    excerpt_bytes = (
+                                        pdf_page_range_bytes(
+                                            pdf_bytes,
+                                            selected_location.get(
+                                                "page_start"
+                                            ),
+                                            selected_location.get(
+                                                "page_end"
+                                            ),
+                                        )
+                                    )
 
-                                with st.expander(
-                                    "View full source report",
-                                    expanded=False,
-                                ):
+                                    st.caption(
+                                        format_evidence_location(
+                                            selected_location,
+                                            source,
+                                        )
+                                    )
                                     st.pdf(
-                                        pdf_bytes,
-                                        height=800,
+                                        excerpt_bytes,
+                                        height=720,
                                         key=(
-                                            "full_pdf_"
+                                            "evidence_pdf_"
                                             + hashlib.sha256(
-                                                source_path.encode(
+                                                (
+                                                    source_path
+                                                    + "|"
+                                                    + str(
+                                                        selected_location.get(
+                                                            "page_start"
+                                                        )
+                                                    )
+                                                    + "|"
+                                                    + str(
+                                                        selected_location.get(
+                                                            "page_end"
+                                                        )
+                                                    )
+                                                ).encode(
                                                     "utf-8"
                                                 )
                                             ).hexdigest()[
@@ -7593,32 +7583,51 @@ with tab_findings:
                                         ),
                                     )
 
-                            except PermissionError as exc:
-                                st.warning(
-                                    str(
-                                        exc
+                                    with st.expander(
+                                        "View full source report",
+                                        expanded=False,
+                                    ):
+                                        st.pdf(
+                                            pdf_bytes,
+                                            height=800,
+                                            key=(
+                                                "full_pdf_"
+                                                + hashlib.sha256(
+                                                    source_path.encode(
+                                                        "utf-8"
+                                                    )
+                                                ).hexdigest()[
+                                                    :16
+                                                ]
+                                            ),
+                                        )
+
+                                except PermissionError as exc:
+                                    st.warning(
+                                        str(
+                                            exc
+                                        )
                                     )
-                                )
-                                st.caption(
-                                    "The viewer uses your Databricks user "
-                                    "authorization, so Unity Catalog access "
-                                    "is not bypassed."
-                                )
-                            except FileNotFoundError as exc:
-                                st.warning(
-                                    str(
-                                        exc
+                                    st.caption(
+                                        "The viewer uses your Databricks user "
+                                        "authorization, so Unity Catalog access "
+                                        "is not bypassed."
                                     )
-                                )
-                            except Exception as exc:
-                                st.error(
-                                    "The source document could not be rendered."
-                                )
-                                st.caption(
-                                    str(
-                                        exc
+                                except FileNotFoundError as exc:
+                                    st.warning(
+                                        str(
+                                            exc
+                                        )
                                     )
-                                )
+                                except Exception as exc:
+                                    st.error(
+                                        "The source document could not be rendered."
+                                    )
+                                    st.caption(
+                                        str(
+                                            exc
+                                        )
+                                    )
 
                 with st.expander(
                     "Technical provenance (advanced)",
