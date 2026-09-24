@@ -34,6 +34,9 @@ env:
   - name: SIMILAR_CASES_JOB_ID
     valueFrom: similar_cases_job
 
+  - name: TRANSCRIPTION_JOB_ID
+    valueFrom: transcription_job
+
   - name: CLASS_D_GPT20_ENDPOINT
     valueFrom: class_d_gpt20_endpoint
 
