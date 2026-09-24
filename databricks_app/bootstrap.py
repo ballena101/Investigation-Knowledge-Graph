@@ -54,11 +54,13 @@ if src_text not in sys.path:
 if not MATERIALIZED_MARKER.is_file():
     from ikf.app_adoption import transform_app_source
     from ikf.app_audio_adoption import transform_app_audio_source
+    from ikf.app_audio_fixup import transform_app_audio_fixup_source
     from ikf.app_timeline_adoption import transform_app_timeline_source
     from ikf.app_ui_adoption import transform_app_ui_source
 
     source, _applied_policy_adoptions = transform_app_source(source)
     source, _applied_audio_adoptions = transform_app_audio_source(source)
+    source, _applied_audio_fixups = transform_app_audio_fixup_source(source)
     source, _applied_timeline_adoptions = transform_app_timeline_source(source)
     source, _applied_ui_adoptions = transform_app_ui_source(source)
 
