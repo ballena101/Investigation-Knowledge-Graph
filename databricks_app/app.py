@@ -426,7 +426,10 @@ legal certification of compliance.
 
 - Original evidence remains authoritative and stays in governed storage.
 - Protected material uses **Class D** and dedicated model routes.
-- Audio transcription can use **faster-whisper 1.2.1** with Whisper large-v3-turbo/large-v3 or **NVIDIA Parakeet TDT 0.6B v3** through Transformers 5.17.0. Machine transcripts remain unverified until a person listens, corrects and accepts them; the original recording remains authoritative.
+- Audio transcription can use **faster-whisper 1.2.1** with Whisper large-v3-turbo/
+  large-v3 or **NVIDIA Parakeet TDT 0.6B v3** through Transformers 5.17.0.
+  Machine transcripts remain unverified until a person listens, corrects and
+  accepts them; the original recording remains authoritative.
 - AI-generated findings and relationships remain proposals; **human validation
   is authoritative** and drives the reviewed graph.
 - Analytical outputs minimise unnecessary personal data while preserving source
@@ -6220,11 +6223,36 @@ with tab_transcriptions:
             )
             selected_audio = audio_by_path[selected_audio_path]
 
-            st.caption(
-                "Transcription engines: faster-whisper 1.2.1 (Whisper large-v3-turbo / "
-                "large-v3) and NVIDIA Parakeet TDT 0.6B v3 via Transformers 5.17.0. "
-                "Machine output is Class D and requires human review before publication."
-            )
+            with st.expander("Transcription model capabilities", expanded=False):
+                st.dataframe(
+                    [
+                        {
+                            "Model": "Whisper large-v3-turbo",
+                            "Published languages": "99",
+                            "Reference weights": "~1.62 GB",
+                            "IKF performance": "815.7 s audio in 696.1 s · RTF 0.853",
+                            "IKF status": "Default · validated on 16 GB / 4 CPU",
+                        },
+                        {
+                            "Model": "NVIDIA Parakeet TDT 0.6B v3",
+                            "Published languages": "25 European languages",
+                            "Reference weights": "~2.51 GB · ~0.6B parameters",
+                            "IKF performance": "Controlled runtime benchmark pending",
+                            "IKF status": "Alternative · independent ASR technology",
+                        },
+                    ],
+                    hide_index=True,
+                    use_container_width=True,
+                )
+                st.caption(
+                    "Parakeet published languages: Bulgarian, Croatian, Czech, Danish, Dutch, "
+                    "English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, "
+                    "Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Slovak, "
+                    "Slovenian, Spanish, Swedish, Russian and Ukrainian. Norwegian and "
+                    "Icelandic are not in this published set. Whisper remains the broader "
+                    "language route. Weight-file size is not the same as runtime memory or "
+                    "Databricks cost; IKF runtime results are shown only after local validation."
+                )
 
             model = st.selectbox(
                 "Transcription engine / model",
