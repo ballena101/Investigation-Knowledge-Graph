@@ -33,7 +33,6 @@ REQUIRED_JOB_NAMES = (
     "Investigation KG - Automated Analysis",
     "Investigation KG - Class D Dual Model",
     "Investigation KG - Ask Processed Evidence",
-    "Investigation KG - Propose EMCIP Mappings",
     "Investigation KG - SHIELD Proposals",
     "Investigation KG - Relationship Correction",
     "Investigation KG - Similar MAIRA Cases",
@@ -50,7 +49,6 @@ REQUIRED_APP_RESOURCES = (
     "analysis_job",
     "class_d_analysis_job",
     "ask_job",
-    "emcip_mapping_job",
     "shield_proposal_job",
     "relationship_correction_job",
     "similar_cases_job",
@@ -69,7 +67,6 @@ CORE_TABLES = (
     "bdw_analysis_prod.maira.query_specifications",
     "bdw_analysis_prod.maira.query_spec_concepts",
     "bdw_analysis_prod.maira.terminology_normalisations",
-    "bdw_analysis_prod.maira.emcip_operational_registry",
     "bdw_analysis_prod.kg_poc.analysis_passage",
 )
 
