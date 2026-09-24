@@ -40,6 +40,7 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
         "app_audio_fixup.py",
         "app_timeline_adoption.py",
         "app_ui_adoption.py",
+        "app_workflow_adoption.py",
         "timeline.py",
         "transcription_governance.py",
         "source_routing.py",
@@ -54,7 +55,7 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
         assert (shared / name).is_file(), name
 
 
-def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_path):
+def test_bundle_materializes_policy_audio_timeline_ui_and_workflow_before_deployment(tmp_path):
     output = build_test_bundle(tmp_path)
     materialized = (output / "app.py").read_text(encoding="utf-8")
 
@@ -101,12 +102,31 @@ def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_
 
     assert "Ask LLMs" in materialized
     assert "Ask / Compare LLMs" not in materialized
+    assert materialized.index('st.markdown("### Question history")') < materialized.index(
+        "ask_question_col, ask_refresh_col"
+    )
 
     assert 'review_evidence_col, review_decision_col = st.columns(2, gap="large")' in materialized
     assert 'with st.expander("Technical evidence IDs", expanded=False):' in materialized
     assert '"Evidence page"' in materialized
     assert "height=340" in materialized
     assert "with review_decision_col:" in materialized
+
+    assert "### Brief analysis summary" in materialized
+    assert "contextual orientation during extraction" in materialized
+
+    assert "### 2. EMCIP mapping review" not in materialized
+    assert "Generate / refresh EMCIP proposals" not in materialized
+    assert "### SHIELD classification of contributing factors" in materialized
+    assert '"Contributing factor"' in materialized
+    assert '"SHIELD (LLM)"' in materialized
+    assert "No manual SHIELD label selection is required" in materialized
+
+    assert "apply_latest_relationship_reviews_to_graph" in materialized
+    assert "rejected relationship(s) hidden" in materialized
+    assert 'decision == "REJECTED"' in materialized
+    assert 'decision == "AMENDED"' in materialized
+    assert 'st.markdown("### Ask about this graph scope")' not in materialized
 
     # Timeline V0.3 is automatically projected from the existing KG/evidence
     # and remains editable/validatable without an additional LLM call.
@@ -129,6 +149,10 @@ def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_
     assert "color:#1f77b4" in materialized
     assert "font-size:1.05rem" in materialized
 
+    app_yaml = (output / "app.yaml").read_text(encoding="utf-8")
+    assert "EMCIP_MAPPING_JOB_ID" not in app_yaml
+    assert "emcip_mapping_job" not in app_yaml
+
     compile(materialized, str(output / "app.py"), "exec")
 
 
@@ -138,7 +162,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         (output / "ikf_bundle_manifest.json").read_text(encoding="utf-8")
     )
 
-    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.6"
+    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.7"
     assert manifest["adoption_version"].startswith("IKF_APP_SHARED_POLICY_ADOPTION_")
     assert manifest["files_api_download_adoption_version"].startswith(
         "IKF_APP_FILES_API_DOWNLOAD_"
@@ -147,6 +171,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert manifest["audio_fixup_version"].startswith("IKF_APP_AUDIO_FIXUP_")
     assert manifest["timeline_adoption_version"] == "IKF_APP_TIMELINE_ADOPTION_V0.3"
     assert manifest["ui_adoption_version"].startswith("IKF_APP_UI_ADOPTION_")
+    assert manifest["workflow_adoption_version"] == "IKF_APP_WORKFLOW_ADOPTION_V0.1"
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert set(manifest["applied_policy_adoptions"]) == {
         "shared_imports",
@@ -193,6 +218,16 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         "ask_refresh_beside_question",
         "compact_relationship_review",
     }
+    assert set(manifest["applied_workflow_adoptions"]) == {
+        "analysis_description_explanation",
+        "ask_history_before_question",
+        "findings_brief_summary",
+        "remove_emcip_ui",
+        "shield_factor_mapping_view",
+        "reviewed_graph_projection",
+        "remove_graph_questions",
+        "workflow_wording_cleanup",
+    }
     assert manifest["shared_package_path"] == "src/ikf"
 
 
@@ -206,4 +241,5 @@ def test_bundled_bootstrap_prefers_materialized_source(tmp_path):
     assert "transform_app_audio_source" in bootstrap
     assert "transform_app_audio_fixup_source" in bootstrap
     assert "transform_app_timeline_source" in bootstrap
+    assert "transform_app_workflow_source" in bootstrap
     assert (output / "src" / "ikf").is_dir()
