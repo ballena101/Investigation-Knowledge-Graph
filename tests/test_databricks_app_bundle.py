@@ -35,6 +35,7 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
     shared = output / "src" / "ikf"
     for name in (
         "app_adoption.py",
+        "app_files_api_adoption.py",
         "app_audio_adoption.py",
         "app_audio_fixup.py",
         "app_timeline_adoption.py",
@@ -66,6 +67,14 @@ def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_
     assert "validate_app_shield_review(" in materialized
     assert "validate_app_emcip_review(" in materialized
     assert "scope_graph_by_documents(" in materialized
+
+    # User-scoped source-file reads must not depend on one large response.read().
+    # Databricks Files API range support lets the App retry only a failed chunk.
+    assert "FILES_API_DOWNLOAD_CHUNK_BYTES = 4 * 1024 * 1024" in materialized
+    assert '"Range": f"bytes={start}-{end}"' in materialized
+    assert 'headers["If-Unmodified-Since"] = last_modified' in materialized
+    assert "http.client.IncompleteRead" in materialized
+    assert "_source_files_api_range(" in materialized
 
     # One transcription workspace: select any audio -> process -> review ->
     # accept/publish. Accepted transcripts enter the ordinary Class-D catalogue;
@@ -122,8 +131,11 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         (output / "ikf_bundle_manifest.json").read_text(encoding="utf-8")
     )
 
-    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.5"
+    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.6"
     assert manifest["adoption_version"].startswith("IKF_APP_SHARED_POLICY_ADOPTION_")
+    assert manifest["files_api_download_adoption_version"].startswith(
+        "IKF_APP_FILES_API_DOWNLOAD_"
+    )
     assert manifest["audio_adoption_version"].startswith("IKF_APP_AUDIO_ADOPTION_")
     assert manifest["audio_fixup_version"].startswith("IKF_APP_AUDIO_FIXUP_")
     assert manifest["timeline_adoption_version"].startswith("IKF_APP_TIMELINE_ADOPTION_")
@@ -140,6 +152,10 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         "shield_gate2",
         "emcip_review",
         "graph_document_scope",
+    }
+    assert set(manifest["applied_files_api_adoptions"]) == {
+        "files_api_transport_imports",
+        "ranged_files_api_download",
     }
     assert set(manifest["applied_audio_adoptions"]) == {
         "transcription_job_environment",
@@ -172,6 +188,7 @@ def test_bundled_bootstrap_prefers_materialized_source(tmp_path):
 
     assert 'APP_DIR / "src"' in bootstrap
     assert "MATERIALIZED_MARKER" in bootstrap
+    assert "transform_app_files_api_source" in bootstrap
     assert "transform_app_audio_source" in bootstrap
     assert "transform_app_audio_fixup_source" in bootstrap
     assert "transform_app_timeline_source" in bootstrap
