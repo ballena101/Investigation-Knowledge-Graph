@@ -61,13 +61,47 @@ print('  active_files:', ACTIVE_FILES)
 print('  active_models:', ACTIVE_MODELS)
 
 assert SOURCE_ROOT.is_dir(), 'Source volume is unavailable'
-assert OUTPUT_ROOT.is_dir(), (
-    'Restricted transcript output directory is unavailable. Create/authorise '
-    '/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/type_d_transcripts before running.'
-)
 assert all((SOURCE_ROOT / name).is_file() for name in FILES), 'One or more source files are missing'
 
-print('PRECHECK PASS — environment and required paths are visible. No transcription has run yet.')
+# Create the derived-transcript directory only if the executing identity already has
+# the required Unity Catalog WRITE VOLUME permission. We do not broaden permissions here.
+if not OUTPUT_ROOT.exists():
+    print('OUTPUT DIRECTORY MISSING — attempting governed creation:', OUTPUT_ROOT)
+    try:
+        OUTPUT_ROOT.mkdir(parents=False, exist_ok=False)
+        print('OUTPUT DIRECTORY CREATED:', OUTPUT_ROOT)
+    except Exception as exc:
+        raise PermissionError(
+            'The transcript output directory does not exist and this notebook could not create it. '
+            'The executing identity needs WRITE VOLUME on '
+            'bdw_analysis_prod.kg_poc.investigation_sources (and USE CATALOG / USE SCHEMA as applicable). '
+            'Do not grant broader permissions solely for this pilot. Original error: '
+            + repr(exc)
+        ) from exc
+
+assert OUTPUT_ROOT.is_dir(), 'Transcript output path exists but is not a directory'
+
+# Verify write/delete capability without writing transcript content.
+WRITE_PROBE = OUTPUT_ROOT / f'.ikf_write_probe_{os.getpid()}.tmp'
+try:
+    with WRITE_PROBE.open('x', encoding='utf-8') as handle:
+        handle.write('IKF_WRITE_PROBE\n')
+    WRITE_PROBE.unlink()
+except Exception as exc:
+    try:
+        if WRITE_PROBE.exists():
+            WRITE_PROBE.unlink()
+    except Exception:
+        pass
+    raise PermissionError(
+        'The transcript output directory is visible but the notebook cannot write to it. '
+        'The executing identity needs WRITE VOLUME on '
+        'bdw_analysis_prod.kg_poc.investigation_sources. '
+        'Do not continue to model inference until this is resolved. Original error: '
+        + repr(exc)
+    ) from exc
+
+print('PRECHECK PASS — source files are visible and output write/delete access is confirmed. No transcription has run yet.')
 
 
 def sha256_file(path):
