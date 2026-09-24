@@ -28,6 +28,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from ikf.app_adoption import ADOPTION_VERSION, transform_app_source
 from ikf.app_audio_adoption import AUDIO_ADOPTION_VERSION, transform_app_audio_source
+from ikf.app_audio_fixup import AUDIO_FIXUP_VERSION, transform_app_audio_fixup_source
 from ikf.app_timeline_adoption import (
     TIMELINE_ADOPTION_VERSION,
     transform_app_timeline_source,
@@ -74,6 +75,9 @@ def build_bundle(output: Path) -> Path:
     original_app_source = (APP_SOURCE / "app.py").read_text(encoding="utf-8")
     transformed_app_source, applied_policy = transform_app_source(original_app_source)
     transformed_app_source, applied_audio = transform_app_audio_source(transformed_app_source)
+    transformed_app_source, applied_audio_fixup = transform_app_audio_fixup_source(
+        transformed_app_source
+    )
     transformed_app_source, applied_timeline = transform_app_timeline_source(
         transformed_app_source
     )
@@ -94,6 +98,8 @@ def build_bundle(output: Path) -> Path:
         + "\n"
         + AUDIO_ADOPTION_VERSION
         + "\n"
+        + AUDIO_FIXUP_VERSION
+        + "\n"
         + TIMELINE_ADOPTION_VERSION
         + "\n"
         + UI_ADOPTION_VERSION
@@ -105,12 +111,13 @@ def build_bundle(output: Path) -> Path:
         "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.5",
         "adoption_version": ADOPTION_VERSION,
         "audio_adoption_version": AUDIO_ADOPTION_VERSION,
+        "audio_fixup_version": AUDIO_FIXUP_VERSION,
         "timeline_adoption_version": TIMELINE_ADOPTION_VERSION,
         "ui_adoption_version": UI_ADOPTION_VERSION,
         "source_app_sha256": _sha256_text(original_app_source),
         "materialized_app_sha256": _sha256_text(transformed_app_source),
         "applied_policy_adoptions": list(applied_policy),
-        "applied_audio_adoptions": list(applied_audio),
+        "applied_audio_adoptions": list(applied_audio) + list(applied_audio_fixup),
         "applied_timeline_adoptions": list(applied_timeline),
         "applied_ui_adoptions": list(applied_ui),
         "shared_package_path": "src/ikf",
@@ -129,6 +136,7 @@ def build_bundle(output: Path) -> Path:
         output / MANIFEST_NAME,
         bundle_package / "app_adoption.py",
         bundle_package / "app_audio_adoption.py",
+        bundle_package / "app_audio_fixup.py",
         bundle_package / "app_timeline_adoption.py",
         bundle_package / "app_ui_adoption.py",
         bundle_package / "timeline.py",
