@@ -1,19 +1,18 @@
-"""Databricks App bootstrap for shared IKF policy, Files API, UI, audio, Timeline and workflow modules.
+"""Databricks App bootstrap for shared IKF policy and deterministic App transforms.
 
 The canonical deterministic governance logic lives in ``src/ikf``.
 
 Supported layouts:
 
-1. repository checkout: ``app/`` beside ``src/`` — strict transitional policy,
-   user-scoped Files API, UI, Type-D audio, Timeline and workflow source
-   transformations are applied in memory;
+1. repository checkout: ``app/`` beside ``src/`` — source transformations are
+   applied in memory;
 2. generated Databricks App bundle: ``src/`` inside the deployed App folder
    and ``.ikf_shared_policy_materialized`` present — the App source was already
    transformed during the bundle build and is executed directly.
 
 The generated bundle is the preferred deployment source because policy,
-transport, UI, audio, Timeline and workflow adoption are validated before any
-Databricks App runtime is used.
+transport, UI, audio, Timeline, workflow and simplification adoption are
+validated before Databricks App runtime is used.
 """
 
 from __future__ import annotations
@@ -59,6 +58,9 @@ if not MATERIALIZED_MARKER.is_file():
     from ikf.app_timeline_adoption import transform_app_timeline_source
     from ikf.app_ui_adoption import transform_app_ui_source
     from ikf.app_workflow_adoption import transform_app_workflow_source
+    from ikf.app_simplification_adoption import (
+        transform_app_simplification_source,
+    )
 
     source, _applied_policy_adoptions = transform_app_source(source)
     source, _applied_files_api_adoptions = transform_app_files_api_source(source)
@@ -67,6 +69,9 @@ if not MATERIALIZED_MARKER.is_file():
     source, _applied_timeline_adoptions = transform_app_timeline_source(source)
     source, _applied_ui_adoptions = transform_app_ui_source(source)
     source, _applied_workflow_adoptions = transform_app_workflow_source(source)
+    source, _applied_simplification_adoptions = transform_app_simplification_source(
+        source
+    )
 
 code = compile(source, str(APP_FILE), "exec")
 exec(code, {"__name__": "__main__", "__file__": str(APP_FILE)})
