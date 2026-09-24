@@ -80,6 +80,16 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert '(?:large-v3|turbo|parakeet-tdt-0\\.6b-v3)\\.json' in materialized
     assert '(?:large-v3|turbo)\\.json' not in materialized
 
+    # Published capability and IKF-observed performance must remain clearly separated.
+    assert '"Transcription model capabilities"' in materialized
+    assert '"Published languages": "99"' in materialized
+    assert '"Published languages": "25 European languages"' in materialized
+    assert '"Reference weights": "~1.62 GB"' in materialized
+    assert '"Reference weights": "~2.51 GB · ~0.6B parameters"' in materialized
+    assert "815.7 s audio in 696.1 s · RTF 0.853" in materialized
+    assert "Controlled runtime benchmark pending" in materialized
+    assert "Weight-file size is not the same as runtime memory or Databricks cost" in materialized
+
     assert "refresh_transcription_" in materialized
     assert "refresh_transcript_publication_" in materialized
     assert "ask_question_col, ask_refresh_col = st.columns([0.92, 0.08])" in materialized
@@ -110,6 +120,7 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert '"AI routing and information classes"' in materialized
     assert '"Confidentiality, Article 9 and external tools"' in materialized
     assert "Article 9-aligned handling rules" in materialized
+    assert "NVIDIA Parakeet TDT 0.6B v3" in materialized
     assert "The application developer does not control those independent" in materialized
     assert "the original recording remains authoritative" in materialized
     assert "TYPE_D_TRANSCRIPT_REVIEWERS" not in materialized
@@ -151,7 +162,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert manifest["timeline_adoption_version"] == "IKF_APP_TIMELINE_ADOPTION_V0.3"
     assert manifest["ui_adoption_version"] == "IKF_APP_UI_ADOPTION_V0.3"
     assert manifest["workflow_adoption_version"] == "IKF_APP_WORKFLOW_ADOPTION_V0.1"
-    assert manifest["simplification_adoption_version"] == "IKF_APP_SIMPLIFICATION_ADOPTION_V0.4"
+    assert manifest["simplification_adoption_version"] == "IKF_APP_SIMPLIFICATION_ADOPTION_V0.5"
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert manifest["shared_package_path"] == "src/ikf"
 
