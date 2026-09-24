@@ -68,8 +68,8 @@ def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_
     assert "validate_app_emcip_review(" in materialized
     assert "scope_graph_by_documents(" in materialized
 
-    # User-scoped source-file reads must not depend on one large response.read().
-    # Databricks Files API range support lets the App retry only a failed chunk.
+    # User-scoped source-file reads retry verified byte ranges instead of relying
+    # on one large response.read().
     assert "FILES_API_DOWNLOAD_CHUNK_BYTES = 4 * 1024 * 1024" in materialized
     assert '"Range": f"bytes={start}-{end}"' in materialized
     assert 'headers["If-Unmodified-Since"] = last_modified' in materialized
@@ -77,8 +77,7 @@ def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_
     assert "_source_files_api_range(" in materialized
 
     # One transcription workspace: select any audio -> process -> review ->
-    # accept/publish. Accepted transcripts enter the ordinary Class-D catalogue;
-    # Analyse Documents must not carry a second audio-review panel.
+    # accept/publish. Accepted transcripts enter the ordinary Class-D catalogue.
     assert 'TRANSCRIPTION_JOB_ID = os.getenv(' in materialized
     assert "list_type_d_audio_sources" in materialized
     assert "Transcribe selected audio" in materialized
@@ -101,10 +100,23 @@ def test_bundle_materializes_policy_audio_timeline_and_ui_before_deployment(tmp_
     assert "TYPE_D_TRANSCRIPT_ROOT.is_dir()" not in materialized
     assert "audio_path.open(\"rb\")" not in materialized
 
-    # Refresh controls belong beside the transcription/publication processing
-    # metrics, rather than as a detached page-level control.
+    # Refresh controls belong beside the processing/question controls.
     assert "refresh_transcription_" in materialized
     assert "refresh_transcript_publication_" in materialized
+    assert "ask_question_col, ask_refresh_col = st.columns([0.92, 0.08])" in materialized
+    assert materialized.count('key="refresh_analysis_status"') == 1
+
+    # Ask uses the simpler title while retaining optional multi-model operation.
+    assert "Ask LLMs" in materialized
+    assert "Ask / Compare LLMs" not in materialized
+
+    # Relationship review keeps evidence and the human decision side by side;
+    # technical IDs and the smaller evidence page are stacked in the left column.
+    assert 'review_evidence_col, review_decision_col = st.columns(2, gap="large")' in materialized
+    assert 'with st.expander("Technical evidence IDs", expanded=False):' in materialized
+    assert '"Evidence page"' in materialized
+    assert "height=340" in materialized
+    assert "with review_decision_col:" in materialized
 
     # Timeline V0.1 remains a human-validation surface only.
     assert '"Timeline"' in materialized
@@ -178,6 +190,9 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert set(manifest["applied_ui_adoptions"]) == {
         "html_escape_import",
         "active_analysis_header",
+        "ask_llms_title",
+        "ask_refresh_beside_question",
+        "compact_relationship_review",
     }
     assert manifest["shared_package_path"] == "src/ikf"
 
