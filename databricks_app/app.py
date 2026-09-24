@@ -6243,10 +6243,10 @@ with tab_home:
         st.success("Active PoC")
         st.write(
             "Explore the analytical graph by document, concept type, relationship "
-            "type and layout, and ask questions against the same governed scope."
+            "type and layout, using the latest human relationship decisions."
         )
         st.caption(
-            "Diagram controls change the view only; graph knowledge changes require human review."
+            "Rejected relationships are hidden and amended relationships are shown with their reviewed type."
         )
 
     with c6:
@@ -6254,7 +6254,7 @@ with tab_home:
         st.success("Active PoC")
         st.write(
             "Make human decisions on relationships, optional assistant correction "
-            "proposals, EMCIP mappings and SHIELD classifications."
+            "proposals and LLM SHIELD matches for validated contributing factors."
         )
         st.caption(
             "AI suggestions never become validated knowledge without a human decision."
@@ -6913,7 +6913,9 @@ with tab_new_analysis:
             "Analysis description",
             placeholder=(
                 "Optional. Briefly describe the case or evidence set. "
-                "This is descriptive metadata only and does not steer extraction."
+                "This gives the LLM contextual orientation during extraction and "
+                "cross-document resolution, but it is not source evidence and must "
+                "not be used to introduce unsupported facts."
             ),
         )
 
@@ -7791,148 +7793,6 @@ def render_compare_llms():
                 + ask_scope_summary
             )
 
-            ask_question_col, ask_refresh_col = st.columns([0.92, 0.08])
-            with ask_question_col:
-                with st.form(
-                    (
-                        "ask_question_form_"
-                        + selected_analysis_id
-                    ),
-                    clear_on_submit=False,
-                ):
-                    ask_question_text = st.text_area(
-                        "Question",
-                        placeholder=(
-                            "Example: What factors contributed to the contact "
-                            "with the quay?"
-                        ),
-                        height=120,
-                    )
-                    ask_submitted = st.form_submit_button(
-                        "Ask",
-                        type="primary",
-                    )
-
-            with ask_refresh_col:
-                st.caption("Refresh")
-                if st.button(
-                    "↻",
-                    key="refresh_analysis_status",
-                    help="Refresh question and answer status",
-                    use_container_width=True,
-                ):
-                    load_analysis_groups.clear()
-                    load_analysis_sources.clear()
-                    load_analysis_text_source.clear()
-                    load_analysis_graph_counts.clear()
-                    load_analysis_evidence_counts.clear()
-                    load_analysis_result.clear()
-                    load_analysis_graph.clear()
-                    load_model_runs.clear()
-                    load_model_run_graph.clear()
-                    load_question_runs.clear()
-                    load_question_model_runs.clear()
-                    st.toast("Question status refreshed")
-
-            if ask_submitted:
-                ask_errors = []
-
-                if not ask_question_text.strip():
-                    ask_errors.append(
-                        "Enter a question."
-                    )
-
-                if (
-                    scope_mode
-                    == "SELECTED_DOCUMENTS"
-                    and not scope_document_ids
-                ):
-                    ask_errors.append(
-                        "Select at least one document."
-                    )
-
-                if class_for_ask == "D":
-                    if (
-                        ask_model_selection
-                        in {"LLAMA70", "BOTH"}
-                        and get_llama_daily_usage()
-                        >= LLAMA_DAILY_QUESTION_LIMIT
-                    ):
-                        ask_errors.append(
-                            "The daily Llama 3.3 70B question limit has been reached."
-                        )
-
-                if not ASK_JOB_ID:
-                    ask_errors.append(
-                        "The Ask Job has not yet been attached to this App deployment."
-                    )
-
-                if ask_errors:
-                    for error in ask_errors:
-                        st.error(error)
-                else:
-                    question_run_id = None
-                    try:
-                        question_run_id = create_question_run(
-                            analysis=selected_analysis,
-                            question_text=ask_question_text.strip(),
-                            scope_mode=scope_mode,
-                            scope_document_ids=scope_document_ids,
-                            model_selection=ask_model_selection,
-                            include_reference_context=include_reference_context,
-                        )
-
-                        if (
-                            class_for_ask == "D"
-                            and ask_model_selection
-                            in {"LLAMA70", "BOTH"}
-                        ):
-                            consumed = consume_llama_daily_usage()
-                            if consumed is None:
-                                raise RuntimeError(
-                                    "The Llama daily quota could not be reserved."
-                                )
-
-                        run_id = trigger_question_job(
-                            question_run_id
-                        )
-
-                        load_question_runs.clear()
-                        load_question_model_runs.clear()
-
-                        st.success(
-                            "Question queued. Use Refresh beside the question to "
-                            "update the answer."
-                        )
-                        st.caption(
-                            f"Question run: {question_run_id} · "
-                            f"Databricks run: {run_id}"
-                        )
-
-                    except Exception as exc:
-                        if question_run_id:
-                            with get_driver().session() as session:
-                                session.run(
-                                    """
-                                    MATCH (q:QuestionRun {
-                                        question_run_id: $question_run_id
-                                    })
-                                    SET
-                                        q.status = 'FAILED',
-                                        q.processing_stage = 'JOB_TRIGGER_FAILED',
-                                        q.processing_error = $error_message,
-                                        q.updated_at = datetime()
-                                    """,
-                                    question_run_id=question_run_id,
-                                    error_message=(
-                                        f"{type(exc).__name__}: {exc}"
-                                    ),
-                                ).consume()
-                        st.error(
-                            "The question could not be queued."
-                        )
-                        st.exception(exc)
-
             question_runs = [
                 item
                 for item in load_question_runs(
@@ -8163,6 +8023,150 @@ def render_compare_llms():
                                 )
 
 
+
+
+
+            ask_question_col, ask_refresh_col = st.columns([0.92, 0.08])
+            with ask_question_col:
+                with st.form(
+                    (
+                        "ask_question_form_"
+                        + selected_analysis_id
+                    ),
+                    clear_on_submit=False,
+                ):
+                    ask_question_text = st.text_area(
+                        "Question",
+                        placeholder=(
+                            "Example: What factors contributed to the contact "
+                            "with the quay?"
+                        ),
+                        height=120,
+                    )
+                    ask_submitted = st.form_submit_button(
+                        "Ask",
+                        type="primary",
+                    )
+
+            with ask_refresh_col:
+                st.caption("Refresh")
+                if st.button(
+                    "↻",
+                    key="refresh_analysis_status",
+                    help="Refresh question and answer status",
+                    use_container_width=True,
+                ):
+                    load_analysis_groups.clear()
+                    load_analysis_sources.clear()
+                    load_analysis_text_source.clear()
+                    load_analysis_graph_counts.clear()
+                    load_analysis_evidence_counts.clear()
+                    load_analysis_result.clear()
+                    load_analysis_graph.clear()
+                    load_model_runs.clear()
+                    load_model_run_graph.clear()
+                    load_question_runs.clear()
+                    load_question_model_runs.clear()
+                    st.toast("Question status refreshed")
+
+            if ask_submitted:
+                ask_errors = []
+
+                if not ask_question_text.strip():
+                    ask_errors.append(
+                        "Enter a question."
+                    )
+
+                if (
+                    scope_mode
+                    == "SELECTED_DOCUMENTS"
+                    and not scope_document_ids
+                ):
+                    ask_errors.append(
+                        "Select at least one document."
+                    )
+
+                if class_for_ask == "D":
+                    if (
+                        ask_model_selection
+                        in {"LLAMA70", "BOTH"}
+                        and get_llama_daily_usage()
+                        >= LLAMA_DAILY_QUESTION_LIMIT
+                    ):
+                        ask_errors.append(
+                            "The daily Llama 3.3 70B question limit has been reached."
+                        )
+
+                if not ASK_JOB_ID:
+                    ask_errors.append(
+                        "The Ask Job has not yet been attached to this App deployment."
+                    )
+
+                if ask_errors:
+                    for error in ask_errors:
+                        st.error(error)
+                else:
+                    question_run_id = None
+                    try:
+                        question_run_id = create_question_run(
+                            analysis=selected_analysis,
+                            question_text=ask_question_text.strip(),
+                            scope_mode=scope_mode,
+                            scope_document_ids=scope_document_ids,
+                            model_selection=ask_model_selection,
+                            include_reference_context=include_reference_context,
+                        )
+
+                        if (
+                            class_for_ask == "D"
+                            and ask_model_selection
+                            in {"LLAMA70", "BOTH"}
+                        ):
+                            consumed = consume_llama_daily_usage()
+                            if consumed is None:
+                                raise RuntimeError(
+                                    "The Llama daily quota could not be reserved."
+                                )
+
+                        run_id = trigger_question_job(
+                            question_run_id
+                        )
+
+                        load_question_runs.clear()
+                        load_question_model_runs.clear()
+
+                        st.success(
+                            "Question queued. Use Refresh beside the question to "
+                            "update the answer."
+                        )
+                        st.caption(
+                            f"Question run: {question_run_id} · "
+                            f"Databricks run: {run_id}"
+                        )
+
+                    except Exception as exc:
+                        if question_run_id:
+                            with get_driver().session() as session:
+                                session.run(
+                                    """
+                                    MATCH (q:QuestionRun {
+                                        question_run_id: $question_run_id
+                                    })
+                                    SET
+                                        q.status = 'FAILED',
+                                        q.processing_stage = 'JOB_TRIGGER_FAILED',
+                                        q.processing_error = $error_message,
+                                        q.updated_at = datetime()
+                                    """,
+                                    question_run_id=question_run_id,
+                                    error_message=(
+                                        f"{type(exc).__name__}: {exc}"
+                                    ),
+                                ).consume()
+                        st.error(
+                            "The question could not be queued."
+                        )
+                        st.exception(exc)
 
 @st.fragment
 def render_direct_reference_ask():
@@ -8514,6 +8518,17 @@ with tab_findings:
         knowledge_meta = knowledge_by_id[
             knowledge_analysis_id
         ]
+        knowledge_result = load_analysis_result(
+            knowledge_analysis_id
+        )
+
+        st.markdown("### Brief analysis summary")
+        if knowledge_result.get("overview"):
+            st.info(knowledge_result["overview"])
+        else:
+            st.caption(
+                "No brief analysis summary is stored for this completed evidence set."
+            )
 
         st.info(
             "This page is intentionally read-only: browse extracted knowledge, "
@@ -9830,6 +9845,84 @@ with tab_timeline:
             )
 
 
+
+def apply_latest_relationship_reviews_to_graph(
+    analysis_id,
+    graph,
+    model_run_id=None,
+):
+    """Return a reviewed graph projection without mutating the persisted AI graph."""
+
+    review_query = """
+    MATCH (review:RelationshipReview {analysis_id: $analysis_id})
+    WITH review
+    ORDER BY review.reviewed_at DESC
+    WITH review.edge_id AS edge_id, collect(review)[0] AS latest
+    RETURN
+        edge_id,
+        latest.model_run_id AS model_run_id,
+        latest.human_review_decision AS decision,
+        latest.amended_relationship AS amended_relationship
+    """
+
+    with get_driver().session() as session:
+        latest_reviews = {
+            record["edge_id"]: record.data()
+            for record in session.run(
+                review_query,
+                analysis_id=analysis_id,
+            )
+        }
+
+    reviewed_edges = []
+    hidden_rejected = 0
+    amended_count = 0
+    validated_count = 0
+
+    for edge in graph.get("edges") or []:
+        if edge.get("edge_class") == "STRUCTURAL":
+            reviewed_edges.append(edge)
+            continue
+
+        review = latest_reviews.get(edge.get("edge_id"))
+        if (
+            review
+            and model_run_id
+            and review.get("model_run_id")
+            and review.get("model_run_id") != model_run_id
+        ):
+            review = None
+
+        if not review:
+            reviewed_edges.append(edge)
+            continue
+
+        decision = str(review.get("decision") or "").upper()
+        if decision == "REJECTED":
+            hidden_rejected += 1
+            continue
+
+        effective_edge = dict(edge)
+        effective_edge["human_review_decision"] = decision
+
+        if decision == "AMENDED" and review.get("amended_relationship"):
+            effective_edge["relationship"] = review["amended_relationship"]
+            amended_count += 1
+        elif decision == "VALIDATED":
+            validated_count += 1
+
+        reviewed_edges.append(effective_edge)
+
+    return {
+        "nodes": list(graph.get("nodes") or []),
+        "edges": reviewed_edges,
+        "review_projection": {
+            "hidden_rejected": hidden_rejected,
+            "amended": amended_count,
+            "validated": validated_count,
+        },
+    }
+
 with tab_knowledge_graph:
     st.subheader("Knowledge Graph")
     st.caption(
@@ -9901,6 +9994,27 @@ with tab_knowledge_graph:
         else:
             raw_graph = load_analysis_graph(
                 graph_analysis_id
+            )
+
+        raw_graph = apply_latest_relationship_reviews_to_graph(
+            graph_analysis_id,
+            raw_graph,
+            graph_model_run_id,
+        )
+        review_projection = raw_graph.get("review_projection") or {}
+        if (
+            review_projection.get("hidden_rejected")
+            or review_projection.get("amended")
+            or review_projection.get("validated")
+        ):
+            st.caption(
+                "Reviewed projection: "
+                + str(review_projection.get("validated") or 0)
+                + " validated · "
+                + str(review_projection.get("amended") or 0)
+                + " amended · "
+                + str(review_projection.get("hidden_rejected") or 0)
+                + " rejected relationship(s) hidden."
             )
 
         graph_sources = load_analysis_sources(
@@ -10237,459 +10351,6 @@ with tab_knowledge_graph:
             "Diagram filters and layout do not edit knowledge. Relationship "
             "validation/amendment remains in Review & Validate."
         )
-
-        st.divider()
-        st.markdown("### Ask about this graph scope")
-        st.caption(
-            "The question uses governed source evidence from the selected "
-            "documents. Visual node/relationship filters do not silently "
-            "remove evidence from retrieval."
-        )
-
-        graph_class = (
-            graph_meta.get(
-                "information_class"
-            )
-            or "B"
-        )
-
-        if graph_class == "D":
-            graph_model_label = st.radio(
-                "Protected-evidence model mode",
-                options=list(
-                    CLASS_D_MODEL_OPTIONS
-                ),
-                horizontal=True,
-                key=(
-                    "graph_question_model_"
-                    + graph_analysis_id
-                ),
-            )
-            graph_question_model_selection = (
-                CLASS_D_MODEL_OPTIONS[
-                    graph_model_label
-                ]
-            )
-        else:
-            graph_question_model_selection = (
-                "DEFAULT"
-            )
-
-        graph_reference_context = st.checkbox(
-            "Include legal / IMO / technical references",
-            value=False,
-            key=(
-                "graph_reference_context_"
-                + graph_analysis_id
-            ),
-            help=(
-                "Reference material remains separate from case evidence and "
-                "cannot prove an occurrence fact."
-            ),
-        )
-
-        if not all_graph_document_ids:
-            graph_question_scope_mode = (
-                "WHOLE_CASE"
-            )
-            graph_question_document_ids = []
-            graph_scope_text = (
-                "Entire prepared evidence set"
-            )
-        elif (
-            selected_document_set
-            == all_document_set
-        ):
-            graph_question_scope_mode = (
-                "WHOLE_CASE"
-            )
-            graph_question_document_ids = []
-            graph_scope_text = (
-                "All analysis documents"
-            )
-        elif len(
-            selected_graph_document_ids
-        ) == 1:
-            graph_question_scope_mode = (
-                "ONE_DOCUMENT"
-            )
-            graph_question_document_ids = list(
-                selected_graph_document_ids
-            )
-            graph_scope_text = (
-                graph_source_label(
-                    selected_graph_document_ids[
-                        0
-                    ]
-                )
-            )
-        else:
-            graph_question_scope_mode = (
-                "SELECTED_DOCUMENTS"
-            )
-            graph_question_document_ids = list(
-                selected_graph_document_ids
-            )
-            graph_scope_text = (
-                str(
-                    len(
-                        selected_graph_document_ids
-                    )
-                )
-                + " selected document(s)"
-            )
-
-        st.info(
-            "Graph question evidence scope: "
-            + graph_scope_text
-        )
-
-        with st.form(
-            "graph_question_form_"
-            + graph_analysis_id,
-            clear_on_submit=False,
-        ):
-            graph_question_text = st.text_area(
-                "Question about this graph",
-                placeholder=(
-                    "Example: Which contributing factors are connected to "
-                    "the fire event, and what source evidence supports those links?"
-                ),
-                height=110,
-            )
-            graph_question_submit = (
-                st.form_submit_button(
-                    "Ask",
-                    type="primary",
-                )
-            )
-
-        if graph_question_submit:
-            graph_question_errors = []
-
-            if not graph_question_text.strip():
-                graph_question_errors.append(
-                    "Enter a question."
-                )
-
-            if (
-                graph_question_scope_mode
-                == "SELECTED_DOCUMENTS"
-                and not graph_question_document_ids
-            ):
-                graph_question_errors.append(
-                    "Select at least one document for the graph question."
-                )
-
-            if not ASK_JOB_ID:
-                graph_question_errors.append(
-                    "The Ask Job is not attached to this App deployment."
-                )
-
-            if (
-                graph_class == "D"
-                and graph_question_model_selection
-                in {
-                    "LLAMA70",
-                    "BOTH",
-                }
-                and get_llama_daily_usage()
-                >= LLAMA_DAILY_QUESTION_LIMIT
-            ):
-                graph_question_errors.append(
-                    "The daily Llama 3.3 70B question limit has been reached."
-                )
-
-            if graph_question_errors:
-                for error in graph_question_errors:
-                    st.error(
-                        error
-                    )
-            else:
-                graph_question_run_id = None
-                try:
-                    graph_question_run_id = (
-                        create_question_run(
-                            analysis=graph_meta,
-                            question_text=(
-                                graph_question_text.strip()
-                            ),
-                            scope_mode=(
-                                graph_question_scope_mode
-                            ),
-                            scope_document_ids=(
-                                graph_question_document_ids
-                            ),
-                            model_selection=(
-                                graph_question_model_selection
-                            ),
-                            include_reference_context=(
-                                graph_reference_context
-                            ),
-                            interaction_surface=(
-                                "KNOWLEDGE_GRAPH"
-                            ),
-                        )
-                    )
-
-                    if (
-                        graph_class == "D"
-                        and graph_question_model_selection
-                        in {
-                            "LLAMA70",
-                            "BOTH",
-                        }
-                    ):
-                        consumed = (
-                            consume_llama_daily_usage()
-                        )
-                        if consumed is None:
-                            raise RuntimeError(
-                                "The Llama daily quota could not be reserved."
-                            )
-
-                    graph_question_job_run_id = (
-                        trigger_question_job(
-                            graph_question_run_id
-                        )
-                    )
-
-                    load_question_runs.clear()
-                    load_question_model_runs.clear()
-
-                    st.session_state[
-                        (
-                            "graph_question_job_run_"
-                            + graph_analysis_id
-                        )
-                    ] = graph_question_job_run_id
-
-                    st.success(
-                        "Graph question queued. Use Refresh graph question "
-                        "status to update the answer."
-                    )
-
-                except Exception as exc:
-                    if graph_question_run_id:
-                        with get_driver().session() as session:
-                            session.run(
-                                """
-                                MATCH (q:QuestionRun {
-                                    question_run_id: $question_run_id
-                                })
-                                SET
-                                    q.status = 'FAILED',
-                                    q.processing_stage = 'JOB_TRIGGER_FAILED',
-                                    q.processing_error = $error_message,
-                                    q.updated_at = datetime()
-                                """,
-                                question_run_id=graph_question_run_id,
-                                error_message=(
-                                    f"{type(exc).__name__}: {exc}"
-                                ),
-                            ).consume()
-                    st.error(
-                        "The graph question could not be queued."
-                    )
-                    st.exception(
-                        exc
-                    )
-
-        graph_status_left, graph_status_right = st.columns(
-            [1.2, 2.8]
-        )
-        with graph_status_left:
-            if st.button(
-                "↻",
-                key=(
-                    "refresh_graph_question_"
-                    + graph_analysis_id
-                ),
-                help="Refresh graph-question status",
-                use_container_width=True,
-            ):
-                load_question_runs.clear()
-                load_question_model_runs.clear()
-                st.rerun()
-
-        with graph_status_right:
-            render_async_job_status(
-                st.session_state.get(
-                    (
-                        "graph_question_job_run_"
-                        + graph_analysis_id
-                    )
-                ),
-                "Graph question",
-            )
-
-        graph_question_runs = [
-            item
-            for item in load_question_runs(
-                graph_analysis_id
-            )
-            if (
-                item.get(
-                    "interaction_surface"
-                )
-                == "KNOWLEDGE_GRAPH"
-            )
-        ]
-
-        if graph_question_runs:
-            st.markdown(
-                "### Graph question history"
-            )
-
-            graph_question_by_id = {
-                item[
-                    "question_run_id"
-                ]: item
-                for item in graph_question_runs
-            }
-
-            selected_graph_question_id = (
-                st.selectbox(
-                    "Graph question",
-                    options=list(
-                        graph_question_by_id
-                    ),
-                    format_func=lambda value: (
-                        question_display_text(
-                            graph_question_by_id[
-                                value
-                            ]
-                        )[:100]
-                        + " · "
-                        + (
-                            graph_question_by_id[
-                                value
-                            ].get(
-                                "status"
-                            )
-                            or "UNKNOWN"
-                        )
-                    ),
-                    key=(
-                        "graph_question_history_"
-                        + graph_analysis_id
-                    ),
-                )
-            )
-
-            selected_graph_question = (
-                graph_question_by_id[
-                    selected_graph_question_id
-                ]
-            )
-
-            st.write(
-                question_display_text(
-                    selected_graph_question
-                )
-            )
-            st.caption(
-                "Scope: "
-                + (
-                    selected_graph_question.get(
-                        "scope_mode"
-                    )
-                    or "WHOLE_CASE"
-                )
-                + " · Status: "
-                + (
-                    selected_graph_question.get(
-                        "status"
-                    )
-                    or "UNKNOWN"
-                )
-            )
-
-            if (
-                selected_graph_question.get(
-                    "status"
-                )
-                == "COMPLETED"
-            ):
-                graph_answer_runs = (
-                    load_question_model_runs(
-                        selected_graph_question_id
-                    )
-                )
-
-                if len(
-                    graph_answer_runs
-                ) == 1:
-                    render_question_answer(
-                        analysis_id=(
-                            graph_analysis_id
-                        ),
-                        question_run=(
-                            selected_graph_question
-                        ),
-                        model_run=(
-                            graph_answer_runs[
-                                0
-                            ]
-                        ),
-                        render_key=(
-                            "graph_"
-                            + graph_answer_runs[
-                                0
-                            ][
-                                "model_key"
-                            ]
-                        ),
-                    )
-                elif graph_answer_runs:
-                    graph_answer_columns = (
-                        st.columns(
-                            len(
-                                graph_answer_runs
-                            )
-                        )
-                    )
-                    for (
-                        graph_answer_column,
-                        graph_answer_run,
-                    ) in zip(
-                        graph_answer_columns,
-                        graph_answer_runs,
-                    ):
-                        with graph_answer_column:
-                            render_question_answer(
-                                analysis_id=(
-                                    graph_analysis_id
-                                ),
-                                question_run=(
-                                    selected_graph_question
-                                ),
-                                model_run=(
-                                    graph_answer_run
-                                ),
-                                render_key=(
-                                    "graph_"
-                                    + graph_answer_run[
-                                        "model_key"
-                                    ]
-                                ),
-                            )
-            elif (
-                selected_graph_question.get(
-                    "status"
-                )
-                == "FAILED"
-            ):
-                st.error(
-                    selected_graph_question.get(
-                        "processing_error"
-                    )
-                    or "Graph question processing failed."
-                )
-            else:
-                st.info(
-                    "The graph question is queued or running."
-                )
 
 
 with tab_review:
@@ -11527,730 +11188,142 @@ with tab_review:
                         st.exception(exc)
 
 
-with tab_mapping_review:
+with tab_review:
     st.divider()
-    st.markdown("### 2. EMCIP mapping review")
+    st.markdown("### SHIELD classification of contributing factors")
     st.caption(
-        "Assistant mappings are generated on demand from the governed MAIRA "
-        "EMCIP registry. The proposal never becomes authoritative until a "
-        "human validates or amends it."
+        "SHIELD is shown as an LLM-proposed taxonomy match beside each contributing "
+        "factor. The model may classify a factor only after its CONTRIBUTED_TO "
+        "relationship has been human validated or amended to CONTRIBUTED_TO. "
+        "No manual SHIELD label selection is required."
     )
 
-    try:
-        mapping_analyses = [
-            item
-            for item in load_analysis_groups()
-            if item.get("status") == "COMPLETED"
-        ]
-    except Exception as exc:
-        mapping_analyses = []
-        st.error(
-            "Completed analyses could not be loaded for EMCIP mapping."
-        )
-        st.exception(exc)
+    shield_analysis_id = selected_review_analysis_id
+    shield_model_run_id = selected_review_model_run_id
 
-    mapping_analysis_by_id = {
-        item["analysis_id"]: item
-        for item in mapping_analyses
-    }
-
-    mapping_analysis_id = (
-        active_analysis_id
-        if (
-            active_analysis_id
-            and active_analysis_id
-            in mapping_analysis_by_id
-        )
-        else None
-    )
-
-    if mapping_analysis_id:
-        st.caption(
-            "EMCIP and SHIELD review use the same active analysis."
-        )
-
-    mapping_model_run_id = None
-    mapping_model_run = None
-
-    if mapping_analysis_id:
-        mapping_model_runs = [
-            item
-            for item in load_model_runs(mapping_analysis_id)
-            if item.get("status") == "COMPLETED"
-        ]
-
-        mapping_model_run_by_id = {
-            item["model_run_id"]: item
-            for item in mapping_model_runs
-        }
-
-        if mapping_model_run_by_id:
-            mapping_model_run_id = st.selectbox(
-                "Model graph to map",
-                options=list(mapping_model_run_by_id),
-                format_func=lambda value: (
-                    mapping_model_run_by_id[value].get("model_label")
-                    or mapping_model_run_by_id[value].get("model_key")
-                    or value
-                ),
-                key="mapping_model_run_selector",
-            )
-            mapping_model_run = mapping_model_run_by_id[
-                mapping_model_run_id
-            ]
-        else:
-            st.info(
-                "No completed model graph is available for this analysis."
-            )
-
-    action_left, action_right = st.columns([1, 1])
-
-    with action_left:
-        generate_mapping = st.button(
-            "Generate / refresh EMCIP proposals",
-            type="primary",
-            disabled=(
-                mapping_analysis_id is None
-                or mapping_model_run_id is None
-                or not EMCIP_MAPPING_JOB_ID
-            ),
-            key="generate_emcip_proposals",
-        )
-
-    with action_right:
-        refresh_mapping = st.button(
-            "↻",
-            help="Refresh EMCIP mapping status",
-            disabled=(
-                mapping_analysis_id is None
-                or mapping_model_run_id is None
-            ),
-            key="refresh_emcip_mapping_status",
-        )
-
-    if not EMCIP_MAPPING_JOB_ID:
-        st.caption(
-            "The generic EMCIP proposal Job is not attached to this App "
-            "deployment yet. Source code is ready; runtime setup uses "
-            "resource key emcip_mapping_job."
-        )
-
-    if refresh_mapping:
-        load_emcip_mapping_proposals.clear()
-        load_latest_analysis_mapping_reviews.clear()
-        load_analysis_groups.clear()
-        st.toast("EMCIP mapping status refreshed")
-
-    if generate_mapping:
-        try:
-            mapping_job_run_id = trigger_emcip_mapping_job(
-                mapping_analysis_id,
-                mapping_model_run_id,
-            )
-            load_emcip_mapping_proposals.clear()
-            st.success(
-                "EMCIP proposal generation queued. Use Refresh mapping "
-                "status to update the proposals."
-            )
-            st.caption(
-                "Databricks run: " + mapping_job_run_id
-            )
-        except Exception as exc:
-            st.error(
-                "EMCIP proposal generation could not be queued."
-            )
-            st.exception(exc)
-
-    mapping_proposals = (
-        load_emcip_mapping_proposals(
-            mapping_analysis_id,
-            mapping_model_run_id,
-        )
-        if (
-            mapping_analysis_id
-            and mapping_model_run_id
-        )
-        else []
-    )
-
-    latest_mapping_reviews = (
-        load_latest_analysis_mapping_reviews(
-            mapping_analysis_id,
-            mapping_model_run_id,
-        )
-        if (
-            mapping_analysis_id
-            and mapping_model_run_id
-        )
-        else {}
-    )
-
-    reviewed_mapping_keys = set(
-        latest_mapping_reviews
-    )
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric(
-        "Mapping proposals",
-        len(mapping_proposals),
-    )
-    m2.metric(
-        "Human reviewed",
-        len(reviewed_mapping_keys),
-    )
-    m3.metric(
-        "Remaining",
-        max(
-            0,
-            len(mapping_proposals)
-            - len(reviewed_mapping_keys),
-        ),
-    )
-
-    if (
-        mapping_analysis_id
-        and mapping_model_run_id
-        and not mapping_proposals
-    ):
-        st.info(
-            "No generic EMCIP proposals are available for this analysis/model "
-            "graph yet. Generate them on demand above."
-        )
-
-    if mapping_proposals:
-        def mapping_option_label(index):
-            proposal = mapping_proposals[index]
-            latest_mapping = latest_mapping_reviews.get(
-                proposal["proposal_id"]
-            )
-
-            if latest_mapping:
-                marker = {
-                    "VALIDATED": "✓",
-                    "REJECTED": "✕",
-                    "AMENDED": "✎",
-                }.get(
-                    latest_mapping["decision"],
-                    "•",
-                )
-                prefix = f"{marker} "
-            else:
-                prefix = ""
-
-            return (
-                f"{prefix}{proposal['node_kind']}: "
-                f"{proposal['node_label']} → "
-                f"{emcip_mapping_text(proposal)}"
-            )
-
-        selected_mapping_index = st.selectbox(
-            "Mapping proposal",
-            options=list(range(len(mapping_proposals))),
-            format_func=mapping_option_label,
-            key="generic_mapping_selector",
-        )
-
-        selected_mapping = mapping_proposals[
-            selected_mapping_index
-        ]
-        latest_mapping = latest_mapping_reviews.get(
-            selected_mapping["proposal_id"]
-        )
-
-        mc1, mc2, mc3 = st.columns(3)
-        with mc1:
-            st.markdown("**Concept**")
-            st.write(selected_mapping["node_label"])
-        with mc2:
-            st.markdown("**Concept type**")
-            st.write(selected_mapping["node_kind"])
-        with mc3:
-            st.markdown("**Assistant status**")
-            st.write(
-                selected_mapping[
-                    "assistant_mapping_status"
-                ]
-            )
-
-        st.markdown("**Assistant EMCIP proposal**")
-        if (
-            selected_mapping[
-                "assistant_mapping_status"
-            ]
-            == "ASSISTANT_PROPOSED"
-        ):
-            st.info(
-                emcip_mapping_text(
-                    selected_mapping
-                )
-            )
-        else:
-            st.warning("NO_MAPPING")
-
-        if selected_mapping.get("rationale"):
-            st.caption(
-                "Assistant rationale: "
-                + selected_mapping["rationale"]
-            )
-
-        st.caption(
-            "Proposal method: "
-            + (
-                selected_mapping.get("proposal_method")
-                or "—"
-            )
-            + " · Model: "
-            + (
-                selected_mapping.get("model_service")
-                or "—"
-            )
-        )
-
-        candidate_options = (
-            selected_mapping.get("candidate_options")
-            or []
-        )
-
-        with st.expander(
-            "Governed EMCIP shortlist",
-            expanded=False,
-        ):
-            if not candidate_options:
-                st.write(
-                    "No deterministic taxonomy candidates were available."
-                )
-            else:
-                for candidate in candidate_options:
-                    st.write(
-                        "• "
-                        + (
-                            candidate.get("entity_path")
-                            or candidate.get("entity_name")
-                            or "EMCIP"
-                        )
-                        + " → "
-                        + (
-                            candidate.get("attribute_name")
-                            or ""
-                        )
-                        + " → "
-                        + (
-                            candidate.get("code_value")
-                            or ""
-                        )
-                        + " ["
-                        + str(
-                            candidate.get("code_idcode")
-                            or "—"
-                        )
-                        + "]"
-                        + " · lexical/structural score "
-                        + str(candidate.get("score") or 0)
-                    )
-
-        st.markdown("**Source evidence for the concept**")
-        map_evidence_left, map_evidence_right = st.columns(
-            [1.0, 1.2]
-        )
-
-        with map_evidence_left:
-            map_refs = (
-                selected_mapping.get(
-                    "evidence_references"
-                )
-                or []
-            )
-            if map_refs:
-                for reference in map_refs:
-                    st.write(f"• {reference}")
-            else:
-                st.caption(
-                    "No page-level source reference is stored for this concept."
-                )
-
-            with st.expander(
-                "Technical provenance",
-                expanded=False,
-            ):
-                st.write(
-                    "Proposal ID:",
-                    selected_mapping["proposal_id"],
-                )
-                st.write(
-                    "Mapping version:",
-                    selected_mapping.get("mapping_version")
-                    or "—",
-                )
-                st.write(
-                    "Registry versions:",
-                    ", ".join(
-                        selected_mapping.get(
-                            "taxonomy_registry_versions"
-                        )
-                        or []
-                    )
-                    or "—",
-                )
-                for passage_id in (
-                    selected_mapping.get(
-                        "evidence_passage_ids"
-                    )
-                    or []
-                ):
-                    st.code(
-                        passage_id,
-                        language=None,
-                    )
-
-        with map_evidence_right:
-            map_locations = [
-                parsed
-                for parsed in (
-                    parse_evidence_location(value)
-                    for value in (
-                        selected_mapping.get(
-                            "evidence_locations"
-                        )
-                        or []
-                    )
-                )
-                if parsed is not None
-            ]
-
-            if map_locations:
-                map_sources = load_analysis_sources(
-                    mapping_analysis_id
-                )
-                map_source_by_id = {
-                    source["document_id"]: source
-                    for source in map_sources
-                }
-
-                map_location_index = st.selectbox(
-                    "Evidence page",
-                    options=list(
-                        range(len(map_locations))
-                    ),
-                    format_func=lambda index: format_evidence_location(
-                        map_locations[index],
-                        map_source_by_id.get(
-                            map_locations[index][
-                                "document_id"
-                            ]
-                        ),
-                    ),
-                    key=(
-                        "mapping_evidence_page_"
-                        + selected_mapping[
-                            "proposal_id"
-                        ]
-                    ),
-                )
-
-                map_location = map_locations[
-                    map_location_index
-                ]
-                map_source = map_source_by_id.get(
-                    map_location["document_id"]
-                )
-
-                if map_source:
-                    map_path = map_source.get(
-                        "viewer_source_path"
-                    )
-                    map_type = str(
-                        map_source.get("source_type")
-                        or ""
-                    ).upper()
-
-                    if (
-                        map_type == "PDF"
-                        and map_path
-                    ):
-                        try:
-                            map_pdf = download_source_file_as_user(
-                                map_path
-                            )
-                            map_excerpt = pdf_page_range_bytes(
-                                map_pdf,
-                                map_location.get(
-                                    "page_start"
-                                ),
-                                map_location.get(
-                                    "page_end"
-                                ),
-                            )
-                            st.pdf(
-                                map_excerpt,
-                                height=620,
-                                key=(
-                                    "mapping_pdf_"
-                                    + hashlib.sha256(
-                                        (
-                                            selected_mapping[
-                                                "proposal_id"
-                                            ]
-                                            + "|"
-                                            + map_path
-                                            + "|"
-                                            + str(
-                                                map_location.get(
-                                                    "page_start"
-                                                )
-                                            )
-                                        ).encode("utf-8")
-                                    ).hexdigest()[:16]
-                                ),
-                            )
-                        except PermissionError as exc:
-                            st.warning(str(exc))
-                        except Exception as exc:
-                            st.caption(
-                                "The cited source page could not be rendered: "
-                                + str(exc)
-                            )
-                    else:
-                        st.caption(
-                            "A citation exists, but this source is not "
-                            "available as an embedded PDF."
-                        )
-            else:
-                st.caption(
-                    "No page-level evidence location is stored for this concept."
-                )
-
-        if latest_mapping:
-            st.markdown("**Latest human review**")
-            st.write(
-                f"{latest_mapping['decision']} · "
-                f"{latest_mapping['reviewed_at']} · "
-                f"{latest_mapping['reviewer_email'] or latest_mapping['reviewer_username'] or 'unknown'}"
-            )
-
-            if latest_mapping.get("amended_code_value"):
-                st.write(
-                    "Human amendment:",
-                    (
-                        (
-                            latest_mapping.get(
-                                "amended_entity_path"
-                            )
-                            or "EMCIP"
-                        )
-                        + " → "
-                        + (
-                            latest_mapping.get(
-                                "amended_attribute_name"
-                            )
-                            or ""
-                        )
-                        + " → "
-                        + latest_mapping[
-                            "amended_code_value"
-                        ]
-                        + " ["
-                        + str(
-                            latest_mapping.get(
-                                "amended_code_idcode"
-                            )
-                            or "—"
-                        )
-                        + "]"
-                    ),
-                )
-
-            if latest_mapping.get("review_comment"):
-                st.write(
-                    "Comment:",
-                    latest_mapping["review_comment"],
-                )
-
-        st.divider()
-
-        with st.form(
-            (
-                "generic_emcip_review_form_"
-                + selected_mapping["proposal_id"]
-            )
-        ):
-            mapping_decision = st.radio(
-                "Human mapping decision",
-                options=[
-                    "VALIDATED",
-                    "REJECTED",
-                    "AMENDED",
-                ],
-                horizontal=True,
-                key=(
-                    "generic_mapping_decision_"
-                    + selected_mapping["proposal_id"]
-                ),
-            )
-
-            amended_candidate = None
-
-            if mapping_decision == "AMENDED":
-                if candidate_options:
-                    amended_candidate_index = st.selectbox(
-                        "Replacement governed EMCIP candidate",
-                        options=list(
-                            range(len(candidate_options))
-                        ),
-                        format_func=lambda index: (
-                            (
-                                candidate_options[index].get(
-                                    "entity_path"
-                                )
-                                or "EMCIP"
-                            )
-                            + " → "
-                            + (
-                                candidate_options[index].get(
-                                    "attribute_name"
-                                )
-                                or ""
-                            )
-                            + " → "
-                            + (
-                                candidate_options[index].get(
-                                    "code_value"
-                                )
-                                or ""
-                            )
-                            + " ["
-                            + str(
-                                candidate_options[index].get(
-                                    "code_idcode"
-                                )
-                                or "—"
-                            )
-                            + "]"
-                        ),
-                        key=(
-                            "mapping_amend_candidate_"
-                            + selected_mapping[
-                                "proposal_id"
-                            ]
-                        ),
-                    )
-                    amended_candidate = candidate_options[
-                        amended_candidate_index
-                    ]
-                else:
-                    st.warning(
-                        "No governed shortlist candidate is available for "
-                        "an amended mapping."
-                    )
-
-            mapping_comment = st.text_area(
-                "Mapping review comment",
-                placeholder=(
-                    "Optional for validation; recommended for rejection "
-                    "or amendment."
-                ),
-                key=(
-                    "generic_mapping_comment_"
-                    + selected_mapping["proposal_id"]
-                ),
-            )
-
-            mapping_reviewer = get_reviewer_identity()
-            mapping_reviewer_display = (
-                mapping_reviewer["email"]
-                if mapping_reviewer["email"] != "unknown"
-                else mapping_reviewer["username"]
-            )
-            st.caption(
-                "Reviewer recorded as: "
-                + mapping_reviewer_display
-            )
-
-            mapping_save_disabled = (
-                mapping_decision == "AMENDED"
-                and amended_candidate is None
-            )
-
-            mapping_submitted = st.form_submit_button(
-                "Save mapping review",
-                type="primary",
-                disabled=mapping_save_disabled,
-            )
-
-        if mapping_submitted:
-            try:
-                mapping_review_id = save_analysis_mapping_review(
-                    selected_mapping,
-                    decision=mapping_decision,
-                    amended_candidate=amended_candidate,
-                    comment=mapping_comment.strip(),
-                )
-
-                load_latest_analysis_mapping_reviews.clear()
-
-                st.success(
-                    "Mapping review saved: "
-                    + mapping_decision
-                    + " — review ID "
-                    + mapping_review_id
-                )
-                st.rerun()
-
-            except Exception as exc:
-                st.error(
-                    "The generic EMCIP mapping review could not be saved."
-                )
-                st.exception(exc)
-
-    st.divider()
-    st.markdown("### 3. SHIELD classification review")
-    st.caption(
-        "Gate 1: the contributing factor relationship must already be human "
-        "validated as CONTRIBUTED_TO. Gate 2: the SHIELD suggestion requires "
-        "its own human validation. Assistant proposals never overwrite the graph."
-    )
-
-    shield_analysis_id = mapping_analysis_id
-    shield_model_run_id = mapping_model_run_id
+    contributing_factor_nodes = [
+        node
+        for node in (selected_review_graph.get("nodes") or [])
+        if node.get("node_kind") == "ContributingFactor"
+    ]
 
     shield_eligible = (
         load_shield_gate_eligible_factors(
             shield_analysis_id,
             shield_model_run_id,
         )
-        if (
-            shield_analysis_id
-            and shield_model_run_id
+        if shield_analysis_id and shield_model_run_id
+        else []
+    )
+    shield_proposals = (
+        load_shield_proposals(
+            shield_analysis_id,
+            shield_model_run_id,
         )
+        if shield_analysis_id and shield_model_run_id
         else []
     )
 
-    shield_gate_col, shield_job_col = st.columns(
-        [1, 1]
-    )
-    shield_gate_col.metric(
-        "Gate-1 eligible factors",
-        len(shield_eligible),
-    )
+    eligible_by_factor = {}
+    for factor in shield_eligible:
+        eligible_by_factor.setdefault(
+            factor["factor_node_id"],
+            [],
+        ).append(factor)
 
-    shield_documents = load_shield_documents()
-    shield_job_col.metric(
-        "SHIELD source documents",
-        len(shield_documents),
-    )
+    proposals_by_factor = {}
+    for proposal in shield_proposals:
+        if proposal.get("gate_is_current"):
+            proposals_by_factor.setdefault(
+                proposal["factor_node_id"],
+                [],
+            ).append(proposal)
 
-    if not shield_documents:
-        st.warning(
-            "The persistent SHIELD corpus is not indexed yet. "
-            "Run notebook 45 during the consolidated Databricks setup."
+    shield_rows = []
+    for factor in sorted(
+        contributing_factor_nodes,
+        key=lambda item: str(item.get("label") or "").casefold(),
+    ):
+        factor_id = factor.get("node_id")
+        eligible_rows = eligible_by_factor.get(factor_id, [])
+        proposals = proposals_by_factor.get(factor_id, [])
+
+        target_labels = sorted(
+            {
+                str(item.get("target_label"))
+                for item in eligible_rows
+                if item.get("target_label")
+            }
         )
 
-    shield_action_left, shield_action_right = st.columns(
-        [1, 1]
+        shield_matches = []
+        for proposal in proposals:
+            if proposal.get("assistant_status") != "ASSISTANT_PROPOSED":
+                continue
+            parts = [
+                proposal.get("proposed_shield_path"),
+                proposal.get("proposed_shield_label"),
+            ]
+            text = " → ".join(
+                str(part)
+                for part in parts
+                if part
+            )
+            if proposal.get("proposed_shield_code"):
+                text += " [" + str(proposal["proposed_shield_code"]) + "]"
+            if text:
+                shield_matches.append(text)
+
+        shield_matches = list(dict.fromkeys(shield_matches))
+
+        if shield_matches:
+            shield_value = " · ".join(shield_matches)
+            shield_status = "LLM match available"
+        elif proposals:
+            shield_value = "No grounded SHIELD match"
+            shield_status = "LLM found no supported match"
+        elif eligible_rows:
+            shield_value = "—"
+            shield_status = "Ready for LLM classification"
+        else:
+            shield_value = "—"
+            shield_status = "Awaiting validated CONTRIBUTED_TO relation"
+
+        shield_rows.append(
+            {
+                "Contributing factor": factor.get("label") or factor_id,
+                "Validated contributes to": (
+                    " · ".join(target_labels)
+                    if target_labels
+                    else "—"
+                ),
+                "SHIELD (LLM)": shield_value,
+                "Status": shield_status,
+            }
+        )
+
+    if shield_rows:
+        st.dataframe(
+            shield_rows,
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info(
+            "No contributing factors are available in the selected model graph."
+        )
+
+    shield_documents = load_shield_documents()
+    shield_ready_count = sum(
+        1
+        for row in shield_rows
+        if row["Status"] == "Ready for LLM classification"
     )
 
-    with shield_action_left:
+    shield_action, shield_refresh = st.columns([1.6, 0.4])
+    with shield_action:
         generate_shield = st.button(
-            "Generate / refresh SHIELD proposals",
+            "Generate / refresh LLM SHIELD matches",
             type="primary",
             disabled=(
                 not shield_analysis_id
@@ -12261,42 +11334,38 @@ with tab_mapping_review:
             ),
             key="generate_shield_proposals",
         )
-
-    with shield_action_right:
+    with shield_refresh:
         refresh_shield = st.button(
             "↻",
-            help="Refresh SHIELD proposal status",
+            help="Refresh SHIELD matches",
             disabled=(
                 not shield_analysis_id
                 or not shield_model_run_id
             ),
             key="refresh_shield_status",
+            use_container_width=True,
         )
 
-    if not SHIELD_PROPOSAL_JOB_ID:
+    if shield_ready_count:
         st.caption(
-            "The SHIELD proposal Job is not attached to this App deployment "
-            "yet. Source code is ready; runtime setup uses resource key "
-            "shield_proposal_job."
+            str(shield_ready_count)
+            + " validated contributing factor(s) are ready for LLM SHIELD classification."
         )
 
-    if (
-        shield_analysis_id
-        and shield_model_run_id
-        and not shield_eligible
-    ):
-        st.info(
-            "No contributing factor currently passes Gate 1. "
-            "Validate a ContributingFactor — CONTRIBUTED_TO → target "
-            "relationship first."
+    if not shield_documents:
+        st.warning(
+            "The persistent SHIELD corpus is not indexed yet."
+        )
+    elif not SHIELD_PROPOSAL_JOB_ID:
+        st.caption(
+            "The SHIELD proposal Job is not attached to this App deployment."
         )
 
     if refresh_shield:
         load_shield_gate_eligible_factors.clear()
         load_shield_proposals.clear()
-        load_latest_shield_reviews.clear()
         load_shield_documents.clear()
-        st.toast("SHIELD status refreshed")
+        st.rerun()
 
     if generate_shield:
         try:
@@ -12306,494 +11375,12 @@ with tab_mapping_review:
             )
             load_shield_proposals.clear()
             st.success(
-                "SHIELD proposal generation queued. Use Refresh SHIELD "
-                "status to update the proposals."
+                "LLM SHIELD classification queued. Refresh when the run completes."
             )
-            st.caption(
-                "Databricks run: "
-                + shield_job_run_id
-            )
+            st.caption("Databricks run: " + shield_job_run_id)
         except Exception as exc:
-            st.error(
-                "SHIELD proposal generation could not be queued."
-            )
+            st.error("SHIELD classification could not be queued.")
             st.exception(exc)
-
-    shield_proposals = (
-        load_shield_proposals(
-            shield_analysis_id,
-            shield_model_run_id,
-        )
-        if (
-            shield_analysis_id
-            and shield_model_run_id
-        )
-        else []
-    )
-
-    latest_shield_reviews = (
-        load_latest_shield_reviews(
-            shield_analysis_id,
-            shield_model_run_id,
-        )
-        if (
-            shield_analysis_id
-            and shield_model_run_id
-        )
-        else {}
-    )
-
-    s1, s2, s3 = st.columns(3)
-    s1.metric(
-        "SHIELD proposals",
-        len(shield_proposals),
-    )
-    s2.metric(
-        "Human reviewed",
-        len(latest_shield_reviews),
-    )
-    s3.metric(
-        "Remaining",
-        max(
-            0,
-            len(shield_proposals)
-            - len(latest_shield_reviews),
-        ),
-    )
-
-    if shield_proposals:
-        def shield_option_label(index):
-            proposal = shield_proposals[index]
-            latest_shield = latest_shield_reviews.get(
-                proposal["proposal_id"]
-            )
-
-            marker = ""
-            if latest_shield:
-                marker = {
-                    "VALIDATED": "✓ ",
-                    "REJECTED": "✕ ",
-                    "AMENDED": "✎ ",
-                }.get(
-                    latest_shield["decision"],
-                    "• ",
-                )
-
-            stale = (
-                " [STALE]"
-                if not proposal.get(
-                    "gate_is_current"
-                )
-                else ""
-            )
-
-            proposed = (
-                proposal.get(
-                    "proposed_shield_label"
-                )
-                or "NO_GROUNDED_PROPOSAL"
-            )
-
-            return (
-                marker
-                + proposal["factor_label"]
-                + " → "
-                + proposed
-                + stale
-            )
-
-        selected_shield_index = st.selectbox(
-            "SHIELD proposal",
-            options=list(
-                range(
-                    len(shield_proposals)
-                )
-            ),
-            format_func=shield_option_label,
-            key="shield_proposal_selector",
-        )
-
-        selected_shield = shield_proposals[
-            selected_shield_index
-        ]
-        latest_shield = latest_shield_reviews.get(
-            selected_shield[
-                "proposal_id"
-            ]
-        )
-
-        sh1, sh2 = st.columns(2)
-        with sh1:
-            st.markdown(
-                "**Human-validated contributing factor**"
-            )
-            st.write(
-                selected_shield[
-                    "factor_label"
-                ]
-            )
-            st.caption(
-                "Contributes to: "
-                + (
-                    selected_shield.get(
-                        "target_label"
-                    )
-                    or "—"
-                )
-            )
-            st.caption(
-                "Gate-1 review: "
-                + (
-                    selected_shield.get(
-                        "gate_review_id"
-                    )
-                    or "—"
-                )
-            )
-
-        with sh2:
-            st.markdown(
-                "**Assistant SHIELD proposal**"
-            )
-            if (
-                selected_shield.get(
-                    "assistant_status"
-                )
-                == "ASSISTANT_PROPOSED"
-            ):
-                proposed_parts = [
-                    selected_shield.get(
-                        "proposed_shield_path"
-                    ),
-                    selected_shield.get(
-                        "proposed_shield_label"
-                    ),
-                ]
-                proposed_text = " → ".join(
-                    part
-                    for part in proposed_parts
-                    if part
-                )
-                if selected_shield.get(
-                    "proposed_shield_code"
-                ):
-                    proposed_text += (
-                        " ["
-                        + selected_shield[
-                            "proposed_shield_code"
-                        ]
-                        + "]"
-                    )
-                st.info(
-                    proposed_text
-                    or "SHIELD proposal"
-                )
-            else:
-                st.warning(
-                    "NO_GROUNDED_PROPOSAL"
-                )
-
-            st.caption(
-                "Corpus snapshot: "
-                + (
-                    selected_shield.get(
-                        "shield_corpus_snapshot_id"
-                    )
-                    or "—"
-                )
-            )
-
-        if not selected_shield.get(
-            "gate_is_current"
-        ):
-            st.error(
-                "Gate 1 has changed since this SHIELD proposal was generated. "
-                "This proposal is stale and cannot be validated. Regenerate it."
-            )
-
-        if selected_shield.get(
-            "rationale"
-        ):
-            st.caption(
-                "Assistant rationale: "
-                + selected_shield[
-                    "rationale"
-                ]
-            )
-
-        st.markdown(
-            "**SHIELD taxonomy evidence**"
-        )
-        shield_refs = (
-            selected_shield.get(
-                "shield_references"
-            )
-            or []
-        )
-        for reference in shield_refs:
-            st.write(
-                "• " + reference
-            )
-
-        shield_locations = [
-            parsed
-            for parsed in (
-                parse_evidence_location(
-                    value
-                )
-                for value in (
-                    selected_shield.get(
-                        "shield_locations"
-                    )
-                    or []
-                )
-            )
-            if parsed is not None
-        ]
-
-        if shield_locations:
-            shield_source_by_id = {
-                item[
-                    "shield_document_id"
-                ]: item
-                for item in shield_documents
-            }
-
-            shield_location_index = st.selectbox(
-                "SHIELD source page",
-                options=list(
-                    range(
-                        len(
-                            shield_locations
-                        )
-                    )
-                ),
-                format_func=lambda index: format_evidence_location(
-                    shield_locations[
-                        index
-                    ],
-                    shield_source_by_id.get(
-                        shield_locations[
-                            index
-                        ][
-                            "document_id"
-                        ]
-                    ),
-                ),
-                key=(
-                    "shield_source_page_"
-                    + selected_shield[
-                        "proposal_id"
-                    ]
-                ),
-            )
-
-            shield_location = shield_locations[
-                shield_location_index
-            ]
-            shield_source = shield_source_by_id.get(
-                shield_location[
-                    "document_id"
-                ]
-            )
-
-            if shield_source:
-                shield_path = shield_source.get(
-                    "viewer_source_path"
-                )
-                shield_type = str(
-                    shield_source.get(
-                        "source_type"
-                    )
-                    or ""
-                ).upper()
-
-                if (
-                    shield_type == "PDF"
-                    and shield_path
-                ):
-                    try:
-                        shield_pdf = download_source_file_as_user(
-                            shield_path
-                        )
-                        shield_excerpt = pdf_page_range_bytes(
-                            shield_pdf,
-                            shield_location.get(
-                                "page_start"
-                            ),
-                            shield_location.get(
-                                "page_end"
-                            ),
-                        )
-                        st.pdf(
-                            shield_excerpt,
-                            height=620,
-                            key=(
-                                "shield_taxonomy_pdf_"
-                                + hashlib.sha256(
-                                    (
-                                        selected_shield[
-                                            "proposal_id"
-                                        ]
-                                        + "|"
-                                        + shield_path
-                                        + "|"
-                                        + str(
-                                            shield_location.get(
-                                                "page_start"
-                                            )
-                                        )
-                                    ).encode(
-                                        "utf-8"
-                                    )
-                                ).hexdigest()[:16]
-                            ),
-                        )
-                    except PermissionError as exc:
-                        st.warning(
-                            str(exc)
-                        )
-                    except Exception as exc:
-                        st.caption(
-                            "The SHIELD source page could not be rendered: "
-                            + str(exc)
-                        )
-
-        if latest_shield:
-            st.markdown(
-                "**Latest Gate-2 human review**"
-            )
-            st.write(
-                latest_shield[
-                    "decision"
-                ]
-                + " · "
-                + (
-                    latest_shield.get(
-                        "reviewed_at"
-                    )
-                    or "—"
-                )
-            )
-            if latest_shield.get(
-                "amended_shield_label"
-            ):
-                st.write(
-                    "Amended SHIELD:",
-                    latest_shield[
-                        "amended_shield_label"
-                    ],
-                )
-            if latest_shield.get(
-                "review_comment"
-            ):
-                st.write(
-                    "Comment:",
-                    latest_shield[
-                        "review_comment"
-                    ],
-                )
-
-        review_enabled = (
-            selected_shield.get(
-                "assistant_status"
-            )
-            == "ASSISTANT_PROPOSED"
-            and selected_shield.get(
-                "gate_is_current"
-            )
-        )
-
-        if not review_enabled:
-            st.caption(
-                "Gate-2 review is enabled only for a grounded, current SHIELD proposal."
-            )
-        else:
-            with st.form(
-                "shield_review_form_"
-                + selected_shield[
-                    "proposal_id"
-                ]
-            ):
-                shield_decision = st.radio(
-                    "SHIELD human decision",
-                    options=[
-                        "VALIDATED",
-                        "REJECTED",
-                        "AMENDED",
-                    ],
-                    horizontal=True,
-                )
-
-                amended_label = ""
-                amended_code = ""
-                amended_path = ""
-
-                if shield_decision == "AMENDED":
-                    amended_label = st.text_input(
-                        "Amended SHIELD label",
-                    )
-                    amended_code = st.text_input(
-                        "Amended SHIELD code (optional)",
-                    )
-                    amended_path = st.text_input(
-                        "Amended SHIELD path / hierarchy (optional)",
-                    )
-                    st.caption(
-                        "Use the SHIELD source page above when amending. "
-                        "The human amendment, not the assistant proposal, "
-                        "becomes the authoritative reviewed value."
-                    )
-
-                shield_comment = st.text_area(
-                    "SHIELD review comment",
-                    placeholder=(
-                        "Optional for validation; recommended for rejection "
-                        "or amendment."
-                    ),
-                )
-
-                shield_submitted = st.form_submit_button(
-                    "Save SHIELD review",
-                    type="primary",
-                    disabled=(
-                        shield_decision == "AMENDED"
-                        and not amended_label.strip()
-                    ),
-                )
-
-            if shield_submitted:
-                try:
-                    shield_review_id = save_shield_review(
-                        selected_shield,
-                        decision=shield_decision,
-                        amended_label=amended_label,
-                        amended_code=amended_code,
-                        amended_path=amended_path,
-                        comment=shield_comment.strip(),
-                    )
-                    load_latest_shield_reviews.clear()
-                    st.success(
-                        "SHIELD review saved: "
-                        + shield_decision
-                        + " — review ID "
-                        + shield_review_id
-                    )
-                    st.rerun()
-                except Exception as exc:
-                    st.error(
-                        "The SHIELD review could not be saved."
-                    )
-                    st.exception(exc)
-    elif (
-        shield_analysis_id
-        and shield_model_run_id
-        and shield_eligible
-    ):
-        st.info(
-            "Gate-1 validated contributing factors are available, but no "
-            "SHIELD proposals have been generated yet."
-        )
 
 with tab_about:
     st.markdown(
