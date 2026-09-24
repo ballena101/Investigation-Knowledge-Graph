@@ -2,9 +2,9 @@
 
 The generated bundle contains the investigator-facing App files plus the
 canonical ``src/ikf`` package. Governance, user-scoped Files API transport,
-Type-D audio, Timeline and presentation transformations are materialized during
-the build, not in Databricks, so adoption can be compiled and regression-tested
-before cloud App runtime is used.
+Type-D audio, Timeline and presentation/workflow transformations are
+materialized during the build, not in Databricks, so adoption can be compiled
+and regression-tested before cloud App runtime is used.
 """
 
 from __future__ import annotations
@@ -38,6 +38,10 @@ from ikf.app_timeline_adoption import (
     transform_app_timeline_source,
 )
 from ikf.app_ui_adoption import UI_ADOPTION_VERSION, transform_app_ui_source
+from ikf.app_workflow_adoption import (
+    WORKFLOW_ADOPTION_VERSION,
+    transform_app_workflow_source,
+)
 
 
 COPIED_APP_FILES = (
@@ -89,6 +93,9 @@ def build_bundle(output: Path) -> Path:
         transformed_app_source
     )
     transformed_app_source, applied_ui = transform_app_ui_source(transformed_app_source)
+    transformed_app_source, applied_workflow = transform_app_workflow_source(
+        transformed_app_source
+    )
     compile(transformed_app_source, str(output / "app.py"), "exec")
     (output / "app.py").write_text(transformed_app_source, encoding="utf-8")
 
@@ -112,18 +119,21 @@ def build_bundle(output: Path) -> Path:
         + TIMELINE_ADOPTION_VERSION
         + "\n"
         + UI_ADOPTION_VERSION
+        + "\n"
+        + WORKFLOW_ADOPTION_VERSION
         + "\n",
         encoding="utf-8",
     )
 
     manifest = {
-        "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.6",
+        "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.7",
         "adoption_version": ADOPTION_VERSION,
         "files_api_download_adoption_version": FILES_API_DOWNLOAD_ADOPTION_VERSION,
         "audio_adoption_version": AUDIO_ADOPTION_VERSION,
         "audio_fixup_version": AUDIO_FIXUP_VERSION,
         "timeline_adoption_version": TIMELINE_ADOPTION_VERSION,
         "ui_adoption_version": UI_ADOPTION_VERSION,
+        "workflow_adoption_version": WORKFLOW_ADOPTION_VERSION,
         "source_app_sha256": _sha256_text(original_app_source),
         "materialized_app_sha256": _sha256_text(transformed_app_source),
         "applied_policy_adoptions": list(applied_policy),
@@ -131,6 +141,7 @@ def build_bundle(output: Path) -> Path:
         "applied_audio_adoptions": list(applied_audio) + list(applied_audio_fixup),
         "applied_timeline_adoptions": list(applied_timeline),
         "applied_ui_adoptions": list(applied_ui),
+        "applied_workflow_adoptions": list(applied_workflow),
         "shared_package_path": "src/ikf",
     }
     (output / MANIFEST_NAME).write_text(
@@ -151,6 +162,7 @@ def build_bundle(output: Path) -> Path:
         bundle_package / "app_audio_fixup.py",
         bundle_package / "app_timeline_adoption.py",
         bundle_package / "app_ui_adoption.py",
+        bundle_package / "app_workflow_adoption.py",
         bundle_package / "timeline.py",
         bundle_package / "transcription_governance.py",
         bundle_package / "source_routing.py",
