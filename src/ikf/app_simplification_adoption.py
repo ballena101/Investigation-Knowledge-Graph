@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 
-SIMPLIFICATION_ADOPTION_VERSION = "IKF_APP_SIMPLIFICATION_ADOPTION_V0.3"
+SIMPLIFICATION_ADOPTION_VERSION = "IKF_APP_SIMPLIFICATION_ADOPTION_V0.4"
 
 
 _COMPACT_HEADER_AND_NOTICES = r'''st.title("Safety Investigation Knowledge & AI Support")
@@ -41,7 +41,7 @@ with st.expander(
             {
                 "Class": "D — Protected / Article 9",
                 "Model": "GPT-OSS 20B and/or Llama 3.3 70B",
-                "Route": "Dedicated IKF Databricks services",
+                "Route": "Dedicated protected Databricks services",
                 "Use": "Protected investigation evidence; no fallback to A/B/C",
             },
         ],
@@ -55,19 +55,20 @@ with st.expander(
     )
 
 with st.expander(
-    "Confidentiality and Article 9",
+    "Confidentiality, Article 9 and external tools",
     expanded=False,
 ):
     st.markdown(
         """
-IKF applies **Article 9-aligned handling rules** to protected investigation
-records in this PoC. This is a system-design and processing control, not a legal
-certification of compliance.
+This application applies **Article 9-aligned handling rules** to protected
+investigation records. This is a system-design and processing control, not a
+legal certification of compliance.
 
 - Original evidence remains authoritative and stays in governed storage.
 - Protected material uses **Class D** and dedicated model routes.
-- Machine audio transcripts remain unverified until a person listens, corrects
-  and accepts them.
+- Audio transcription uses **faster-whisper 1.2.1** with Whisper large-v3-turbo
+  or large-v3. Machine transcripts remain unverified until a person listens,
+  corrects and accepts them; the original recording remains authoritative.
 - AI-generated findings and relationships remain proposals; **human validation
   is authoritative** and drives the reviewed graph.
 - Analytical outputs minimise unnecessary personal data while preserving source
@@ -75,9 +76,14 @@ certification of compliance.
 
 These controls are designed to support the confidentiality requirements of
 **Article 9 of Directive 2009/18/EC, updated by Directive (EU) 2024/3017**, and
-the applicable data-protection framework. Detailed technical, retention and
-provider-specific controls remain in the project documentation rather than in
-the operational UI.
+the applicable data-protection framework.
+
+**External tools.** Third-party software, model weights, repositories and
+services remain subject to their own licences, terms, security commitments and
+availability. The application developer does not control those independent
+services or their outputs and cannot guarantee their continued availability or
+performance. This does not remove responsibility for the configuration,
+integration and controls implemented in this application.
         """
     )
 '''
@@ -164,7 +170,7 @@ CLASS_D_LLAMA70_ENDPOINT = (
 
     source = source.replace(
         '"model_name": "Dedicated IKG GPT-OSS 20B and/or Llama 3.3 70B Databricks model services"',
-        '"model_name": "Dedicated IKF GPT-OSS 20B and/or Llama 3.3 70B Databricks model services"',
+        '"model_name": "Dedicated protected GPT-OSS 20B and/or Llama 3.3 70B Databricks model services"',
         1,
     )
 
@@ -177,6 +183,27 @@ CLASS_D_LLAMA70_ENDPOINT = (
     )
     applied.append("compact_governance_notices")
 
+    audio_model_anchor = '''            selected_audio = audio_by_path[selected_audio_path]
+
+            model = st.selectbox(
+'''
+    audio_model_replacement = '''            selected_audio = audio_by_path[selected_audio_path]
+
+            st.caption(
+                "Transcription engine: faster-whisper 1.2.1 · "
+                "Whisper large-v3-turbo or large-v3. Machine output is Class D "
+                "and requires human review before publication or analysis."
+            )
+
+            model = st.selectbox(
+'''
+    if audio_model_anchor not in source:
+        raise RuntimeError(
+            "IKF simplification adoption could not locate the audio model selector."
+        )
+    source = source.replace(audio_model_anchor, audio_model_replacement, 1)
+    applied.append("audio_engine_version_and_confidentiality")
+
     wording_replacements = (
         (
             "Controlled Ollama Llama 3.3 70B service is not configured.",
@@ -188,7 +215,7 @@ CLASS_D_LLAMA70_ENDPOINT = (
         ),
         (
             "Only an IKG administrator can reset the Llama daily quota.",
-            "Only an IKF administrator can reset the Llama daily quota.",
+            "Only an application administrator can reset the Llama daily quota.",
         ),
         (
             "Use Knowledge Graph for diagram exploration and graph-scoped questions.",
@@ -234,6 +261,18 @@ CLASS_D_LLAMA70_ENDPOINT = (
             "Assistant outputs remain proposals. Human relationship decisions are authoritative;\n"
             "the displayed graph applies the latest reviews, while the raw AI graph is retained\n"
             "for traceability. SHIELD is derived only after contributing-factor validation.\n",
+            "",
+        ),
+        (
+            "IKF separates the investigator workflow into five distinct operational\ncapabilities:",
+            "The application separates the investigator workflow into distinct operational\ncapabilities:",
+        ),
+        (
+            "- Classes A/C/D use the governed IKF-managed source routes.",
+            "- Classes A/C/D use governed application source routes.",
+        ),
+        (
+            "### Validation status\n\n",
             "",
         ),
     )
