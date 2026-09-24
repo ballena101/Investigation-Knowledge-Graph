@@ -35,15 +35,24 @@ SRC_DIR = next(
 
 source = APP_FILE.read_text(encoding="utf-8")
 
-if SRC_DIR is not None:
-    src_text = str(SRC_DIR)
-    if src_text not in sys.path:
-        sys.path.insert(0, src_text)
+if SRC_DIR is None:
+    raise RuntimeError(
+        "Invalid IKF App deployment: the canonical shared policy package "
+        "src/ikf is missing. Deploy the generated Databricks App bundle "
+        "produced by `python scripts/build_databricks_app_bundle.py` rather "
+        "than the raw app/ directory. Execution is blocked because running "
+        "the raw App without the shared policy package can bypass Class-D "
+        "and other governed source transformations."
+    )
 
-    if not MATERIALIZED_MARKER.is_file():
-        from ikf.app_adoption import transform_app_source
+src_text = str(SRC_DIR)
+if src_text not in sys.path:
+    sys.path.insert(0, src_text)
 
-        source, _applied_policy_adoptions = transform_app_source(source)
+if not MATERIALIZED_MARKER.is_file():
+    from ikf.app_adoption import transform_app_source
+
+    source, _applied_policy_adoptions = transform_app_source(source)
 
 code = compile(source, str(APP_FILE), "exec")
 exec(code, {"__name__": "__main__", "__file__": str(APP_FILE)})
