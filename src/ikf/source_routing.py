@@ -8,6 +8,9 @@ Current ownership boundary:
 - Classes A/C/D -> IKF-managed sources.
 - Direct text is an IKF ingress and is not constrained by the document
   catalogue ownership filter.
+- if an IKF SourceDocument has an explicit information_class, it is visible
+  only in that class. Legacy documents without an explicit class retain the
+  existing ownership-only behaviour.
 
 The functions here do not access Databricks, Neo4j or model endpoints.
 """
@@ -101,17 +104,28 @@ def filter_catalogue_rows(
     *,
     information_class: str,
 ) -> list[dict]:
-    """Filter document-catalogue rows by the authoritative ownership rule.
+    """Filter catalogue rows by source owner and explicit class when present.
 
-    This function intentionally applies only to document catalogue rows.
-    Direct-text ingress has no catalogue to filter.
+    Explicitly classified protected derivatives such as validated transcripts
+    must never appear in A/C document selectors. Existing SourceDocument rows
+    that pre-date the class field remain governed by the established manager
+    boundary so this change is backward-compatible.
     """
 
+    information_class = normalise_information_class(information_class)
     route = resolve_source_route(information_class, DOCUMENT_INPUT)
     allowed = set(route.allowed_source_managers)
 
-    return [
-        row
-        for row in rows
-        if str(row.get("source_managed_by") or "").strip().upper() in allowed
-    ]
+    filtered = []
+    for row in rows:
+        manager = str(row.get("source_managed_by") or "").strip().upper()
+        if manager not in allowed:
+            continue
+
+        explicit_class = str(row.get("information_class") or "").strip().upper()
+        if explicit_class and explicit_class != information_class:
+            continue
+
+        filtered.append(row)
+
+    return filtered
