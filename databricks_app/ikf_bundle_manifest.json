@@ -27,6 +27,15 @@
     "emcip_review",
     "graph_document_scope"
   ],
+  "applied_simplification_adoptions": [
+    "remove_stale_app_build_label",
+    "remove_legacy_transcript_reviewer_allowlist",
+    "compact_governance_notices",
+    "remove_ikg_ollama_user_wording",
+    "remove_static_validation_milestone",
+    "remove_legacy_emcip_tab_alias",
+    "clarify_audio_workspace_label"
+  ],
   "applied_timeline_adoptions": [
     "timeline_imports",
     "timeline_store_helpers",
@@ -57,10 +66,11 @@
   ],
   "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.4",
   "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.1",
-  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.7",
+  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.8",
   "files_api_download_adoption_version": "IKF_APP_FILES_API_DOWNLOAD_V0.1",
-  "materialized_app_sha256": "84e7afdf082a26446bd586cddb9cbe9bbf5eee5e940fb85853f01288c7e78169",
+  "materialized_app_sha256": "19bfa7899a0e433cb60fb11bb14b9c1c7343aed99e7f18c5dfd72266a2f20bf3",
   "shared_package_path": "src/ikf",
+  "simplification_adoption_version": "IKF_APP_SIMPLIFICATION_ADOPTION_V0.1",
   "source_app_sha256": "4e190a128237e6c294d5f7231275280223520ce7ea112abeff598559ad6acf7a",
   "timeline_adoption_version": "IKF_APP_TIMELINE_ADOPTION_V0.3",
   "ui_adoption_version": "IKF_APP_UI_ADOPTION_V0.2",

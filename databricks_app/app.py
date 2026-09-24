@@ -335,7 +335,7 @@ INFORMATION_CLASSES = {
         "label": "D — Protected / Article 9 confidential evidence",
         "description": "Witness statements, identities, sensitive personal data, investigator notes/drafts, VTS/VDR material or equivalent protected evidence.",
         "model": None,
-        "model_name": "Dedicated IKG GPT-OSS 20B and/or Llama 3.3 70B Databricks model services",
+        "model_name": "Dedicated IKF GPT-OSS 20B and/or Llama 3.3 70B Databricks model services",
         "data_flow": (
             "Class D uses a dedicated GPT-OSS 20B Databricks Model Serving endpoint "
             "and/or the dedicated Databricks Llama 3.3 70B model service. The investigator "
@@ -345,16 +345,9 @@ INFORMATION_CLASSES = {
     },
 }
 
-APP_BUILD = "2026-09-22-direct-reference-ask-v28"
 TYPE_D_TRANSCRIPT_ROOT = Path(
     "/Volumes/bdw_analysis_prod/kg_poc/investigation_sources/type_d_transcripts"
 )
-TYPE_D_TRANSCRIPT_REVIEWERS = {
-    value.strip().lower()
-    for value in os.getenv("TYPE_D_TRANSCRIPT_REVIEWERS", "").split(",")
-    if value.strip()
-}
-
 SUPPORTED_LANGUAGES = [
     "Auto-detect per document",
     "English",
@@ -383,195 +376,71 @@ st.set_page_config(
 
 st.title("Safety Investigation Knowledge & AI Support")
 st.caption(
-    "Proof of Concept for AI-assisted safety investigation analysis, "
-    "evidence-grounded knowledge structuring and investigator review."
-)
-st.caption(f"App build: {APP_BUILD}")
-
-st.info(
-    """
-**Purpose of this PoC**
-
-This application evaluates how artificial-intelligence and structured-knowledge
-tools can support safety investigators in analysing documentary evidence,
-identifying evidence-grounded concepts and relationships, comparing model
-outputs, preserving provenance and supporting human review.
-
-It does **not** replace the investigator, make legal findings, determine blame,
-or automatically convert AI output into an investigation conclusion.
-"""
+    "AI-assisted evidence analysis for safety investigators. Source evidence remains "
+    "authoritative; AI outputs remain proposals until investigator review."
 )
 
 with st.expander(
-    "AI model routing and Article 9 suitability",
+    "AI routing and information classes",
     expanded=False,
 ):
-    model_disclosure_rows = [
-        {
-            "Information class": "A — Public / technical",
-            "Model": "Meta Llama 3.3 70B Instruct",
-            "Serving route": "Databricks system.ai.meta-llama-3-3-70b-instruct",
-            "Confidentiality level": "Public / non-sensitive",
-            "Article 9 / Class D": "Not approved for protected Class D evidence",
-        },
-        {
-            "Information class": "B — Published investigation material",
-            "Model": "Meta Llama 3.3 70B Instruct",
-            "Serving route": "Databricks system.ai.meta-llama-3-3-70b-instruct",
-            "Confidentiality level": "Published / non-sensitive",
-            "Article 9 / Class D": "Not approved for protected Class D evidence",
-        },
-        {
-            "Information class": "C — Internal / restricted",
-            "Model": "OpenAI GPT-OSS 120B",
-            "Serving route": "Databricks-hosted system.ai.gpt-oss-120b",
-            "Confidentiality level": "Internal / restricted",
-            "Article 9 / Class D": "Not automatically approved for Article 9 evidence",
-        },
-        {
-            "Information class": "D — Protected / Article 9",
-            "Model": "OpenAI GPT-OSS 20B",
-            "Serving route": "Dedicated IKG Databricks endpoint",
-            "Confidentiality level": "Protected / confidential",
-            "Article 9 / Class D": "Conditionally suitable only after endpoint approval",
-        },
-        {
-            "Information class": "D — Protected / Article 9",
-            "Model": "Meta Llama 3.3 70B Instruct",
-            "Serving route": "Dedicated IKG Databricks endpoint",
-            "Confidentiality level": "Protected / confidential",
-            "Article 9 / Class D": "Conditionally suitable only after endpoint approval",
-        },
-    ]
-    
     st.dataframe(
-        model_disclosure_rows,
+        [
+            {
+                "Class": "A / B — Public or published",
+                "Model": "Llama 3.3 70B Instruct",
+                "Route": "Databricks system.ai",
+                "Use": "Public, technical or published investigation material",
+            },
+            {
+                "Class": "C — Internal / restricted",
+                "Model": "GPT-OSS 120B",
+                "Route": "Databricks system.ai",
+                "Use": "Internal analytical material",
+            },
+            {
+                "Class": "D — Protected / Article 9",
+                "Model": "GPT-OSS 20B and/or Llama 3.3 70B",
+                "Route": "Dedicated IKF Databricks services",
+                "Use": "Protected investigation evidence; no fallback to A/B/C",
+            },
+        ],
         use_container_width=True,
         hide_index=True,
     )
-    
     st.caption(
-        "Article 9 status shown here is a project processing classification, not a "
-        "legal certification. Class D model use remains blocked unless the dedicated "
-        "endpoint, access, networking, logging, retention and organisational/legal/"
-        "security approval are in place."
+        "The information class determines the permitted model route. The selected "
+        "model/service is recorded with the analysis. Class D never falls back to "
+        "A/B/C routes."
     )
 
 with st.expander(
-    "Compliance, confidentiality and AI-use notice",
+    "Confidentiality and Article 9",
     expanded=False,
 ):
     st.markdown(
         """
-**Directive alignment status:** **PoC design-aligned / conditionally aligned — not a legal certification of compliance.**
+IKF applies **Article 9-aligned handling rules** to protected investigation
+records in this PoC. This is a system-design and processing control, not a legal
+certification of compliance.
 
-**Product mission:** confidentiality and data minimisation are functional
-requirements of the product, not only legal notices. The system is designed to
-limit exposure of protected investigation information, route data according to
-its declared class, de-identify analytical outputs by default, and preserve the
-original evidence separately from AI-generated derivatives.
+- Original evidence remains authoritative and stays in governed storage.
+- Protected material uses **Class D** and dedicated model routes.
+- Machine audio transcripts remain unverified until a person listens, corrects
+  and accepts them.
+- AI-generated findings and relationships remain proposals; **human validation
+  is authoritative** and drives the reviewed graph.
+- Analytical outputs minimise unnecessary personal data while preserving source
+  provenance for authorised review.
 
-The design is intended to support the confidentiality requirements of
-**Article 9 of Directive 2009/18/EC, as amended by Directive (EU) 2024/3017**.
-Article 9 protects specified safety-investigation records from use or
-disclosure for purposes other than the safety investigation, subject to the
-competent-authority public-interest test, and operates without prejudice to
-the GDPR.
-
-**How the design respects Article 9 principles**
-
-- source material remains in governed Databricks storage;
-- access is intended to follow least privilege;
-- evidence provenance is preserved from document → page → passage → analysis;
-- model-generated statements are kept separate from source evidence;
-- the App does not require direct raw-volume browsing in the preferred design;
-- Neo4j is intended primarily for graph references/authorised derivatives,
-  rather than as a raw-evidence store;
-- routine logs should use identifiers/counters, not protected source text;
-- confidential/protected material must not be sent to an LLM merely because
-  the pipeline is technically capable of doing so.
-
-**Information classes used by this PoC**
-
-- **Class A — Code / public technical documentation:** suitable for GitHub.
-- **Class B — Published / non-sensitive investigation material:** preferred
-  validation material for the PoC.
-- **Class C — Internal analytical derivatives:** passages, candidates,
-  mappings, summaries and reviews; treat as internal unless approved otherwise.
-- **Class D — Confidential / protected investigation material:** witness
-  statements, identities, sensitive personal/health information,
-  investigators' notes/opinions, draft reports, operational communications,
-  VTS material and VDR/S-VDR material. Use only after the authorised processing
-  path has been confirmed.
-
-**AI processing policy and model routing**
-
-A/B/C remain normal supported routes. Class D adds extra protected-data
-controls and the optional dual-model comparison; it does not replace A/B/C.
-
-The App selects the model path from the declared information class:
-
-- **A / B:** Meta Llama 3.3 70B Instruct through Databricks
-  `system.ai.meta-llama-3-3-70b-instruct`.
-- **C:** OpenAI GPT-OSS 120B hosted by Databricks through
-  `system.ai.gpt-oss-120b`.
-- **D:** dedicated GPT-OSS 20B and Meta Llama 3.3 70B Databricks model services. The investigator chooses GPT-OSS 20B,
-  Ollama Llama 3.3 70B, or both. There is **no automatic fallback** to A/B/C
-  model routes.
-
-The exact model/endpoint is disclosed before submission, stored with the
-analysis and displayed with the result.
-
-The model developer, serving path and information-class authorisation are
-treated as separate governance properties.
-
-**Privacy-by-design output rule**
-
-The product is designed not merely to state confidentiality requirements but
-to reduce unnecessary exposure of protected information. Analytical outputs
-are **de-identified by default**:
-
-- use functional roles instead of personal names where possible;
-- omit email addresses, phone numbers, home addresses, personal IDs, dates of
-  birth, health details and other unnecessary identifiers;
-- do not reproduce witness identities merely because they appear in source
-  material;
-- avoid combinations of details that could unnecessarily re-identify a person;
-- preserve the protected original evidence separately so authorised users can
-  trace an analytical statement without broadly reproducing the source.
-
-A personal identity should appear in an analytical output only where it is
-strictly necessary for the authorised safety-analysis purpose and the relevant
-processing/disclosure is permitted.
-
-For Databricks Model Serving, Databricks documents logical isolation,
-authentication/authorisation and encryption in transit/at rest. For paid
-accounts, Databricks states that Model Serving inputs/outputs are not used to
-train models or improve Databricks services. Foundation Model APIs may,
-however, temporarily process/store inputs and outputs for abuse/safety
-purposes, and partner-model terms may add further requirements.
-
-For **Meta Llama 3.3 70B Instruct**, Databricks lists the applicable OpenAI **Usage
-Policy** and **high-risk use-case mitigation requirements** in addition to the
-customer's Databricks agreement.
-
-**Operational rule:** a requested Class D model is blocked until its dedicated
-endpoint and organisational/legal/security approval are in place. The App does
-not downgrade Class D to a less-private model path.
-
-**Content retention:** the source/evidence layer is ephemeral for every
-information class. Class D source/evidence content becomes eligible for deletion
-after one complete day (24 hours). A/B/C source/evidence content becomes
-eligible after more than three complete days (72 hours) and is removed by the
-next once-daily cleanup run. Compact de-identified graphs, human-review records
-and usage metadata may remain. Raw evidence does not receive an automatic
-"retain for validation" exception.
-
-See repository documentation:
-`docs/14_tooling_inventory.md` and
-`docs/15_data_protection_confidentiality.md`.
+These controls are designed to support the confidentiality requirements of
+**Article 9 of Directive 2009/18/EC, updated by Directive (EU) 2024/3017**, and
+the applicable data-protection framework. Detailed technical, retention and
+provider-specific controls remain in the project documentation rather than in
+the operational UI.
         """
     )
+
 
 NEO4J_URI = os.getenv("NEO4J_URI")
 NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
@@ -746,7 +615,7 @@ def list_llama_daily_usage():
 def reset_llama_daily_usage(target_user_key):
     if not is_current_user_admin():
         raise PermissionError(
-            "Only an IKG administrator can reset the Llama daily quota."
+            "Only an IKF administrator can reset the Llama daily quota."
         )
 
     user_key = target_user_key.strip().lower()
@@ -6164,7 +6033,7 @@ else:
     [
         "Home",
         "News & Alerts",
-        "Transcriptions",
+        "Audio transcription",
         "Analyse Documents",
         "Findings & Evidence",
         "Timeline",
@@ -6174,10 +6043,6 @@ else:
         "Terms of reference",
     ]
 )
-
-# Relationship and EMCIP reviews are deliberately presented in one capability.
-# Re-entering the same Streamlit tab later appends the mapping-review section.
-tab_mapping_review = tab_review
 
 with tab_home:
     st.subheader("What would you like to do?")
@@ -6272,19 +6137,6 @@ with tab_home:
             "The timeline reuses KG events and evidence; no additional LLM call is made."
         )
 
-    st.divider()
-    st.markdown("### Current validation milestone")
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Release preflight", "PASS")
-    m2.metric("SHIELD corpus", "Indexed")
-    m3.metric("Reference context", "4 sources / 81 passages")
-
-    st.caption(
-        "Environment/setup validation is complete with zero warnings and zero "
-        "errors. Functional validation now proceeds capability by capability, "
-        "starting with a fresh Class-B MAIRA analysis and source-page rendering."
-    )
 
 with tab_news:
     st.subheader("News & Alerts")
@@ -6845,7 +6697,7 @@ with tab_new_analysis:
                 )
             else:
                 st.error(
-                    "Controlled Ollama Llama 3.3 70B service is not configured."
+                    "Llama 3.3 70B Databricks service is not configured."
                 )
 
             llama_used = get_llama_daily_usage()
@@ -6895,7 +6747,7 @@ with tab_new_analysis:
                         reset_target
                     )
                     st.success(
-                        "Today's Ollama quota has been reset for "
+                        "Today's Llama 70B quota has been reset for "
                         + reset_target
                     )
                     st.rerun()
