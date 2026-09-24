@@ -3,7 +3,8 @@
   "applied_audio_adoptions": [
     "app_access_is_type_d_audio_boundary",
     "analyse_documents_audio_review",
-    "transcription_access_message"
+    "transcription_access_message",
+    "transcript_volume_diagnostic"
   ],
   "applied_policy_adoptions": [
     "shared_imports",
@@ -21,9 +22,9 @@
     "html_escape_import",
     "active_analysis_header"
   ],
-  "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.1",
+  "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.2",
   "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.3",
-  "materialized_app_sha256": "fa919021aaba79114438fdff06348de5297b0571b610f55234d79b55ed6bd036",
+  "materialized_app_sha256": "1c8904b4e442e28d1695d5f3dbb72d4eb06d3cc32edc102ba09a8b8aa86d5e1a",
   "shared_package_path": "src/ikf",
   "source_app_sha256": "4e190a128237e6c294d5f7231275280223520ce7ea112abeff598559ad6acf7a",
   "ui_adoption_version": "IKF_APP_UI_ADOPTION_V0.1"

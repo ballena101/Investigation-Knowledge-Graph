@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 
 
-AUDIO_ADOPTION_VERSION = "IKF_APP_AUDIO_ADOPTION_V0.1"
+AUDIO_ADOPTION_VERSION = "IKF_APP_AUDIO_ADOPTION_V0.2"
 
 
 _ACCESS_PATTERN = re.compile(
@@ -68,11 +68,17 @@ _AUDIO_PANEL = '''with tab_new_analysis:
             st.error(
                 "Your App user identity could not be resolved. Type D audio review is blocked."
             )
+        elif not TYPE_D_TRANSCRIPT_ROOT.is_dir():
+            st.error(
+                "The governed Type D transcript Volume is not visible to the App service principal. "
+                "Add the Unity Catalog volume bdw_analysis_prod.kg_poc.investigation_sources "
+                "to the Databricks App resources with Can read, then redeploy."
+            )
         else:
             analysis_audio_transcripts = list_type_d_transcripts()
             if not analysis_audio_transcripts:
                 st.info(
-                    "No machine transcripts are available in the governed Type D transcript store yet."
+                    "The governed Type D transcript store is accessible, but it contains no machine transcript JSON files yet."
                 )
             else:
                 selected_analysis_audio_transcript = st.selectbox(
@@ -229,5 +235,32 @@ def transform_app_audio_source(source: str) -> tuple[str, tuple[str, ...]]:
         1,
     )
     applied.append("transcription_access_message")
+
+    old_empty_message = '''            if not transcript_files:
+                st.info("No Whisper pilot results are available yet.")
+            else:
+'''
+    new_empty_message = '''            if not TYPE_D_TRANSCRIPT_ROOT.is_dir():
+                st.error(
+                    "The governed Type D transcript Volume is not visible to the App service principal. "
+                    "Add the Unity Catalog volume bdw_analysis_prod.kg_poc.investigation_sources "
+                    "to the Databricks App resources with Can read, then redeploy."
+                )
+            elif not transcript_files:
+                st.info(
+                    "The governed Type D transcript store is accessible, but it contains no machine transcript JSON files yet."
+                )
+            else:
+'''
+    if old_empty_message not in source:
+        raise RuntimeError(
+            "IKF App audio adoption could not locate the Transcriptions empty-store message."
+        )
+    source = source.replace(
+        old_empty_message,
+        new_empty_message,
+        1,
+    )
+    applied.append("transcript_volume_diagnostic")
 
     return source, tuple(applied)
