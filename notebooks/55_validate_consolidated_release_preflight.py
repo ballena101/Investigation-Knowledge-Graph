@@ -40,8 +40,8 @@ REQUIRED_JOB_NAMES = (
 )
 
 # Keep this list aligned with every app.yaml `valueFrom` resource binding.
-# Literal-value environment entries such as CLASS_D_LLAMA70_ENDPOINT are
-# validated locally in the repository regression suite instead.
+# Both CLASS_D_LLAMA70_ENDPOINT and the temporary legacy Ollama environment alias
+# resolve to the same canonical App resource: class_d_llama70_endpoint.
 REQUIRED_APP_RESOURCES = (
     "neo4j_uri",
     "neo4j_username",
@@ -54,7 +54,7 @@ REQUIRED_APP_RESOURCES = (
     "relationship_correction_job",
     "similar_cases_job",
     "class_d_gpt20_endpoint",
-    "class_d_ollama_llama70_url",
+    "class_d_llama70_endpoint",
     "direct_text_encryption_key",
     "ikg_admin_users",
 )
