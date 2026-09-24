@@ -19,17 +19,25 @@ The authenticated `large-v3` snapshot preparation completed successfully in 32.3
 
 A subsequent `large-v3` transcription of the first smoke-test recording exceeded 15 minutes on the 4-CPU serverless route and was stopped before completion. No successful `large-v3` transcript/runtime result is claimed from that run.
 
+## Duration correction
+
+The first duration-probe implementation contained a PyAV unit-conversion error. `container.duration` is expressed in AV_TIME_BASE units and must be divided by `av.time_base`; the notebook multiplied instead, producing the impossible value `815700000000000.0` seconds.
+
+The corresponding source duration is approximately **815.7 seconds (13 minutes 35.7 seconds)**. Notebook 61 has been corrected to divide by `av.time_base`, print both seconds and minutes, and retain the stream-time-base fallback.
+
+This changes the interpretation of the stopped `large-v3` run. Exceeding 15 minutes for ~13.6 minutes of audio implies a lower-bound RTF of only about **1.10**, not the extreme slowdown initially suspected. Because the run was stopped before completion, this remains a lower bound rather than a completed benchmark result.
+
 ## Cost decision
 
 Do not increase notebook memory from 16 GB to 32 GB solely to improve transcription speed.
 
-Databricks documents high-memory serverless as a response to out-of-memory conditions. High memory increases REPL memory from 16 GB to 32 GB and has a higher DBU emission rate. It does not, by itself, add CPU cores. The observed bottleneck is therefore treated as CPU/inference throughput unless a later run shows a reproducible memory constraint.
+Databricks high-memory serverless increases available memory but has a higher DBU emission rate. It does not, by itself, add CPU cores. No out-of-memory error or measured memory constraint has been observed in this pilot. The current CPU route therefore remains the appropriate baseline until there is evidence that memory, rather than CPU inference throughput, is the limiting resource.
 
 Use 32 GB only if one of the following is observed:
 
 1. an explicit out-of-memory failure;
 2. reproducible memory pressure that prevents stable model execution;
-3. measured evidence that the higher-memory tier also changes available compute in the specific workspace and reduces total billed cost enough to justify the higher DBU rate.
+3. measured evidence that the higher-memory tier also changes effective compute in the specific workspace and reduces total billed cost enough to justify the higher DBU rate.
 
 ## Next controlled test
 
@@ -37,7 +45,7 @@ The next smoke test keeps the same source audio and changes only the Whisper mod
 
 Notebook 61 now:
 
-- probes source audio duration from container metadata before inference;
+- probes source audio duration correctly from container metadata before inference;
 - prepares/reuses the persistent `turbo` snapshot using the same read-only Hugging Face secret;
 - transcribes only `19970212-090-sv-gale-runner-mayday-call.wav` while `SMOKE_TEST=True`;
 - records transcription elapsed seconds;
@@ -59,15 +67,18 @@ Do not run the full three-file/two-model matrix yet.
 
 First obtain:
 
-1. source duration for the smoke file;
+1. corrected source duration for the smoke file;
 2. `turbo` model-preparation elapsed time;
 3. `turbo` transcription elapsed time and RTF;
 4. human quality assessment of the same recording;
 5. Databricks billing attribution where available.
 
+Then compare `turbo` against the large-v3 baseline. Since large-v3 was stopped before completion, rerun it to completion only if its likely quality advantage justifies obtaining an exact benchmark after the turbo result is available.
+
 Only then decide whether the production candidate should be:
 
 - `turbo` on serverless CPU;
+- `large-v3` on serverless CPU;
 - `large-v3` on a governed on-demand GPU route;
 - or another validated configuration.
 
