@@ -426,9 +426,7 @@ legal certification of compliance.
 
 - Original evidence remains authoritative and stays in governed storage.
 - Protected material uses **Class D** and dedicated model routes.
-- Audio transcription uses **faster-whisper 1.2.1** with Whisper large-v3-turbo
-  or large-v3. Machine transcripts remain unverified until a person listens,
-  corrects and accepts them; the original recording remains authoritative.
+- Audio transcription can use **faster-whisper 1.2.1** with Whisper large-v3-turbo/large-v3 or **NVIDIA Parakeet TDT 0.6B v3** through Transformers 5.17.0. Machine transcripts remain unverified until a person listens, corrects and accepts them; the original recording remains authoritative.
 - AI-generated findings and relationships remain proposals; **human validation
   is authoritative** and drives the reviewed graph.
 - Analytical outputs minimise unnecessary personal data while preserving source
@@ -6223,9 +6221,9 @@ with tab_transcriptions:
             selected_audio = audio_by_path[selected_audio_path]
 
             st.caption(
-                "Transcription engine: faster-whisper 1.2.1 · "
-                "Whisper large-v3-turbo or large-v3. Machine output is Class D "
-                "and requires human review before publication or analysis."
+                "Transcription engines: faster-whisper 1.2.1 (Whisper large-v3-turbo / "
+                "large-v3) and NVIDIA Parakeet TDT 0.6B v3 via Transformers 5.17.0. "
+                "Machine output is Class D and requires human review before publication."
             )
 
             model = st.selectbox(

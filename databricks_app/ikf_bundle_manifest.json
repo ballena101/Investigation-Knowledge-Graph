@@ -22,6 +22,7 @@
     "independent_dual_engine_queue",
     "independent_asr_comparison",
     "asr_engine_provenance_display",
+    "dual_engine_disclosure",
     "parakeet_confidentiality_disclosure"
   ],
   "applied_policy_adoptions": [
@@ -80,7 +81,7 @@
   "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.1",
   "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.9",
   "files_api_download_adoption_version": "IKF_APP_FILES_API_DOWNLOAD_V0.1",
-  "materialized_app_sha256": "1e64f50620bbce09811b7c835cca9055509ed0f2f07a1bb3452dc70475f88ddf",
+  "materialized_app_sha256": "ecfea1b4b16702d5a809dea15f2ff32079ed795975536c70ae77dd0501883261",
   "parakeet_adoption_version": "IKF_APP_PARAKEET_ADOPTION_V0.2",
   "shared_package_path": "src/ikf",
   "simplification_adoption_version": "IKF_APP_SIMPLIFICATION_ADOPTION_V0.4",
