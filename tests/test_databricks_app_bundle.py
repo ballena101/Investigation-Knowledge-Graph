@@ -35,6 +35,7 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
     shared = output / "src" / "ikf"
     for name in (
         "app_adoption.py",
+        "app_ui_adoption.py",
         "source_routing.py",
         "evidence_locations.py",
         "question_scope.py",
@@ -47,7 +48,7 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
         assert (shared / name).is_file(), name
 
 
-def test_bundle_materializes_shared_policy_before_deployment(tmp_path):
+def test_bundle_materializes_shared_policy_and_ui_before_deployment(tmp_path):
     output = build_test_bundle(tmp_path)
     materialized = (output / "app.py").read_text(encoding="utf-8")
 
@@ -61,17 +62,23 @@ def test_bundle_materializes_shared_policy_before_deployment(tmp_path):
     assert "validate_app_emcip_review(" in materialized
     assert "scope_graph_by_documents(" in materialized
 
+    assert "import html" in materialized
+    assert "Active analysis: {active_analysis_title}" in materialized
+    assert "color:#1f77b4" in materialized
+    assert "font-size:1.05rem" in materialized
+
     compile(materialized, str(output / "app.py"), "exec")
 
 
-def test_bundle_manifest_records_materialized_policy_contract(tmp_path):
+def test_bundle_manifest_records_materialized_contract(tmp_path):
     output = build_test_bundle(tmp_path)
     manifest = json.loads(
         (output / "ikf_bundle_manifest.json").read_text(encoding="utf-8")
     )
 
-    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.1"
+    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.2"
     assert manifest["adoption_version"].startswith("IKF_APP_SHARED_POLICY_ADOPTION_")
+    assert manifest["ui_adoption_version"].startswith("IKF_APP_UI_ADOPTION_")
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert set(manifest["applied_policy_adoptions"]) == {
         "shared_imports",
@@ -84,6 +91,10 @@ def test_bundle_manifest_records_materialized_policy_contract(tmp_path):
         "shield_gate2",
         "emcip_review",
         "graph_document_scope",
+    }
+    assert set(manifest["applied_ui_adoptions"]) == {
+        "html_escape_import",
+        "active_analysis_header",
     }
     assert manifest["shared_package_path"] == "src/ikf"
 
