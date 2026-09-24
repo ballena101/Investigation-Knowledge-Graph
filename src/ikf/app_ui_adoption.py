@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 
 
-UI_ADOPTION_VERSION = "IKF_APP_UI_ADOPTION_V0.2"
+UI_ADOPTION_VERSION = "IKF_APP_UI_ADOPTION_V0.3"
 
 
 _ACTIVE_ANALYSIS_PATTERN = re.compile(
@@ -165,6 +165,48 @@ _ASK_FORM_WITH_REFRESH = '''            ask_question_col, ask_refresh_col = st.c
                     st.toast("Question status refreshed")
 '''
 
+_REVIEW_PROVENANCE_OLD = '''    if (
+        selected.get("model_run_id")
+        or selected["evidence_anchor"]
+    ):
+        with st.expander(
+            "Technical provenance",
+            expanded=False,
+        ):
+            if selected.get("model_run_id"):
+                st.markdown(
+                    "**Model run**"
+                )
+                st.code(
+                    selected["model_run_id"],
+                    language=None,
+                )
+
+            if selected["evidence_anchor"]:
+                st.markdown(
+                    "**Evidence anchor**"
+                )
+                st.write(
+                    selected[
+                        "evidence_anchor"
+                    ]
+                )
+
+'''
+
+_REVIEW_PROVENANCE_NEW = '''    if selected.get("model_run_id"):
+        with st.expander(
+            "Technical provenance",
+            expanded=False,
+        ):
+            st.markdown("**Model run**")
+            st.code(
+                selected["model_run_id"],
+                language=None,
+            )
+
+'''
+
 _REVIEW_START = '    st.markdown("**Supporting evidence**")\n'
 _REVIEW_END = (
     '\n\nwith tab_review:\n'
@@ -172,26 +214,35 @@ _REVIEW_END = (
     '    st.markdown("### Optional relationship quality check")\n'
 )
 
-_COMPACT_REVIEW = r'''    st.markdown("**Supporting evidence and human decision**")
+_COMPACT_REVIEW = r'''    st.markdown("**Evidence and human decision**")
     review_evidence_col, review_decision_col = st.columns(2, gap="large")
 
     with review_evidence_col:
-        references = selected.get("evidence_references") or []
-        if references:
-            st.markdown("**Supporting evidence**")
-            for reference in references:
-                st.write(f"• {reference}")
-        else:
-            st.info(
-                selected["evidence"]
-                or "No page-level source reference is available for this relationship."
-            )
-
+        st.markdown("**Evidence**")
         passage_ids = selected.get("passage_ids") or []
+        references = selected.get("evidence_references") or []
+
         if passage_ids:
-            with st.expander("Technical evidence IDs", expanded=False):
-                for passage_id in passage_ids:
-                    st.code(passage_id, language=None)
+            passage_index = st.selectbox(
+                "Evidence passage",
+                options=list(range(len(passage_ids))),
+                format_func=lambda index: (
+                    f"Passage {index + 1} · {passage_ids[index]}"
+                ),
+                key=(
+                    "relationship_review_passage_"
+                    + selected["edge_id"]
+                ),
+                disabled=review_controls_disabled,
+                help=(
+                    "Select the governed extracted passage linked to this relationship. "
+                    "The passage identifier is provenance, not a separate evidence type."
+                ),
+            )
+            selected_passage_id = passage_ids[passage_index]
+            st.caption("Selected passage: " + selected_passage_id)
+        elif selected_index is not None:
+            st.caption("No evidence passage identifier is stored for this relationship.")
 
         review_locations = [
             parsed
@@ -275,10 +326,20 @@ _COMPACT_REVIEW = r'''    st.markdown("**Supporting evidence and human decision*
                 st.caption(
                     "The cited document is not linked to the selected analysis."
                 )
+        elif references:
+            st.selectbox(
+                "Source reference",
+                options=references,
+                key=(
+                    "relationship_review_reference_"
+                    + selected["edge_id"]
+                ),
+                disabled=review_controls_disabled,
+            )
         elif selected_index is not None:
-            st.caption(
-                "No page-level evidence location is stored for this relationship. "
-                "Older analyses may require rerunning."
+            st.info(
+                selected["evidence"]
+                or "No page-level source reference is available for this relationship."
             )
 
     with review_decision_col:
@@ -432,6 +493,14 @@ def transform_app_ui_source(source: str) -> tuple[str, tuple[str, ...]]:
         1,
     )
     applied.append("ask_refresh_beside_question")
+
+    source = _replace_exact_once(
+        source,
+        _REVIEW_PROVENANCE_OLD,
+        _REVIEW_PROVENANCE_NEW,
+        "relationship review technical provenance",
+    )
+    applied.append("simplify_review_provenance")
 
     end_count = source.count(_REVIEW_END)
     if end_count != 1:
