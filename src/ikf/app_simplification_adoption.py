@@ -210,6 +210,32 @@ CLASS_D_LLAMA70_ENDPOINT = (
             "the displayed graph applies the latest reviews, while the raw AI graph is retained\n"
             "for traceability. SHIELD is derived only after contributing-factor validation.",
         ),
+        (
+            "The consolidated release preflight has passed with zero warnings and zero\n"
+            "errors. SHIELD and authoritative REFERENCE_CONTEXT corpora are indexed.\n"
+            "Functional runtime validation proceeds capability by capability.\n\n"
+            "The Commodore Clipper material remains a validation/reference asset in the\n"
+            "project data and documentation; it is no longer presented as a primary\n"
+            "operational App capability.\n\n",
+            "",
+        ),
+        (
+            "### Compliance and privacy\n\n"
+            "Class D processing is intended to respect the confidentiality requirements of\n"
+            "Article 9 of Directive 2009/18/EC through controlled model routing,\n"
+            "least-privilege storage, encrypted direct-text ingress, evidence provenance,\n"
+            "de-identified output by default and a privacy-validation gate.\n\n"
+            "This PoC is design-aligned / conditionally aligned and does not constitute a\n"
+            "legal certification of compliance.\n\n",
+            "",
+        ),
+        (
+            "### Human governance\n\n"
+            "Assistant outputs remain proposals. Human relationship decisions are authoritative;\n"
+            "the displayed graph applies the latest reviews, while the raw AI graph is retained\n"
+            "for traceability. SHIELD is derived only after contributing-factor validation.\n",
+            "",
+        ),
     )
     for old, new in wording_replacements:
         source = source.replace(old, new)
