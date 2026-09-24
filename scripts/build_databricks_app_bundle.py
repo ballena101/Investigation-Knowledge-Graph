@@ -1,9 +1,9 @@
 """Build the deployable IKF Databricks App source bundle.
 
 The generated bundle contains the investigator-facing App files plus the
-canonical ``src/ikf`` package. Governance and presentation transformations are
-materialized during the build, not in Databricks, so adoption can be compiled
-and regression-tested before cloud App runtime is used.
+canonical ``src/ikf`` package. Governance, Type-D audio and presentation
+transformations are materialized during the build, not in Databricks, so
+adoption can be compiled and regression-tested before cloud App runtime is used.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from ikf.app_adoption import ADOPTION_VERSION, transform_app_source
+from ikf.app_audio_adoption import AUDIO_ADOPTION_VERSION, transform_app_audio_source
 from ikf.app_ui_adoption import UI_ADOPTION_VERSION, transform_app_ui_source
 
 
@@ -67,6 +68,7 @@ def build_bundle(output: Path) -> Path:
 
     original_app_source = (APP_SOURCE / "app.py").read_text(encoding="utf-8")
     transformed_app_source, applied_policy = transform_app_source(original_app_source)
+    transformed_app_source, applied_audio = transform_app_audio_source(transformed_app_source)
     transformed_app_source, applied_ui = transform_app_ui_source(transformed_app_source)
     compile(transformed_app_source, str(output / "app.py"), "exec")
     (output / "app.py").write_text(transformed_app_source, encoding="utf-8")
@@ -80,17 +82,24 @@ def build_bundle(output: Path) -> Path:
 
     marker = output / MATERIALIZED_MARKER
     marker.write_text(
-        ADOPTION_VERSION + "\n" + UI_ADOPTION_VERSION + "\n",
+        ADOPTION_VERSION
+        + "\n"
+        + AUDIO_ADOPTION_VERSION
+        + "\n"
+        + UI_ADOPTION_VERSION
+        + "\n",
         encoding="utf-8",
     )
 
     manifest = {
-        "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.2",
+        "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.3",
         "adoption_version": ADOPTION_VERSION,
+        "audio_adoption_version": AUDIO_ADOPTION_VERSION,
         "ui_adoption_version": UI_ADOPTION_VERSION,
         "source_app_sha256": _sha256_text(original_app_source),
         "materialized_app_sha256": _sha256_text(transformed_app_source),
         "applied_policy_adoptions": list(applied_policy),
+        "applied_audio_adoptions": list(applied_audio),
         "applied_ui_adoptions": list(applied_ui),
         "shared_package_path": "src/ikf",
     }
@@ -107,6 +116,7 @@ def build_bundle(output: Path) -> Path:
         marker,
         output / MANIFEST_NAME,
         bundle_package / "app_adoption.py",
+        bundle_package / "app_audio_adoption.py",
         bundle_package / "app_ui_adoption.py",
         bundle_package / "source_routing.py",
         bundle_package / "evidence_locations.py",
