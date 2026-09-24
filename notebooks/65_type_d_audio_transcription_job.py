@@ -1,8 +1,12 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # 65 — IKF Type D audio transcription / publication job
+# MAGIC # 65 — Type D audio transcription / publication job
 # MAGIC
-# MAGIC Reusable Lakeflow Job entry point used by the IKF App.
+# MAGIC Reusable Lakeflow Job entry point used by the investigation App.
+# MAGIC
+# MAGIC Supported transcription technologies:
+# MAGIC - faster-whisper 1.2.1 — Whisper large-v3-turbo / large-v3;
+# MAGIC - NVIDIA Parakeet TDT 0.6B v3 — via Hugging Face Transformers.
 # MAGIC
 # MAGIC The App passes only an opaque `transcription_run_id` or `review_id`.
 # MAGIC Protected source paths and reviewed transcript text are resolved inside the
@@ -17,7 +21,10 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install faster-whisper==1.2.1 huggingface-hub>=0.34,<2 neo4j==6.3.1 cryptography==46.0.2
+# Transformers 5.17.0 is pinned because the current official NVIDIA Parakeet
+# model is directly supported by the Transformers automatic-speech-recognition
+# pipeline. PyTorch is provided by the Databricks runtime and is not reinstalled.
+# MAGIC %pip install faster-whisper==1.2.1 transformers==5.17.0 safetensors>=0.4 huggingface-hub>=0.34,<2 neo4j==6.3.1 cryptography==46.0.2
 
 # COMMAND ----------
 
@@ -86,5 +93,5 @@ result = run_transcription_action(
     hf_token=HF_TOKEN,
 )
 
-print("IKF Type D transcription action completed")
+print("Type D transcription action completed")
 print(result)
