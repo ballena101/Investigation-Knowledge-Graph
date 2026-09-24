@@ -38,10 +38,11 @@ env:
     valueFrom: class_d_gpt20_endpoint
 
   - name: CLASS_D_LLAMA70_ENDPOINT
-    value: "bdw_analysis_prod.kg_poc.ikf-llama-3-3-70b-poc"
+    valueFrom: class_d_llama70_endpoint
 
+  # Temporary compatibility alias while legacy UI checks are retired.
   - name: CLASS_D_OLLAMA_LLAMA70_URL
-    valueFrom: class_d_ollama_llama70_url
+    valueFrom: class_d_llama70_endpoint
 
   - name: DIRECT_TEXT_ENCRYPTION_KEY
     valueFrom: direct_text_encryption_key
