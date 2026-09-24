@@ -60,7 +60,8 @@ def test_bundle_materializes_policy_audio_timeline_ui_workflow_and_simplificatio
     output = build_test_bundle(tmp_path)
     materialized = (output / "app.py").read_text(encoding="utf-8")
 
-    assert 'CLASS_D_OLLAMA_LLAMA70_URL = os.getenv("CLASS_D_OLLAMA_LLAMA70_URL")' in materialized
+    assert 'CLASS_D_LLAMA70_ENDPOINT = os.getenv(' in materialized
+    assert "CLASS_D_OLLAMA_LLAMA70_URL" not in materialized
     assert "shared_content_retention_hours(information_class)" in materialized
     assert "legacy_parse_evidence_location(value)" in materialized
     assert "filter_catalogue_rows(" in materialized
@@ -147,6 +148,8 @@ def test_bundle_materializes_policy_audio_timeline_ui_workflow_and_simplificatio
     assert "### Current validation milestone" not in materialized
     assert "Audio transcription" in materialized
     assert "tab_mapping_review = tab_review" not in materialized
+    assert "graph-scoped questions" not in materialized
+    assert "EMCIP mappings and SHIELD classifications" not in materialized
 
     # Timeline V0.3 is automatically projected from the existing KG/evidence
     # and remains editable/validatable without an additional LLM call.
@@ -172,6 +175,7 @@ def test_bundle_materializes_policy_audio_timeline_ui_workflow_and_simplificatio
     app_yaml = (output / "app.yaml").read_text(encoding="utf-8")
     assert "EMCIP_MAPPING_JOB_ID" not in app_yaml
     assert "emcip_mapping_job" not in app_yaml
+    assert "CLASS_D_OLLAMA_LLAMA70_URL" not in app_yaml
 
     compile(materialized, str(output / "app.py"), "exec")
 
@@ -193,7 +197,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert manifest["ui_adoption_version"].startswith("IKF_APP_UI_ADOPTION_")
     assert manifest["workflow_adoption_version"] == "IKF_APP_WORKFLOW_ADOPTION_V0.1"
     assert manifest["simplification_adoption_version"] == (
-        "IKF_APP_SIMPLIFICATION_ADOPTION_V0.1"
+        "IKF_APP_SIMPLIFICATION_ADOPTION_V0.2"
     )
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert set(manifest["applied_policy_adoptions"]) == {
@@ -254,8 +258,9 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert set(manifest["applied_simplification_adoptions"]) == {
         "remove_stale_app_build_label",
         "remove_legacy_transcript_reviewer_allowlist",
+        "retire_ollama_endpoint_alias",
         "compact_governance_notices",
-        "remove_ikg_ollama_user_wording",
+        "remove_ikg_ollama_and_legacy_about_wording",
         "remove_static_validation_milestone",
         "remove_legacy_emcip_tab_alias",
         "clarify_audio_workspace_label",
