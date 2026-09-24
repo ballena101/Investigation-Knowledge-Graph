@@ -1,11 +1,14 @@
 {
   "adoption_version": "IKF_APP_SHARED_POLICY_ADOPTION_V0.2",
   "applied_audio_adoptions": [
+    "transcription_job_environment",
+    "transcription_governance_import",
     "app_access_is_type_d_audio_boundary",
-    "user_scoped_transcript_files_api",
-    "transcriptions_audio_files_api",
-    "analyse_documents_audio_review",
-    "transcription_access_message"
+    "user_scoped_audio_and_transcript_files_api",
+    "transcription_job_orchestration",
+    "transcript_review_publication",
+    "class_d_transcript_catalogue_scope",
+    "single_transcription_workspace"
   ],
   "applied_policy_adoptions": [
     "shared_imports",
@@ -30,9 +33,9 @@
     "html_escape_import",
     "active_analysis_header"
   ],
-  "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.3",
+  "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.4",
   "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.4",
-  "materialized_app_sha256": "fa8e79ddbb598d1c4d8fd71508d21a80aa997962feee9c4409ad05224a8f50c6",
+  "materialized_app_sha256": "66684781df36fe36dadfafa640ccc717e4433299826bbc548076139b3702c909",
   "shared_package_path": "src/ikf",
   "source_app_sha256": "4e190a128237e6c294d5f7231275280223520ce7ea112abeff598559ad6acf7a",
   "timeline_adoption_version": "IKF_APP_TIMELINE_ADOPTION_V0.1",
