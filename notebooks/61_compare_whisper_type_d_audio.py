@@ -35,6 +35,14 @@ FILES = (
 )
 MODELS = ('large-v3', 'turbo')  # One-time comparison; retain only the selected model afterwards.
 
+# Cost-control gate. Keep True until one heavy-model transcription succeeds end-to-end.
+# This first smoke test intentionally uses one short distress-call recording + large-v3.
+SMOKE_TEST = True
+SMOKE_FILE = FILES[0]
+SMOKE_MODEL = 'large-v3'
+ACTIVE_FILES = (SMOKE_FILE,) if SMOKE_TEST else FILES
+ACTIVE_MODELS = (SMOKE_MODEL,) if SMOKE_TEST else MODELS
+
 # Runtime selection: GPU when available; otherwise serverless/classic CPU.
 CUDA_DEVICES = ctranslate2.get_cuda_device_count()
 DEVICE = 'cuda' if CUDA_DEVICES > 0 else 'cpu'
@@ -48,6 +56,9 @@ print('  visible_cuda_devices:', CUDA_DEVICES)
 print('  logical_cpu_count:', os.cpu_count())
 print('  source_root:', SOURCE_ROOT)
 print('  output_root:', OUTPUT_ROOT)
+print('  smoke_test:', SMOKE_TEST)
+print('  active_files:', ACTIVE_FILES)
+print('  active_models:', ACTIVE_MODELS)
 
 assert SOURCE_ROOT.is_dir(), 'Source volume is unavailable'
 assert OUTPUT_ROOT.is_dir(), (
@@ -76,13 +87,20 @@ def atomic_json(path, value):
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Execute the one-time model comparison
+# MAGIC ## Execute the controlled pilot
 # MAGIC
 # MAGIC Run this cell only after the preflight cell prints `PRECHECK PASS`.
+# MAGIC
+# MAGIC While `SMOKE_TEST = True`, this cell processes only the first mayday recording with
+# MAGIC `large-v3`. This validates the heaviest candidate model, dependency/model loading,
+# MAGIC Volume read/write access and JSON persistence without launching all six combinations.
+# MAGIC After a successful smoke test, change `SMOKE_TEST = False`, rerun the preflight cell,
+# MAGIC and then run this cell once for the full three-file/two-model comparison.
 
 # COMMAND ----------
 
-for model_name in MODELS:
+for model_name in ACTIVE_MODELS:
+    print('LOADING MODEL', model_name, 'device', DEVICE, 'compute_type', COMPUTE_TYPE)
     model = WhisperModel(
         model_name,
         device=DEVICE,
@@ -90,7 +108,7 @@ for model_name in MODELS:
         cpu_threads=CPU_THREADS,
         num_workers=1,
     )
-    for filename in FILES:
+    for filename in ACTIVE_FILES:
         source = SOURCE_ROOT / filename
         source_hash = sha256_file(source)
         destination = OUTPUT_ROOT / (source_hash + '__' + model_name + '.json')
@@ -137,6 +155,7 @@ for model_name in MODELS:
             'beam_size': 5,
             'vad_filter': False,
             'condition_on_previous_text': False,
+            'smoke_test': SMOKE_TEST,
             'detected_language': info.language,
             'language_probability': info.language_probability,
             'duration_s': info.duration,
@@ -148,6 +167,7 @@ for model_name in MODELS:
             'device', DEVICE,
             'duration_s', round(info.duration, 1),
             'elapsed_s', elapsed,
+            'output', destination,
         )
     del model
 
