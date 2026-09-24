@@ -77,6 +77,8 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert "faster-whisper 1.2.1" in materialized
     assert "Transformers 5.17.0" in materialized
     assert "engine_version" in materialized
+    assert '(?:large-v3|turbo|parakeet-tdt-0\\.6b-v3)\\.json' in materialized
+    assert '(?:large-v3|turbo)\\.json' not in materialized
 
     assert "refresh_transcription_" in materialized
     assert "refresh_transcript_publication_" in materialized
@@ -135,7 +137,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     manifest = json.loads((output / "ikf_bundle_manifest.json").read_text(encoding="utf-8"))
 
     assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.9"
-    assert manifest["parakeet_adoption_version"] == "IKF_APP_PARAKEET_ADOPTION_V0.2"
+    assert manifest["parakeet_adoption_version"] == "IKF_APP_PARAKEET_ADOPTION_V0.3"
     assert set(manifest["applied_parakeet_adoptions"]) >= {
         "parakeet_governance_imports",
         "parakeet_transcript_discovery",
