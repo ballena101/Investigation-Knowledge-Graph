@@ -25,6 +25,7 @@ import os
 import time
 from datetime import datetime, timezone
 
+import av
 import ctranslate2
 from faster_whisper import WhisperModel
 from huggingface_hub import snapshot_download
@@ -61,11 +62,14 @@ MODEL_ALLOW_PATTERNS = (
     'vocabulary.*',
 )
 
-# Cost-control gate. Keep True until one heavy-model transcription succeeds end-to-end.
-# This first smoke test intentionally uses one short distress-call recording + large-v3.
+# Cost-control gate.
+# large-v3 on the current 4-CPU serverless route exceeded 15 minutes on the first smoke
+# recording and was stopped before completion. The next controlled comparison therefore uses
+# the same audio with turbo. Do not expand to all files/models until the runtime and quality
+# of this one-file turbo run are observed.
 SMOKE_TEST = True
 SMOKE_FILE = FILES[0]
-SMOKE_MODEL = 'large-v3'
+SMOKE_MODEL = 'turbo'
 ACTIVE_FILES = (SMOKE_FILE,) if SMOKE_TEST else FILES
 ACTIVE_MODELS = (SMOKE_MODEL,) if SMOKE_TEST else MODELS
 
@@ -74,6 +78,22 @@ CUDA_DEVICES = ctranslate2.get_cuda_device_count()
 DEVICE = 'cuda' if CUDA_DEVICES > 0 else 'cpu'
 COMPUTE_TYPE = 'float16' if DEVICE == 'cuda' else 'int8'
 CPU_THREADS = 0  # Let CTranslate2 use its default CPU-thread policy on serverless compute.
+
+
+def audio_duration_seconds(path):
+    """Read container/stream metadata only; do not decode or transcribe audio."""
+    with av.open(str(path)) as container:
+        if container.duration is not None:
+            return float(container.duration * av.time_base)
+
+        audio_streams = [stream for stream in container.streams if stream.type == 'audio']
+        if audio_streams:
+            stream = audio_streams[0]
+            if stream.duration is not None and stream.time_base is not None:
+                return float(stream.duration * stream.time_base)
+
+    return None
+
 
 print('IKF Whisper runtime preflight')
 print('  device:', DEVICE)
@@ -89,6 +109,17 @@ print('  active_models:', ACTIVE_MODELS)
 
 assert SOURCE_ROOT.is_dir(), 'Source volume is unavailable'
 assert all((SOURCE_ROOT / name).is_file() for name in FILES), 'One or more source files are missing'
+
+# Probe duration before any model preparation/inference. This is metadata-only and lets the
+# project calculate real-time factor (RTF = transcription seconds / audio seconds) objectively.
+AUDIO_DURATIONS = {}
+for filename in ACTIVE_FILES:
+    duration = audio_duration_seconds(SOURCE_ROOT / filename)
+    AUDIO_DURATIONS[filename] = duration
+    print(
+        '  audio_duration:', filename,
+        'duration_s:', round(duration, 2) if duration is not None else 'unknown',
+    )
 
 # Create the derived-transcript directory only if the executing identity already has
 # the required Unity Catalog WRITE VOLUME permission. We do not broaden permissions here.
@@ -182,7 +213,11 @@ if not HF_TOKEN or not HF_TOKEN.strip():
     )
 
 print('  hf_token_configured: True')
-print('PRECHECK PASS — source/output/cache access and secret retrieval are confirmed. No model download or transcription has run yet.')
+print('PRECHECK PASS — source/output/cache access, duration metadata and secret retrieval are confirmed. No model download or transcription has run yet.')
+print(
+    'COST NOTE — High-memory serverless (32 GB) should be used only after an OOM or measured '
+    'memory constraint. It does not add CPU cores and has a higher DBU emission rate.'
+)
 
 
 def sha256_file(path):
@@ -212,6 +247,9 @@ def atomic_json(path, value):
 # MAGIC Hugging Face reuses it rather than downloading the full model again. The returned local
 # MAGIC snapshot path is then used by the transcription cell so inference does not need Hub
 # MAGIC access.
+# MAGIC
+# MAGIC The current cost-control smoke model is `turbo`. `large-v3` remains cached from the
+# MAGIC previous attempt and is not deleted.
 
 # COMMAND ----------
 
@@ -245,14 +283,15 @@ for model_name in ACTIVE_MODELS:
 # MAGIC Run this cell only after the previous cell prints `MODEL READY`.
 # MAGIC
 # MAGIC While `SMOKE_TEST = True`, this cell processes only the first mayday recording with
-# MAGIC `large-v3`. The model is loaded exclusively from the persistent local snapshot prepared
-# MAGIC above; no Hugging Face token is supplied to inference. This validates the heaviest
-# MAGIC candidate model, audio decoding, CPU/GPU inference and JSON persistence without
-# MAGIC launching all six combinations.
+# MAGIC the selected smoke model. The model is loaded exclusively from the persistent local
+# MAGIC snapshot prepared above; no Hugging Face token is supplied to inference.
 # MAGIC
-# MAGIC After a successful smoke test, change `SMOKE_TEST = False`, rerun the preflight and
-# MAGIC model-preparation cells, and then run this cell once for the full three-file/two-model
-# MAGIC comparison. Cached model snapshots should be reused.
+# MAGIC The cell records both elapsed time and real-time factor (RTF):
+# MAGIC
+# MAGIC `RTF = transcription elapsed seconds / source audio seconds`
+# MAGIC
+# MAGIC Lower is better. For example, RTF 0.5 means 10 minutes of audio take about 5 minutes
+# MAGIC to transcribe; RTF 2.0 means 10 minutes of audio take about 20 minutes.
 
 # COMMAND ----------
 
@@ -281,6 +320,12 @@ for model_name in ACTIVE_MODELS:
             print('SKIP existing', filename, model_name)
             continue
 
+        source_duration = AUDIO_DURATIONS.get(filename)
+        print(
+            'TRANSCRIBING', filename, model_name,
+            'source_duration_s', round(source_duration, 2) if source_duration else 'unknown',
+        )
+
         start = time.monotonic()
         # Avoid aggressive VAD on short radio calls: it can discard faint speech.
         # Do not provide a context prompt that could bias names, coordinates or instructions.
@@ -304,6 +349,13 @@ for model_name in ACTIVE_MODELS:
         ]
 
         elapsed = round(time.monotonic() - start, 2)
+        effective_duration = float(info.duration or source_duration or 0.0)
+        real_time_factor = (
+            round(elapsed / effective_duration, 4)
+            if effective_duration > 0
+            else None
+        )
+
         atomic_json(destination, {
             'classification': 'D',
             'status': 'MACHINE_GENERATED_UNVERIFIED',
@@ -327,6 +379,7 @@ for model_name in ACTIVE_MODELS:
             'language_probability': info.language_probability,
             'duration_s': info.duration,
             'elapsed_s': elapsed,
+            'real_time_factor': real_time_factor,
             'segments': items,
         })
         print(
@@ -334,6 +387,7 @@ for model_name in ACTIVE_MODELS:
             'device', DEVICE,
             'duration_s', round(info.duration, 1),
             'elapsed_s', elapsed,
+            'real_time_factor', real_time_factor,
             'output', destination,
         )
 
@@ -350,11 +404,11 @@ for model_name in ACTIVE_MODELS:
 # MAGIC distress description, instructions, negation, chronology and speaker attribution.
 # MAGIC Mark inaudible speech as inaudible; never infer missing words from context or an LLM.
 # MAGIC Compare critical-field error counts first, then word error rate on the same reviewed
-# MAGIC passages, elapsed runtime and billed compute. Include a second reviewer for disputed
-# MAGIC safety-critical passages. Accept turbo only if its critical-field performance is no
-# MAGIC worse on this set; otherwise retain large-v3. Neither model confidence nor the use of
-# MAGIC the same model on CPU/GPU is a substitute for listening. Keep human corrections in a
-# MAGIC separate versioned record.
+# MAGIC passages, elapsed runtime, real-time factor and billed compute. Include a second reviewer
+# MAGIC for disputed safety-critical passages. Accept turbo only if its critical-field
+# MAGIC performance is no worse on this set; otherwise retain large-v3. Neither model confidence
+# MAGIC nor the use of the same model on CPU/GPU is a substitute for listening. Keep human
+# MAGIC corrections in a separate versioned record.
 # MAGIC
 # MAGIC CPU/INT8 is a resource-efficient fallback, not a change to the evidence-governance
 # MAGIC rules. If a GPU later becomes available, repeat the selected validation subset on
