@@ -1,7 +1,7 @@
 command:
   - streamlit
   - run
-  - app/bootstrap.py
+  - bootstrap.py
 
 env:
   - name: NEO4J_URI
@@ -54,6 +54,5 @@ env:
 
   - name: NEWS_DASHBOARD_URL
     value: "https://adb-7405609619074273.13.azuredatabricks.net/dashboardsv3/01f1adf31a9718cfafc6bba8e50e77fb/published?o=7405609619074273"
-
   - name: STREAMLIT_GATHER_USAGE_STATS
     value: "false"
