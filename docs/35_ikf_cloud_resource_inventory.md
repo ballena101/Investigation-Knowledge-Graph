@@ -1,6 +1,6 @@
 # IKF cloud resource inventory for Gate 0
 
-_Date: 2026-09-23_
+_Date: 2026-09-24_
 
 ## Purpose
 
@@ -44,6 +44,70 @@ The current App also binds to the following logical job resources through
 
 Their live numeric job IDs must be read from Databricks/runtime configuration;
 they should not be guessed from GitHub.
+
+## Planned on-demand GPU transcription compute
+
+IKF audio transcription is being designed as a separate **on-demand Lakeflow
+Job** using `faster-whisper`. The GPU compute must not be treated as permanent
+App infrastructure and must not remain running while no transcription is being
+performed.
+
+Current workspace selection / preferred available node type:
+
+- Databricks Runtime: **17.3 LTS for Machine Learning**;
+- Apache Spark: **4.0.0**;
+- Scala: **2.13.16**;
+- Machine Learning runtime: **enabled**;
+- preferred node type currently available in the workspace:
+  `Standard_NC24ads_A100_v4`;
+- CPU: **24 vCPUs**;
+- system memory: **220 GiB**;
+- accelerator: **1 x NVIDIA A100 PCIe GPU**;
+- GPU memory: **80 GB**.
+
+### Why the Machine Learning runtime is enabled
+
+The Machine Learning runtime is selected because the transcription workload is
+GPU accelerated, not because IKF requires Spark ML for transcription. On GPU
+clusters, Databricks Runtime 17.3 LTS ML provides the NVIDIA software stack
+required by GPU-accelerated Python workloads, including CUDA 12.6, cuDNN 9.5,
+NCCL and TensorRT. `faster-whisper` uses CTranslate2 and can therefore execute
+Whisper inference on the NVIDIA GPU without IKF having to build and maintain a
+separate CUDA base environment.
+
+This runtime choice also gives the transcription job a reproducible,
+Databricks-supported ML/GPU environment while leaving the normal IKF App and
+non-transcription workflows on their existing compute routes.
+
+### Performance and cost interpretation
+
+`Standard_NC24ads_A100_v4` is **not an IKF minimum hardware requirement**. It is
+currently the smallest / preferred one-GPU node exposed for this workload in
+the user's Databricks workspace. The A100 provides substantially more GPU
+memory and CPU/system memory than `faster-whisper` `large-v3` normally requires
+for a single transcription stream.
+
+The design decision is therefore:
+
+1. use the available one-GPU A100 node only **on demand**;
+2. create/start the job compute when a transcription is requested;
+3. process the audio and persist the governed transcription/provenance output;
+4. terminate the job compute immediately when the task completes;
+5. do not attach this GPU to the continuously available IKF App;
+6. do not schedule the transcription job unless a future operational need is
+   explicitly approved;
+7. if a smaller compatible one-GPU SKU (for example a T4/A10-class node) later
+   becomes available in the workspace/region, reassess it as the preferred
+   cost-efficient transcription node after a quality/runtime benchmark.
+
+The distinction between **available configuration** and **technical minimum**
+must be preserved in future documentation and cost reviews. The 220 GiB of
+system memory and 80 GB A100 VRAM are consequences of the currently available
+Azure SKU, not requirements imposed by Whisper or IKF.
+
+The transcription job should be included explicitly in Gate-0 billing reviews
+once created. GPU runtime duration is a primary cost driver, so test runs should
+use representative short audio samples before processing long recordings.
 
 ## Model services / endpoints
 
