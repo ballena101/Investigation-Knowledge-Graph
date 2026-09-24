@@ -102,7 +102,7 @@ def build_bundle(output: Path) -> Path:
     )
 
     manifest = {
-        "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.4",
+        "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.5",
         "adoption_version": ADOPTION_VERSION,
         "audio_adoption_version": AUDIO_ADOPTION_VERSION,
         "timeline_adoption_version": TIMELINE_ADOPTION_VERSION,
@@ -132,6 +132,7 @@ def build_bundle(output: Path) -> Path:
         bundle_package / "app_timeline_adoption.py",
         bundle_package / "app_ui_adoption.py",
         bundle_package / "timeline.py",
+        bundle_package / "transcription_governance.py",
         bundle_package / "source_routing.py",
         bundle_package / "evidence_locations.py",
         bundle_package / "question_scope.py",
