@@ -52,5 +52,8 @@ env:
   - name: NEWS_DASHBOARD_URL
     value: "https://adb-7405609619074273.13.azuredatabricks.net/dashboardsv3/01f1adf31a9718cfafc6bba8e50e77fb/published?o=7405609619074273"
 
+  - name: SQL_WAREHOUSE_ID
+    value: "372b5b52ba082619"
+
   - name: STREAMLIT_GATHER_USAGE_STATS
     value: "false"
