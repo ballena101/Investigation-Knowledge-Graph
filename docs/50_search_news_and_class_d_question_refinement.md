@@ -36,6 +36,13 @@ Therefore the search is not limited to reports already used in IKF analyses. It 
 
 The App now states this scope explicitly. Page-level provenance and matched terms remain visible.
 
+The Similar MAIRA Cases panel checks the Databricks Job state and reloads
+stored candidates only when **Refresh similar-case status** is selected. A
+failed run is labelled as notebook 52 failure with the Databricks run ID, so
+the notebook output can identify the cause. This avoids a Job API call and
+candidate query on every Streamlit refresh. Notebook 53 creates or resets the
+Job; the App resource key is `similar_cases_job` with **Can manage run**.
+
 ### Semantic reranking — deliberately not added in this update
 
 A second-stage semantic reranker could improve recall and concept-level similarity, but it requires a selected and benchmarked embedding/semantic model plus a governed endpoint/cost decision. It is therefore kept as a separate future enhancement rather than being added silently to the current PoC.
