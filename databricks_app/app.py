@@ -1,9 +1,9 @@
 import hashlib
 import html
 import json
-import pandas as pd
 import os
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -15,6 +15,9 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 import fitz
+import pandas as pd
+import pydeck as pdk
+import plotly.graph_objects as go
 import streamlit as st
 from cryptography.fernet import Fernet
 from databricks.sdk import WorkspaceClient
@@ -494,12 +497,8 @@ WITH ranked AS (
     SELECT
         a.*,
         REGEXP_EXTRACT(a.sub_headline_text, 'IMO:\\s*(\\d{7})', 1) AS imo_number,
-        m.SHIPTYPELEVEL5 AS marinfo_ship_type,
-        m.FLAGNAME AS marinfo_flag,
         ROW_NUMBER() OVER (PARTITION BY a.alert_group_id ORDER BY a.alert_version DESC) AS rn
     FROM bdw_analysis_prod.siana.eu_eea_alerts_hierarchy_v a
-        LEFT JOIN bdw_marinfo_prod.marinfo5.lot2a_ship m
-            ON REGEXP_EXTRACT(a.sub_headline_text, 'IMO:\\s*(\\d{7})', 1) = m.IMO
     WHERE
         a.headline NOT RLIKE '(?i)\\b(inland|river|pond|lake|canal|waterway)\\b'
         AND UPPER(a.headline) NOT LIKE '%SANCTIONED%'
@@ -561,7 +560,7 @@ SELECT
     event_location_longitude,
     match_country,
     match_reason,
-    COALESCE(marinfo_ship_type, CASE
+    CASE
         WHEN (UPPER(headline) LIKE '%CONTAINER SHIP%') OR (UPPER(headline) LIKE '%CONTAINERSHIP%') THEN 'Container Ship'
         WHEN UPPER(headline) LIKE '%BULK CARRIER%' THEN 'Bulk Carrier'
         WHEN UPPER(headline) LIKE '%CHEMICAL TANKER%' THEN 'Chemical Tanker'
@@ -593,7 +592,7 @@ SELECT
         WHEN UPPER(headline) LIKE '%SHIP%' THEN 'Ship'
         WHEN UPPER(headline) LIKE '%VESSEL%' THEN 'Vessel'
         ELSE 'unknown'
-    END) AS vesseltype,
+    END AS vesseltype,
     CASE
         WHEN (UPPER(headline) LIKE '%COLLISION%') OR (UPPER(headline) LIKE '%CRASH%') THEN 'Collision'
         WHEN UPPER(headline) LIKE '%ALLISION%' THEN 'Allision'
@@ -625,43 +624,93 @@ SELECT
     END AS lossoflife,
     load_date
 FROM expanded
-WHERE
-    TO_DATE(DATE_TRUNC('DAY', alert_timestamp)) BETWEEN
-        TO_DATE(DATE_TRUNC('DAY', DATEADD(DAY, -7, now())))
-    AND
-        TO_DATE(DATEADD(MICROSECOND, -1, DATE_TRUNC('DAY', DATEADD(DAY, 1, now()))))
+WHERE alert_timestamp >= DATEADD(DAY, -7, now())
 """
 
 
-@st.cache_data(ttl=300)
 def fetch_news_alerts_data():
-    """Fetch EU/EEA alerts for the last 7 days via SQL Statement Execution API."""
+    """Fetch EU/EEA alerts via SQL Statement Execution API."""
     if not SQL_WAREHOUSE_ID:
-        return None, "SQL_WAREHOUSE_ID not configured."
+        return None, ("SQL warehouse not configured. Set the SQL_WAREHOUSE_ID "
+                      "environment variable in app.yaml to display live news data.\n\n"
+                      "The app service principal also needs SELECT on "
+                      "bdw_analysis_prod.siana.eu_eea_alerts_hierarchy_v "
+                      "and bdw_marinfo_prod.marinfo5.lot2a_ship, plus "
+                      "SQL warehouse access.")
 
-    w = get_workspace_client()
+    # Use the logged-in user's OBO token so the query runs with the
+    # user's warehouse & table permissions (avoids SP grant requirements).
+    # We call the SQL Statement API via urllib directly to avoid the
+    # Databricks SDK auth conflict (SP OAuth env vars vs user PAT token).
+    user_token = get_user_access_token()
+    if not user_token:
+        # Fall back to SP client when no user token is available.
+        try:
+            w = get_workspace_client()
+            response = w.api_client.do(
+                "POST",
+                "/api/2.0/sql/statements",
+                body={
+                    "warehouse_id": SQL_WAREHOUSE_ID,
+                    "statement": _NEWS_ALERTS_SQL,
+                    "wait_timeout": "50s",
+                    "format": "JSON_ARRAY",
+                    "disposition": "INLINE",
+                },
+            )
+        except Exception as e:
+            return None, str(e)
+    else:
+        host = os.getenv("DATABRICKS_HOST", "").rstrip("/")
+        if host and not host.startswith("http"):
+            host = f"https://{host}"
+        api_headers = {
+            "Authorization": f"Bearer {user_token}",
+            "Content-Type": "application/json",
+        }
+        try:
+            req = urllib.request.Request(
+                f"{host}/api/2.0/sql/statements",
+                data=json.dumps({
+                    "warehouse_id": SQL_WAREHOUSE_ID,
+                    "statement": _NEWS_ALERTS_SQL,
+                    "wait_timeout": "50s",
+                    "format": "JSON_ARRAY",
+                    "disposition": "INLINE",
+                }).encode("utf-8"),
+                headers=api_headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                response = json.loads(resp.read())
+        except Exception as e:
+            return None, str(e)
+
     try:
-        response = w.api_client.do(
-            "POST",
-            "/api/2.0/sql/statements",
-            body={
-                "warehouse_id": SQL_WAREHOUSE_ID,
-                "statement": _NEWS_ALERTS_SQL,
-                "wait_timeout": "50s",
-                "format": "JSON_ARRAY",
-                "disposition": "INLINE",
-            },
-        )
-
         statement_id = response.get("statement_id")
         status_state = response.get("status", {}).get("state")
         poll_count = 0
-        while status_state in ("PENDING", "RUNNING") and poll_count < 24:
+        host = os.getenv("DATABRICKS_HOST", "").rstrip("/")
+        if host and not host.startswith("http"):
+            host = f"https://{host}"
+        while status_state in ("PENDING", "RUNNING") and poll_count < 12:
             time.sleep(5)
-            response = w.api_client.do(
-                "GET",
-                f"/api/2.0/sql/statements/{statement_id}",
-            )
+            if user_token:
+                poll_req = urllib.request.Request(
+                    f"{host}/api/2.0/sql/statements/{statement_id}",
+                    headers={
+                        "Authorization": f"Bearer {user_token}",
+                        "Content-Type": "application/json",
+                    },
+                    method="GET",
+                )
+                with urllib.request.urlopen(poll_req, timeout=60) as resp:
+                    response = json.loads(resp.read())
+            else:
+                response = get_workspace_client().api_client.do(
+                    "GET",
+                    f"/api/2.0/sql/statements/{statement_id}",
+                )
             status_state = response.get("status", {}).get("state")
             poll_count += 1
 
@@ -689,6 +738,36 @@ def fetch_news_alerts_data():
     except Exception as e:
         return None, str(e)
 
+
+NEWS_RELEVANCE_KINDS = {
+    "Event", "ContributingFactor", "SafetyIssue", "Finding", "System"
+}
+
+
+def news_relevance_terms(graph):
+    """Use bounded graph concept labels for a transparent screening cue."""
+    terms = []
+    seen = set()
+    for node in graph.get("nodes", []):
+        if node.get("node_kind") not in NEWS_RELEVANCE_KINDS:
+            continue
+        label = " ".join(str(node.get("label") or "").split()).strip()
+        key = label.casefold()
+        if len(key) < 4 or key in seen:
+            continue
+        seen.add(key)
+        terms.append(label)
+        if len(terms) == 20:
+            break
+    return terms
+
+
+def matching_news_terms(headline, terms):
+    text = str(headline or "")
+    return [
+        term for term in terms
+        if re.search(r"(?<!\w)" + re.escape(term) + r"(?!\w)", text, re.I)
+    ]
 
 
 def resolve_model_policy(information_class):
@@ -739,107 +818,72 @@ def quota_date():
     ).date().isoformat()
 
 
-def get_gpt20_daily_usage():
-    user_key = get_current_user_key()
-    usage_key = f"{user_key}|GPT20|{quota_date()}"
-    query = """
-    MERGE (u:ModelDailyUsage {usage_key: $usage_key})
-    ON CREATE SET
-        u.user_key = $user_key,
-        u.model_key = 'GPT20',
-        u.usage_date = $usage_date,
-        u.question_count = 0,
-        u.created_at = datetime()
-    RETURN u.question_count AS question_count
-    """
-    with get_driver().session() as session:
-        record = session.run(
-            query,
-            usage_key=usage_key,
-            user_key=user_key,
-            usage_date=quota_date(),
-        ).single()
-    return int(record["question_count"] or 0)
+MODEL_DAILY_LIMITS = {
+    "GPT20": GPT20_DAILY_QUESTION_LIMIT,
+    "LLAMA70": LLAMA_DAILY_QUESTION_LIMIT,
+}
+MODEL_QUOTA_LABELS = {
+    "GPT20": "GPT-OSS 20B",
+    "LLAMA70": "Llama 3.3 70B",
+}
 
 
-def get_llama_daily_usage():
-    user_key = get_current_user_key()
-    usage_key = f"{user_key}|LLAMA70|{quota_date()}"
-
-    query = """
-    MERGE (u:ModelDailyUsage {usage_key: $usage_key})
-    ON CREATE SET
-        u.user_key = $user_key,
-        u.model_key = 'LLAMA70',
-        u.usage_date = $usage_date,
-        u.question_count = 0,
-        u.created_at = datetime()
-    RETURN u.question_count AS question_count
-    """
-
-    with get_driver().session() as session:
-        record = session.run(
-            query,
-            usage_key=usage_key,
-            user_key=user_key,
-            usage_date=quota_date(),
-        ).single()
-
-    return int(record["question_count"] or 0)
-
-
-def consume_llama_daily_usage():
-    user_key = get_current_user_key()
-    usage_key = f"{user_key}|LLAMA70|{quota_date()}"
-
-    query = """
-    MERGE (u:ModelDailyUsage {usage_key: $usage_key})
-    ON CREATE SET
-        u.user_key = $user_key,
-        u.model_key = 'LLAMA70',
-        u.usage_date = $usage_date,
-        u.question_count = 0,
-        u.created_at = datetime()
-    WITH u
-    WHERE u.question_count < $limit
-    SET
-        u.question_count = u.question_count + 1,
-        u.updated_at = datetime()
-    RETURN u.question_count AS question_count
-    """
-
-    with get_driver().session() as session:
-        record = session.run(
-            query,
-            usage_key=usage_key,
-            user_key=user_key,
-            usage_date=quota_date(),
-            limit=LLAMA_DAILY_QUESTION_LIMIT,
-        ).single()
-
+def selected_quota_models(selection):
     return (
-        int(record["question_count"])
-        if record
-        else None
+        ("GPT20", "LLAMA70")
+        if selection == "BOTH"
+        else (selection,)
+        if selection in MODEL_DAILY_LIMITS
+        else ()
     )
 
 
-def reserve_class_d_question_usage(model_selection):
-    """Reserve the selected Class-D Ask allowances in one Neo4j transaction."""
-    plans = []
-    if model_selection in {"GPT20", "BOTH"}:
-        plans.append(("GPT20", GPT20_DAILY_QUESTION_LIMIT))
-    if model_selection in {"LLAMA70", "BOTH"}:
-        plans.append(("LLAMA70", LLAMA_DAILY_QUESTION_LIMIT))
-    if not plans:
-        return {}
+def get_model_daily_usage(model_key):
+    if model_key not in MODEL_DAILY_LIMITS:
+        raise ValueError("Unknown Class D model quota.")
+    user_key = get_current_user_key()
+    usage_key = f"{user_key}|{model_key}|{quota_date()}"
+    query = """
+    MERGE (u:ModelDailyUsage {usage_key: $usage_key})
+    ON CREATE SET
+        u.user_key = $user_key,
+        u.model_key = $model_key,
+        u.usage_date = $usage_date,
+        u.question_count = 0,
+        u.created_at = datetime()
+    RETURN u.question_count AS question_count
+    """
+    with get_driver().session() as session:
+        record = session.run(
+            query,
+            usage_key=usage_key,
+            user_key=user_key,
+            model_key=model_key,
+            usage_date=quota_date(),
+        ).single()
+    return int(record["question_count"] or 0)
 
+
+def quota_error(selection):
+    for model_key in selected_quota_models(selection):
+        if get_model_daily_usage(model_key) >= MODEL_DAILY_LIMITS[model_key]:
+            return (
+                f"The daily {MODEL_QUOTA_LABELS[model_key]} question "
+                "limit has been reached."
+            )
+    return None
+
+
+def consume_model_daily_usage(selection):
+    """Reserve all selected models together, or none, in one Neo4j transaction."""
+    models = selected_quota_models(selection)
+    if not models:
+        return {}
     user_key = get_current_user_key()
     usage_date = quota_date()
 
-    def _reserve(tx):
-        counts = {}
-        for model_key, limit in plans:
+    def reserve(tx):
+        for model_key in models:
             usage_key = f"{user_key}|{model_key}|{usage_date}"
             record = tx.run(
                 """
@@ -861,30 +905,29 @@ def reserve_class_d_question_usage(model_selection):
                 user_key=user_key,
                 model_key=model_key,
                 usage_date=usage_date,
-                limit=limit,
+                limit=MODEL_DAILY_LIMITS[model_key],
             ).single()
             if record is None:
                 raise RuntimeError(
-                    f"The daily {model_key} Ask allowance has been reached."
+                    f"The daily {MODEL_QUOTA_LABELS[model_key]} question "
+                    "limit has been reached."
                 )
-            counts[model_key] = int(record["question_count"] or 0)
-        return counts
+        return {model_key: True for model_key in models}
 
     with get_driver().session() as session:
-        return session.execute_write(_reserve)
+        return session.execute_write(reserve)
 
 
-def list_llama_daily_usage():
+def list_model_daily_usage(model_key):
     if not is_current_user_admin():
         return []
-
     with get_driver().session() as session:
         return [
             record.data()
             for record in session.run(
                 """
                 MATCH (u:ModelDailyUsage {
-                    model_key: 'LLAMA70',
+                    model_key: $model_key,
                     usage_date: $usage_date
                 })
                 RETURN
@@ -892,27 +935,28 @@ def list_llama_daily_usage():
                     u.question_count AS question_count
                 ORDER BY u.user_key
                 """,
+                model_key=model_key,
                 usage_date=quota_date(),
             )
         ]
 
 
-def reset_llama_daily_usage(target_user_key):
+def reset_model_daily_usage(target_user_key, model_key):
     if not is_current_user_admin():
         raise PermissionError(
-            "Only an application administrator can reset the Llama daily quota."
+            "Only an IKF administrator can reset a model daily quota."
         )
-
+    if model_key not in MODEL_DAILY_LIMITS:
+        raise ValueError("Unknown Class D model quota.")
     user_key = target_user_key.strip().lower()
-    usage_key = f"{user_key}|LLAMA70|{quota_date()}"
-
+    usage_key = f"{user_key}|{model_key}|{quota_date()}"
     with get_driver().session() as session:
         session.run(
             """
             MERGE (u:ModelDailyUsage {usage_key: $usage_key})
             ON CREATE SET
                 u.user_key = $user_key,
-                u.model_key = 'LLAMA70',
+                u.model_key = $model_key,
                 u.usage_date = $usage_date,
                 u.created_at = datetime()
             SET
@@ -922,6 +966,7 @@ def reset_llama_daily_usage(target_user_key):
             """,
             usage_key=usage_key,
             user_key=user_key,
+            model_key=model_key,
             usage_date=quota_date(),
             reset_by=get_current_user_key(),
         ).consume()
@@ -6686,16 +6731,7 @@ with tab_news:
                     )
                     if not _vtype.empty:
                         st.bar_chart(_vtype)
-                with ch2:
-                    st.markdown("#### Alerts by country")
-                    _country = (
-                        _filtered[_filtered["match_country"].notna()]
-                        .drop_duplicates(subset=["alert_id", "match_country"])
-                        .groupby("match_country")["alert_id"].nunique()
-                        .sort_values(ascending=False).head(15)
-                    )
-                    if not _country.empty:
-                        st.bar_chart(_country)
+
 
                 ch3, ch4 = st.columns(2)
                 with ch3:
@@ -6707,15 +6743,7 @@ with tab_news:
                     )
                     if not _etype.empty:
                         st.bar_chart(_etype)
-                with ch4:
-                    st.markdown("#### Daily alert count")
-                    _daily = (
-                        _filtered.assign(day=_filtered["alert_timestamp"].dt.date)
-                        .drop_duplicates(subset=["alert_id", "day"])
-                        .groupby("day")["alert_id"].nunique().sort_index()
-                    )
-                    if not _daily.empty:
-                        st.bar_chart(_daily)
+
 
     st.caption(
         "News remains external, unvalidated information and is not mixed with "
@@ -7402,6 +7430,49 @@ with tab_new_analysis:
                     "Llama 3.3 70B Databricks service is not configured."
                 )
 
+        selected_models = selected_quota_models(class_d_model_selection)
+        st.caption(
+            "Daily limits: "
+            + ", ".join(
+                f"{MODEL_QUOTA_LABELS[key]} {MODEL_DAILY_LIMITS[key]}"
+                for key in selected_models
+            )
+            + f" questions per user ({QUOTA_TIMEZONE})."
+        )
+        if st.button("Check remaining Class D questions", key="check_d_quota"):
+            st.session_state["class_d_quota_snapshot"] = {
+                key: max(
+                    MODEL_DAILY_LIMITS[key] - get_model_daily_usage(key),
+                    0,
+                )
+                for key in selected_models
+            }
+        quota_snapshot = st.session_state.get("class_d_quota_snapshot", {})
+        for model_key in selected_models:
+            if model_key in quota_snapshot:
+                st.metric(
+                    f"{MODEL_QUOTA_LABELS[model_key]} questions remaining",
+                    quota_snapshot[model_key],
+                    help="Last checked value; refresh before relying on it.",
+                )
+        if is_current_user_admin():
+            with st.expander("Admin: reset a Class D quota", expanded=False):
+                reset_model = st.selectbox(
+                    "Model", options=list(MODEL_DAILY_LIMITS),
+                    format_func=lambda key: MODEL_QUOTA_LABELS[key],
+                    key="quota_reset_model",
+                )
+                reset_target = st.text_input(
+                    "User email or username",
+                    value=get_current_user_key(),
+                    key="quota_reset_user",
+                )
+                if st.button("Reset today's quota", key="reset_model_quota"):
+                    if reset_target.strip():
+                        reset_model_daily_usage(reset_target, reset_model)
+                        st.session_state.pop("class_d_quota_snapshot", None)
+                        st.success("Quota reset. Check remaining questions to refresh.")
+
     with st.form(
         "new_analysis_form",
         clear_on_submit=False,
@@ -7546,6 +7617,9 @@ with tab_new_analysis:
                 errors.append(
                     "The dedicated Llama 3.3 70B Databricks model service is not configured."
                 )
+            quota_message = quota_error(class_d_model_selection)
+            if quota_message:
+                errors.append(quota_message)
         elif not policy["ready"]:
             errors.append(
                 "The model path required by this information class is not configured."
@@ -7690,6 +7764,7 @@ with tab_new_analysis:
                         + class_d_model_label
                     )
 
+                    consume_model_daily_usage(class_d_model_selection)
 
                     run_id = trigger_class_d_analysis_job(
                         analysis_id,
@@ -7975,24 +8050,14 @@ def render_compare_llms():
                     ]
                 )
 
-                if ask_model_selection in {"GPT20", "BOTH"}:
-                    gpt20_remaining = max(
-                        GPT20_DAILY_QUESTION_LIMIT - get_gpt20_daily_usage(),
-                        0,
+                st.caption(
+                    "Daily limits: "
+                    + ", ".join(
+                        f"{MODEL_QUOTA_LABELS[key]} {MODEL_DAILY_LIMITS[key]}"
+                        for key in selected_quota_models(ask_model_selection)
                     )
-                    st.caption(
-                        "GPT-OSS 20B Ask questions remaining today: "
-                        f"{gpt20_remaining} / {GPT20_DAILY_QUESTION_LIMIT}"
-                    )
-                if ask_model_selection in {"LLAMA70", "BOTH"}:
-                    llama_remaining = max(
-                        LLAMA_DAILY_QUESTION_LIMIT - get_llama_daily_usage(),
-                        0,
-                    )
-                    st.caption(
-                        "Llama 3.3 70B Ask questions remaining today: "
-                        f"{llama_remaining} / {LLAMA_DAILY_QUESTION_LIMIT}"
-                    )
+                    + " questions per user. Check remaining counts in New analysis."
+                )
             else:
                 ask_model_selection = "DEFAULT"
                 ask_policy = resolve_model_policy(
@@ -8377,20 +8442,9 @@ def render_compare_llms():
                     )
 
                 if class_for_ask == "D":
-                    if (
-                        ask_model_selection in {"GPT20", "BOTH"}
-                        and get_gpt20_daily_usage() >= GPT20_DAILY_QUESTION_LIMIT
-                    ):
-                        ask_errors.append(
-                            "The daily GPT-OSS 20B Ask limit has been reached."
-                        )
-                    if (
-                        ask_model_selection in {"LLAMA70", "BOTH"}
-                        and get_llama_daily_usage() >= LLAMA_DAILY_QUESTION_LIMIT
-                    ):
-                        ask_errors.append(
-                            "The daily Llama 3.3 70B Ask limit has been reached."
-                        )
+                    quota_message = quota_error(ask_model_selection)
+                    if quota_message:
+                        ask_errors.append(quota_message)
 
                 if not ASK_JOB_ID:
                     ask_errors.append(
@@ -8413,9 +8467,7 @@ def render_compare_llms():
                         )
 
                         if class_for_ask == "D":
-                            reserve_class_d_question_usage(
-                                ask_model_selection
-                            )
+                            consume_model_daily_usage(ask_model_selection)
 
                         run_id = trigger_question_job(
                             question_run_id
@@ -9441,6 +9493,12 @@ with tab_findings:
                 "similar_cases_run_"
                 + knowledge_analysis_id
             )
+            similar_candidates_key = (
+                "similar_cases_candidates_" + knowledge_analysis_id
+            )
+            similar_status_key = (
+                "similar_cases_status_" + knowledge_analysis_id
+            )
             similar_action, similar_refresh = (
                 st.columns(2)
             )
@@ -9471,7 +9529,12 @@ with tab_findings:
 
             if refresh_similar:
                 load_similar_case_candidates.clear()
-                st.rerun()
+                st.session_state[similar_candidates_key] = (
+                    load_similar_case_candidates(knowledge_analysis_id)
+                )
+                run_id = st.session_state.get(similar_run_key)
+                if run_id:
+                    st.session_state[similar_status_key] = get_analysis_job_run(run_id)
 
             if find_similar:
                 try:
@@ -9483,7 +9546,8 @@ with tab_findings:
                     st.session_state[
                         similar_run_key
                     ] = similar_job_run_id
-                    load_similar_case_candidates.clear()
+                    st.session_state[similar_status_key] = None
+                    st.session_state[similar_candidates_key] = []
                     st.success(
                         "Similar-case retrieval queued. Use Refresh "
                         "similar-case status to update the results."
@@ -9494,12 +9558,23 @@ with tab_findings:
                     )
                     st.exception(exc)
 
-            render_async_job_status(
-                st.session_state.get(
-                    similar_run_key
-                ),
-                "Similar-case retrieval",
-            )
+            similar_run_id = st.session_state.get(similar_run_key)
+            similar_run_info = st.session_state.get(similar_status_key)
+            if similar_run_id:
+                run_state = (similar_run_info or {}).get("state") or {}
+                state_label = (
+                    run_state.get("result_state")
+                    or run_state.get("life_cycle_state")
+                    or "QUEUED — press ↻ to check status"
+                )
+                st.caption(
+                    f"Similar-case retrieval · {state_label} · run {similar_run_id}"
+                )
+                if run_state.get("result_state") == "FAILED":
+                    st.error(
+                        "Notebook 52 failed. Open this Databricks Job run's "
+                        "output for the error, then share it for diagnosis."
+                    )
 
             if not SIMILAR_CASES_JOB_ID:
                 st.caption(
@@ -9507,11 +9582,7 @@ with tab_findings:
                     "App deployment yet."
                 )
 
-            similar_candidates = (
-                load_similar_case_candidates(
-                    knowledge_analysis_id
-                )
-            )
+            similar_candidates = st.session_state.get(similar_candidates_key, [])
 
             if similar_candidates:
                 _coverage_ready = similar_candidates[0].get(
@@ -9761,8 +9832,8 @@ with tab_findings:
                                     )
             else:
                 st.info(
-                    "No similar-case retrieval result is stored yet for "
-                    "this analysis."
+                    "Press ↻ to load the latest stored similar-case result "
+                    "after the Job completes."
                 )
         else:
             st.info(
@@ -9771,11 +9842,120 @@ with tab_findings:
 
     with similar_right:
         st.markdown("**News & alerts**")
-        st.info(
-            "Recent alerts remain external, unverified intelligence. In News & Alerts, "
-            "use ‘Related to active analysis only’ for deterministic lexical screening "
-            "against active-analysis concepts; this does not turn an alert into evidence."
+        st.caption(
+            "Potentially related recent alerts, screened against the selected "
+            "analysis graph. News is external and unverified."
         )
+        if knowledge_analyses and knowledge_meta.get("status") == "COMPLETED":
+            news_key = "related_news_" + knowledge_analysis_id
+            if st.button(
+                "Find related news alerts",
+                key="find_related_news_" + knowledge_analysis_id,
+                use_container_width=True,
+            ):
+                with st.spinner("Screening recent news alerts…"):
+                    terms = news_relevance_terms(
+                        load_analysis_graph(knowledge_analysis_id)
+                    )
+                    if not terms:
+                        st.session_state[news_key] = ([], None, 0)
+                    else:
+                        news_df, news_error = fetch_news_alerts_data()
+                        matches = []
+                        if news_error is None and news_df is not None:
+                            for _, alert in news_df.iterrows():
+                                headline = str(alert.get("headlinefull") or "")
+                                shared = matching_news_terms(headline, terms)
+                                if shared:
+                                    matches.append({
+                                        "Alert ID": alert.get("alert_id"),
+                                        "Latest update": alert.get("alert_timestamp"),
+                                        "Alert": headline,
+                                        "Matched concepts": ", ".join(shared),
+                                        "_score": len(shared),
+                                    })
+                            matches.sort(
+                                key=lambda item: item["_score"], reverse=True
+                            )
+                            unique_matches = []
+                            seen_alerts = set()
+                            for item in matches:
+                                alert_id = str(item["Alert ID"])
+                                if alert_id not in seen_alerts:
+                                    unique_matches.append(item)
+                                    seen_alerts.add(alert_id)
+                                if len(unique_matches) == 20:
+                                    break
+                            matches = unique_matches
+                        st.session_state[news_key] = (matches, news_error, len(terms))
+
+            result = st.session_state.get(news_key)
+            if result is not None:
+                matches, news_error, term_count = result
+                if news_error:
+                    st.error("Related-alert search failed: " + str(news_error))
+                elif not term_count:
+                    st.info("No eligible graph concepts to screen for related alerts.")
+                elif not matches:
+                    st.info("No identified related news alerts in the current feed.")
+                else:
+                    st.caption(
+                        f"{len(matches)} potentially related alerts shown; "
+                        f"screened against {term_count} graph concepts. "
+                        "A matching term does not establish a case link."
+                    )
+                    st.dataframe(
+                        pd.DataFrame(matches).drop(columns=["_score"]),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+        else:
+            st.info("Select a completed analysis to search related news alerts.")
+
+
+_TIMELINE_CATEGORY_META = {
+    "OPERATION_CONTEXT": ("Context / operation", "#4C78A8"),
+    "FAILURE_HAZARD": ("Failure / hazard", "#F58518"),
+    "ACTION_COMMUNICATION": ("Action / communication", "#54A24B"),
+    "ACCIDENT_CONSEQUENCE": ("Accident / consequence", "#E45756"),
+    "RESPONSE_RECOVERY": ("Response / recovery", "#B279A2"),
+}
+_TIMELINE_CATEGORY_ORDER = list(_TIMELINE_CATEGORY_META)
+_OLD_EVENT_TYPE_TO_CATEGORY = {
+    "EVENT": "OPERATION_CONTEXT", "OTHER": "OPERATION_CONTEXT",
+    "ALARM": "FAILURE_HAZARD", "FAILURE": "FAILURE_HAZARD",
+    "COMMUNICATION": "ACTION_COMMUNICATION", "ACTION": "ACTION_COMMUNICATION",
+    "FIRE": "ACCIDENT_CONSEQUENCE", "COLLISION_CONTACT": "ACCIDENT_CONSEQUENCE",
+    "GROUNDING": "ACCIDENT_CONSEQUENCE", "DISTRESS": "RESPONSE_RECOVERY",
+    "RESPONSE": "RESPONSE_RECOVERY", "RESCUE": "RESPONSE_RECOVERY",
+}
+
+def _timeline_category_label(category):
+    return _TIMELINE_CATEGORY_META.get(
+        category, _TIMELINE_CATEGORY_META["OPERATION_CONTEXT"]
+    )[0]
+
+def _timeline_visual_category(event, reviewed_event=None):
+    reviewed_type = str((reviewed_event or {}).get("event_type") or "").strip().upper()
+    if reviewed_type in _TIMELINE_CATEGORY_META:
+        return reviewed_type
+    if reviewed_type in _OLD_EVENT_TYPE_TO_CATEGORY:
+        return _OLD_EVENT_TYPE_TO_CATEGORY[reviewed_type]
+    text = " ".join(str(event.get(k) or "") for k in ("label", "description")).casefold()
+    groups = (
+        ("RESPONSE_RECOVERY", ("distress", "mayday", "rescue", "evacuat", "abandon", "emergency response", "lifeboat", "recovery")),
+        ("ACCIDENT_CONSEQUENCE", ("collision", "contact", "allision", "ground", "capsiz", "sink", "sank", "fire", "explosion", "flood", "injur", "fatal", "death", "damage", "pollution", "spill", "overboard")),
+        ("FAILURE_HAZARD", ("failure", "failed", "fault", "malfunction", "overheat", "leak", "alarm", "loss of pressure", "loss of power", "blackout", "blocked", "obstructed", "defect", "breakdown")),
+        ("ACTION_COMMUNICATION", ("crew", "master", "officer", "engineer", "action", "ordered", "communicat", "reported", "called", "requested", "started", "stopped", "activated", "manoeuv", "maneuv", "decision")),
+    )
+    for category, terms in groups:
+        if any(term in text for term in terms):
+            return category
+    return "OPERATION_CONTEXT"
+
+def _short_timeline_label(value, limit=34):
+    text = str(value or "Event").strip()
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 with tab_timeline:
@@ -9830,26 +10010,83 @@ with tab_timeline:
                 "automatically when the analysis has produced its evidence-derived graph."
             )
         else:
-            st.dataframe(
-                [
-                    {
-                        "#": item.get("sequence_position"),
-                        "Time": default_timeline_time_label(item, audio_anchor),
-                        "Event": item.get("label") or "Event",
-                        "Order basis": item.get("ordering_basis") or "—",
-                        "Evidence": len(item.get("evidence_references") or []),
-                        "Review": (
-                            "HUMAN_VALIDATED"
-                            if item.get("node_id") in validated_by_node
-                            else "DEFAULT_CANDIDATE"
-                        ),
-                        "Flag": "REVIEW" if item.get("ordering_conflict") else "",
-                    }
-                    for item in default_events
-                ],
-                hide_index=True,
-                use_container_width=True,
+            timeline_rows = []
+            for item in default_events:
+                reviewed = validated_by_node.get(item.get("node_id"))
+                category = _timeline_visual_category(item, reviewed)
+                timeline_rows.append({
+                    "item": item,
+                    "category": category,
+                    "category_label": _timeline_category_label(category),
+                    "time_label": default_timeline_time_label(item, audio_anchor),
+                    "review": "Human validated" if reviewed else "Default candidate",
+                })
+
+            st.markdown("#### Event sequence")
+            st.caption(
+                "The chronology is drawn as a sequence across five simple categories. "
+                "Hover for supported time, ordering basis, evidence and review status. "
+                "Sequence position is used when no clock time is supported, so the view "
+                "does not invent temporal precision."
             )
+            timeline_fig = go.Figure()
+            for category in _TIMELINE_CATEGORY_ORDER:
+                rows = [row for row in timeline_rows if row["category"] == category]
+                if not rows:
+                    continue
+                label, colour = _TIMELINE_CATEGORY_META[category]
+                timeline_fig.add_trace(go.Scatter(
+                    x=[row["item"].get("sequence_position") for row in rows],
+                    y=[label] * len(rows),
+                    mode="markers+text",
+                    marker={"size": 16, "color": colour, "line": {"width": 1, "color": "white"}},
+                    text=[_short_timeline_label(row["item"].get("label")) for row in rows],
+                    textposition="top center",
+                    customdata=[[
+                        row["time_label"], row["item"].get("label") or "Event",
+                        row["item"].get("ordering_basis") or "—",
+                        len(row["item"].get("evidence_references") or []), row["review"],
+                    ] for row in rows],
+                    hovertemplate=(
+                        "<b>%{customdata[1]}</b><br>Time: %{customdata[0]}<br>"
+                        "Order basis: %{customdata[2]}<br>Evidence references: %{customdata[3]}<br>"
+                        "Review: %{customdata[4]}<extra></extra>"
+                    ),
+                    name=label,
+                ))
+            timeline_fig.update_layout(
+                height=max(390, 280 + 24 * len(default_events)),
+                margin={"l": 10, "r": 10, "t": 30, "b": 30},
+                xaxis={"title": "Event sequence", "dtick": 1, "showgrid": True, "zeroline": False},
+                yaxis={
+                    "title": "", "categoryorder": "array",
+                    "categoryarray": [_TIMELINE_CATEGORY_META[k][0] for k in reversed(_TIMELINE_CATEGORY_ORDER)],
+                    "fixedrange": True,
+                },
+                hovermode="closest", showlegend=False,
+            )
+            st.plotly_chart(
+                timeline_fig, use_container_width=True,
+                config={"displaylogo": False, "scrollZoom": True, "modeBarButtonsToRemove": ["lasso2d", "select2d"]},
+            )
+            legend_columns = st.columns(5)
+            for idx, category in enumerate(_TIMELINE_CATEGORY_ORDER):
+                label, colour = _TIMELINE_CATEGORY_META[category]
+                with legend_columns[idx]:
+                    st.markdown(
+                        f"<span style='color:{colour};font-size:1.2rem'>●</span> {label}",
+                        unsafe_allow_html=True,
+                    )
+            with st.expander("View timeline data", expanded=False):
+                st.dataframe([{
+                    "#": row["item"].get("sequence_position"),
+                    "Time": row["time_label"], "Category": row["category_label"],
+                    "Event": row["item"].get("label") or "Event",
+                    "Order basis": row["item"].get("ordering_basis") or "—",
+                    "Evidence": len(row["item"].get("evidence_references") or []),
+                    "Review": row["review"],
+                    "Flag": "REVIEW" if row["item"].get("ordering_conflict") else "",
+                } for row in timeline_rows], hide_index=True, use_container_width=True)
 
             selected_default_node = st.selectbox(
                 "Inspect / validate default event",
@@ -9989,21 +10226,24 @@ with tab_timeline:
         )
         add_left, add_right = st.columns(2)
         with add_left:
+            _simple_phase_labels = {
+                "PRE_ACCIDENT": "Before occurrence",
+                "ACCIDENT_INITIATION": "Occurrence",
+                "ESCALATION": "Escalation",
+                "EMERGENCY_RESPONSE": "Response / recovery",
+                "POST_OCCURRENCE": "After occurrence",
+            }
             event_phase = st.selectbox(
-                "Phase",
-                options=list(TIMELINE_PHASES),
-                index=list(TIMELINE_PHASES).index("UNASSIGNED"),
+                "Phase", options=list(_simple_phase_labels),
+                format_func=lambda value: _simple_phase_labels[value],
                 key="timeline_phase_" + timeline_analysis_id,
             )
         with add_right:
             event_type = st.selectbox(
-                "Event type",
-                options=[
-                    "EVENT", "ALARM", "FAILURE", "COMMUNICATION", "ACTION",
-                    "DISTRESS", "RESPONSE", "RESCUE", "FIRE",
-                    "COLLISION_CONTACT", "GROUNDING", "OTHER",
-                ],
+                "Category", options=_TIMELINE_CATEGORY_ORDER,
+                format_func=_timeline_category_label,
                 key="timeline_type_" + timeline_analysis_id,
+                help="Five broad categories keep the chronology readable while evidence and graph detail remain intact.",
             )
 
         basis_labels = {
@@ -11523,200 +11763,6 @@ with tab_review:
                         st.exception(exc)
 
 
-with tab_review:
-    st.divider()
-    st.markdown("### SHIELD classification of contributing factors")
-    st.caption(
-        "SHIELD is shown as an LLM-proposed taxonomy match beside each contributing "
-        "factor. The model may classify a factor only after its CONTRIBUTED_TO "
-        "relationship has been human validated or amended to CONTRIBUTED_TO. "
-        "No manual SHIELD label selection is required."
-    )
-
-    shield_analysis_id = selected_review_analysis_id
-    shield_model_run_id = selected_review_model_run_id
-
-    contributing_factor_nodes = [
-        node
-        for node in (selected_review_graph.get("nodes") or [])
-        if node.get("node_kind") == "ContributingFactor"
-    ]
-
-    shield_eligible = (
-        load_shield_gate_eligible_factors(
-            shield_analysis_id,
-            shield_model_run_id,
-        )
-        if shield_analysis_id and shield_model_run_id
-        else []
-    )
-    shield_proposals = (
-        load_shield_proposals(
-            shield_analysis_id,
-            shield_model_run_id,
-        )
-        if shield_analysis_id and shield_model_run_id
-        else []
-    )
-
-    eligible_by_factor = {}
-    for factor in shield_eligible:
-        eligible_by_factor.setdefault(
-            factor["factor_node_id"],
-            [],
-        ).append(factor)
-
-    proposals_by_factor = {}
-    for proposal in shield_proposals:
-        if proposal.get("gate_is_current"):
-            proposals_by_factor.setdefault(
-                proposal["factor_node_id"],
-                [],
-            ).append(proposal)
-
-    shield_rows = []
-    for factor in sorted(
-        contributing_factor_nodes,
-        key=lambda item: str(item.get("label") or "").casefold(),
-    ):
-        factor_id = factor.get("node_id")
-        eligible_rows = eligible_by_factor.get(factor_id, [])
-        proposals = proposals_by_factor.get(factor_id, [])
-
-        target_labels = sorted(
-            {
-                str(item.get("target_label"))
-                for item in eligible_rows
-                if item.get("target_label")
-            }
-        )
-
-        shield_matches = []
-        for proposal in proposals:
-            if proposal.get("assistant_status") != "ASSISTANT_PROPOSED":
-                continue
-            parts = [
-                proposal.get("proposed_shield_path"),
-                proposal.get("proposed_shield_label"),
-            ]
-            text = " → ".join(
-                str(part)
-                for part in parts
-                if part
-            )
-            if proposal.get("proposed_shield_code"):
-                text += " [" + str(proposal["proposed_shield_code"]) + "]"
-            if text:
-                shield_matches.append(text)
-
-        shield_matches = list(dict.fromkeys(shield_matches))
-
-        if shield_matches:
-            shield_value = " · ".join(shield_matches)
-            shield_status = "LLM match available"
-        elif proposals:
-            shield_value = "No grounded SHIELD match"
-            shield_status = "LLM found no supported match"
-        elif eligible_rows:
-            shield_value = "—"
-            shield_status = "Ready for LLM classification"
-        else:
-            shield_value = "—"
-            shield_status = "Awaiting validated CONTRIBUTED_TO relation"
-
-        shield_rows.append(
-            {
-                "Contributing factor": factor.get("label") or factor_id,
-                "Validated contributes to": (
-                    " · ".join(target_labels)
-                    if target_labels
-                    else "—"
-                ),
-                "SHIELD (LLM)": shield_value,
-                "Status": shield_status,
-            }
-        )
-
-    if shield_rows:
-        st.dataframe(
-            shield_rows,
-            use_container_width=True,
-            hide_index=True,
-        )
-    else:
-        st.info(
-            "No contributing factors are available in the selected model graph."
-        )
-
-    shield_documents = load_shield_documents()
-    shield_ready_count = sum(
-        1
-        for row in shield_rows
-        if row["Status"] == "Ready for LLM classification"
-    )
-
-    shield_action, shield_refresh = st.columns([1.6, 0.4])
-    with shield_action:
-        generate_shield = st.button(
-            "Generate / refresh LLM SHIELD matches",
-            type="primary",
-            disabled=(
-                not shield_analysis_id
-                or not shield_model_run_id
-                or not shield_eligible
-                or not shield_documents
-                or not SHIELD_PROPOSAL_JOB_ID
-            ),
-            key="generate_shield_proposals",
-        )
-    with shield_refresh:
-        refresh_shield = st.button(
-            "↻",
-            help="Refresh SHIELD matches",
-            disabled=(
-                not shield_analysis_id
-                or not shield_model_run_id
-            ),
-            key="refresh_shield_status",
-            use_container_width=True,
-        )
-
-    if shield_ready_count:
-        st.caption(
-            str(shield_ready_count)
-            + " validated contributing factor(s) are ready for LLM SHIELD classification."
-        )
-
-    if not shield_documents:
-        st.warning(
-            "The persistent SHIELD corpus is not indexed yet."
-        )
-    elif not SHIELD_PROPOSAL_JOB_ID:
-        st.caption(
-            "The SHIELD proposal Job is not attached to this App deployment."
-        )
-
-    if refresh_shield:
-        load_shield_gate_eligible_factors.clear()
-        load_shield_proposals.clear()
-        load_shield_documents.clear()
-        st.rerun()
-
-    if generate_shield:
-        try:
-            shield_job_run_id = trigger_shield_proposal_job(
-                shield_analysis_id,
-                shield_model_run_id,
-            )
-            load_shield_proposals.clear()
-            st.success(
-                "LLM SHIELD classification queued. Refresh when the run completes."
-            )
-            st.caption("Databricks run: " + shield_job_run_id)
-        except Exception as exc:
-            st.error("SHIELD classification could not be queued.")
-            st.exception(exc)
-
 with tab_about:
     st.markdown(
         f"""
@@ -11752,8 +11798,9 @@ mixed with validated investigation knowledge.
 ### Class D
 
 Class D may use GPT-OSS 20B, Llama 3.3 70B, or both against the same prepared
-evidence set. Llama 3.3 70B is limited to
-**{LLAMA_DAILY_QUESTION_LIMIT} questions per user per day** in the PoC.
+evidence set. The PoC limits are **{GPT20_DAILY_QUESTION_LIMIT} GPT-OSS 20B**
+and **{LLAMA_DAILY_QUESTION_LIMIT} Llama 3.3 70B** questions per user per day.
+Selecting Both uses one question from each model.
 
 ### Documentation
 

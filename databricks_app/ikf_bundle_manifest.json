@@ -28,9 +28,9 @@
     "live_news_tab"
   ],
   "applied_operational_refinements": [
+    "class_d_ask_quotas_already_present_in_source",
+    "analysis_runs_do_not_consume_ask_quota_already_present_in_source",
     "analysis_summary_findings_only",
-    "class_d_ask_quotas_gpt20_30_llama70_10",
-    "analysis_runs_do_not_consume_ask_quota",
     "news_triage_semantics_and_filters",
     "news_active_analysis_lexical_relevance",
     "news_unique_fatal_alert_count",
@@ -85,12 +85,21 @@
     "timeline_workspace"
   ],
   "applied_ui_adoptions": [
-    "html_escape_import",
     "active_analysis_header",
     "ask_llms_title",
     "ask_refresh_beside_question",
     "simplify_review_provenance",
     "compact_relationship_review"
+  ],
+  "applied_visual_refinements": [
+    "plotly_timeline_dependency",
+    "five_timeline_categories",
+    "visual_event_sequence",
+    "timeline_table_in_expander",
+    "five_phase_choices",
+    "remove_alerts_by_country",
+    "remove_daily_alert_count",
+    "hide_shield_from_app_only"
   ],
   "applied_workflow_adoptions": [
     "analysis_description_explanation",
@@ -105,17 +114,18 @@
   "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.4",
   "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.2",
   "branding_adoption_version": "IKF_APP_BRANDING_ADOPTION_V0.1",
-  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.12",
+  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.13",
   "files_api_download_adoption_version": "IKF_APP_FILES_API_DOWNLOAD_V0.1",
-  "materialized_app_sha256": "3e539fb1ca68758a505a38a5f93b6da889e14b011cb8f7990f299ec798a8d1fc",
+  "materialized_app_sha256": "6cd765e88acf377cb6c97ee8983198a7f9c452bcd57c56aa23da182917e6f5c0",
   "news_adoption_version": "IKF_APP_NEWS_ADOPTION_V0.1",
   "operational_refinement_version": "IKF_APP_OPERATIONAL_REFINEMENT_V0.2",
   "parakeet_adoption_version": "IKF_APP_PARAKEET_ADOPTION_V0.3",
   "shared_package_path": "src/ikf",
   "similarity_refinement_version": "IKF_APP_SIMILARITY_REFINEMENT_V0.1",
   "simplification_adoption_version": "IKF_APP_SIMPLIFICATION_ADOPTION_V0.5",
-  "source_app_sha256": "4e190a128237e6c294d5f7231275280223520ce7ea112abeff598559ad6acf7a",
+  "source_app_sha256": "41e6e62be8d907a8ef727cc20fb131499df6d04ea260731e9d27e4ab75b1d7b2",
   "timeline_adoption_version": "IKF_APP_TIMELINE_ADOPTION_V0.3",
   "ui_adoption_version": "IKF_APP_UI_ADOPTION_V0.3",
+  "visual_refinement_version": "IKF_APP_VISUAL_REFINEMENT_V0.3",
   "workflow_adoption_version": "IKF_APP_WORKFLOW_ADOPTION_V0.1"
 }
