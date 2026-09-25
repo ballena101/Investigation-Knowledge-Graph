@@ -13,6 +13,9 @@ dist/
 .databricks/
 .bundle/
 
+# Accidental shell-redirection artefacts from version constraints
+=0.34*
+
 # Secrets
 .env
 .env.*
