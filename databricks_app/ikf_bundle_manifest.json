@@ -14,9 +14,18 @@
     "published_transcript_analysis_association",
     "compact_processing_metadata"
   ],
+  "applied_branding_adoptions": [
+    "safety_investigation_ai_sandbox"
+  ],
   "applied_files_api_adoptions": [
     "files_api_transport_imports",
     "ranged_files_api_download"
+  ],
+  "applied_news_adoptions": [
+    "pandas_news_dependency",
+    "sql_warehouse_binding",
+    "live_news_query",
+    "live_news_tab"
   ],
   "applied_parakeet_adoptions": [
     "parakeet_governance_imports",
@@ -81,9 +90,11 @@
   ],
   "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.4",
   "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.2",
-  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.9",
+  "branding_adoption_version": "IKF_APP_BRANDING_ADOPTION_V0.1",
+  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.10",
   "files_api_download_adoption_version": "IKF_APP_FILES_API_DOWNLOAD_V0.1",
-  "materialized_app_sha256": "43d6c7c9e3e0ff327e7fed524fab90cfd086286c514a96b13228f7b65494f1c0",
+  "materialized_app_sha256": "e89b6fd4ed27a028623805254ebc5996955dbc55e6b6d6c4406ae37d2536dca6",
+  "news_adoption_version": "IKF_APP_NEWS_ADOPTION_V0.1",
   "parakeet_adoption_version": "IKF_APP_PARAKEET_ADOPTION_V0.3",
   "shared_package_path": "src/ikf",
   "simplification_adoption_version": "IKF_APP_SIMPLIFICATION_ADOPTION_V0.5",
