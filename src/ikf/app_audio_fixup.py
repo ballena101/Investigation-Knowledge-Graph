@@ -75,13 +75,13 @@ def transform_app_audio_fixup_source(source: str) -> tuple[str, tuple[str, ...]]
     )
     source = _replace_once(
         source,
-        '''                            source_name=selected_audio["name"],
-                            model=model,
-                        )''',
-        '''                            source_name=selected_audio["name"],
-                            model=model,
-                            analysis_context_id=active_analysis_id,
-                        )''',
+        '''                                source_name=selected_audio["name"],
+                                model=requested_model,
+                            )''',
+        '''                                source_name=selected_audio["name"],
+                                model=requested_model,
+                                analysis_context_id=active_analysis_id,
+                            )''',
         "transcription context creation",
     )
     applied.append("active_analysis_transcription_context")
