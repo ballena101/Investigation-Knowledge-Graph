@@ -15,6 +15,7 @@
     "compact_processing_metadata"
   ],
   "applied_branding_adoptions": [
+    "remove_obsolete_transcript_review_override",
     "safety_investigation_ai_sandbox"
   ],
   "applied_files_api_adoptions": [
@@ -90,10 +91,10 @@
   ],
   "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.4",
   "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.2",
-  "branding_adoption_version": "IKF_APP_BRANDING_ADOPTION_V0.1",
+  "branding_adoption_version": "IKF_APP_BRANDING_ADOPTION_V0.2",
   "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.10",
   "files_api_download_adoption_version": "IKF_APP_FILES_API_DOWNLOAD_V0.1",
-  "materialized_app_sha256": "e89b6fd4ed27a028623805254ebc5996955dbc55e6b6d6c4406ae37d2536dca6",
+  "materialized_app_sha256": "aae0f816b9d442d45bc351cbb96acebec2eb74cbdebe57ddf8c66ede3e0017b4",
   "news_adoption_version": "IKF_APP_NEWS_ADOPTION_V0.1",
   "parakeet_adoption_version": "IKF_APP_PARAKEET_ADOPTION_V0.3",
   "shared_package_path": "src/ikf",

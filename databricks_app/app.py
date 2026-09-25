@@ -5740,26 +5740,6 @@ def transcript_text_with_timestamps(record):
     )
 
 
-def save_transcript_review(record, reviewed_text):
-    reviewer = get_current_user_key()
-    text_hash = hashlib.sha256(reviewed_text.encode("utf-8")).hexdigest()
-    with get_driver().session() as session:
-        session.run(
-            """
-            MERGE (r:TypeDTranscriptReview {
-                source_sha256: $source_sha256,
-                model: $model,
-                reviewed_text_sha256: $text_hash
-            })
-            ON CREATE SET r.reviewed_by = $reviewer,
-                r.reviewed_at = datetime(), r.status = 'HUMAN_REVIEWED'
-            """,
-            source_sha256=record["source_sha256"], model=record["model"],
-            text_hash=text_hash, reviewer=reviewer,
-        ).consume()
-    return text_hash
-
-
 def link_transcript_analysis(analysis_id, origin):
     with get_driver().session() as session:
         result = session.run(
