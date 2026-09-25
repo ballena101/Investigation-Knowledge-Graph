@@ -45,7 +45,8 @@ IKG_ADMIN_USERS = {
 MAX_DOCUMENTS_PER_ANALYSIS = 5
 CLASS_D_CONTENT_RETENTION_HOURS = 24
 OTHER_CONTENT_RETENTION_HOURS = 72
-LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "5"))
+GPT20_DAILY_QUESTION_LIMIT = int(os.getenv("GPT20_DAILY_QUESTION_LIMIT", "30"))
+LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "10"))
 QUOTA_TIMEZONE = "Europe/Lisbon"
 
 IKF_SOURCE_VOLUME_ROOT = (
@@ -626,79 +627,116 @@ def quota_date():
     ).date().isoformat()
 
 
-def get_llama_daily_usage():
-    user_key = get_current_user_key()
-    usage_key = f"{user_key}|LLAMA70|{quota_date()}"
-
-    query = """
-    MERGE (u:ModelDailyUsage {usage_key: $usage_key})
-    ON CREATE SET
-        u.user_key = $user_key,
-        u.model_key = 'LLAMA70',
-        u.usage_date = $usage_date,
-        u.question_count = 0,
-        u.created_at = datetime()
-    RETURN u.question_count AS question_count
-    """
-
-    with get_driver().session() as session:
-        record = session.run(
-            query,
-            usage_key=usage_key,
-            user_key=user_key,
-            usage_date=quota_date(),
-        ).single()
-
-    return int(record["question_count"] or 0)
+MODEL_DAILY_LIMITS = {
+    "GPT20": GPT20_DAILY_QUESTION_LIMIT,
+    "LLAMA70": LLAMA_DAILY_QUESTION_LIMIT,
+}
+MODEL_QUOTA_LABELS = {
+    "GPT20": "GPT-OSS 20B",
+    "LLAMA70": "Llama 3.3 70B",
+}
 
 
-def consume_llama_daily_usage():
-    user_key = get_current_user_key()
-    usage_key = f"{user_key}|LLAMA70|{quota_date()}"
-
-    query = """
-    MERGE (u:ModelDailyUsage {usage_key: $usage_key})
-    ON CREATE SET
-        u.user_key = $user_key,
-        u.model_key = 'LLAMA70',
-        u.usage_date = $usage_date,
-        u.question_count = 0,
-        u.created_at = datetime()
-    WITH u
-    WHERE u.question_count < $limit
-    SET
-        u.question_count = u.question_count + 1,
-        u.updated_at = datetime()
-    RETURN u.question_count AS question_count
-    """
-
-    with get_driver().session() as session:
-        record = session.run(
-            query,
-            usage_key=usage_key,
-            user_key=user_key,
-            usage_date=quota_date(),
-            limit=LLAMA_DAILY_QUESTION_LIMIT,
-        ).single()
-
+def selected_quota_models(selection):
     return (
-        int(record["question_count"])
-        if record
-        else None
+        ("GPT20", "LLAMA70")
+        if selection == "BOTH"
+        else (selection,)
+        if selection in MODEL_DAILY_LIMITS
+        else ()
     )
 
 
-def list_llama_daily_usage():
+def get_model_daily_usage(model_key):
+    if model_key not in MODEL_DAILY_LIMITS:
+        raise ValueError("Unknown Class D model quota.")
+    user_key = get_current_user_key()
+    usage_key = f"{user_key}|{model_key}|{quota_date()}"
+    query = """
+    MERGE (u:ModelDailyUsage {usage_key: $usage_key})
+    ON CREATE SET
+        u.user_key = $user_key,
+        u.model_key = $model_key,
+        u.usage_date = $usage_date,
+        u.question_count = 0,
+        u.created_at = datetime()
+    RETURN u.question_count AS question_count
+    """
+    with get_driver().session() as session:
+        record = session.run(
+            query,
+            usage_key=usage_key,
+            user_key=user_key,
+            model_key=model_key,
+            usage_date=quota_date(),
+        ).single()
+    return int(record["question_count"] or 0)
+
+
+def quota_error(selection):
+    for model_key in selected_quota_models(selection):
+        if get_model_daily_usage(model_key) >= MODEL_DAILY_LIMITS[model_key]:
+            return (
+                f"The daily {MODEL_QUOTA_LABELS[model_key]} question "
+                "limit has been reached."
+            )
+    return None
+
+
+def consume_model_daily_usage(selection):
+    """Reserve all selected models together, or none, in one Neo4j transaction."""
+    models = selected_quota_models(selection)
+    if not models:
+        return {}
+    user_key = get_current_user_key()
+    usage_date = quota_date()
+
+    def reserve(tx):
+        for model_key in models:
+            usage_key = f"{user_key}|{model_key}|{usage_date}"
+            record = tx.run(
+                """
+                MERGE (u:ModelDailyUsage {usage_key: $usage_key})
+                ON CREATE SET
+                    u.user_key = $user_key,
+                    u.model_key = $model_key,
+                    u.usage_date = $usage_date,
+                    u.question_count = 0,
+                    u.created_at = datetime()
+                WITH u
+                WHERE u.question_count < $limit
+                SET
+                    u.question_count = u.question_count + 1,
+                    u.updated_at = datetime()
+                RETURN u.question_count AS question_count
+                """,
+                usage_key=usage_key,
+                user_key=user_key,
+                model_key=model_key,
+                usage_date=usage_date,
+                limit=MODEL_DAILY_LIMITS[model_key],
+            ).single()
+            if record is None:
+                raise RuntimeError(
+                    f"The daily {MODEL_QUOTA_LABELS[model_key]} question "
+                    "limit has been reached."
+                )
+        return {model_key: True for model_key in models}
+
+    with get_driver().session() as session:
+        return session.execute_write(reserve)
+
+
+def list_model_daily_usage(model_key):
     if not is_current_user_admin():
         return []
-
     with get_driver().session() as session:
         return [
             record.data()
             for record in session.run(
                 """
                 MATCH (u:ModelDailyUsage {
-                    model_key: 'LLAMA70',
+                    model_key: $model_key,
                     usage_date: $usage_date
                 })
                 RETURN
@@ -706,27 +744,28 @@ def list_llama_daily_usage():
                     u.question_count AS question_count
                 ORDER BY u.user_key
                 """,
+                model_key=model_key,
                 usage_date=quota_date(),
             )
         ]
 
 
-def reset_llama_daily_usage(target_user_key):
+def reset_model_daily_usage(target_user_key, model_key):
     if not is_current_user_admin():
         raise PermissionError(
-            "Only an IKG administrator can reset the Llama daily quota."
+            "Only an IKF administrator can reset a model daily quota."
         )
-
+    if model_key not in MODEL_DAILY_LIMITS:
+        raise ValueError("Unknown Class D model quota.")
     user_key = target_user_key.strip().lower()
-    usage_key = f"{user_key}|LLAMA70|{quota_date()}"
-
+    usage_key = f"{user_key}|{model_key}|{quota_date()}"
     with get_driver().session() as session:
         session.run(
             """
             MERGE (u:ModelDailyUsage {usage_key: $usage_key})
             ON CREATE SET
                 u.user_key = $user_key,
-                u.model_key = 'LLAMA70',
+                u.model_key = $model_key,
                 u.usage_date = $usage_date,
                 u.created_at = datetime()
             SET
@@ -736,6 +775,7 @@ def reset_llama_daily_usage(target_user_key):
             """,
             usage_key=usage_key,
             user_key=user_key,
+            model_key=model_key,
             usage_date=quota_date(),
             reset_by=get_current_user_key(),
         ).consume()
@@ -5641,54 +5681,41 @@ with tab_new_analysis:
                     "Controlled Ollama Llama 3.3 70B service is not configured."
                 )
 
-            llama_used = get_llama_daily_usage()
-            llama_remaining = max(
-                LLAMA_DAILY_QUESTION_LIMIT
-                - llama_used,
+        for model_key in selected_quota_models(class_d_model_selection):
+            remaining = max(
+                MODEL_DAILY_LIMITS[model_key]
+                - get_model_daily_usage(model_key),
                 0,
             )
+            label = MODEL_QUOTA_LABELS[model_key]
             st.metric(
-                "Llama 3.3 70B questions remaining today",
-                llama_remaining,
+                f"{label} questions remaining today",
+                remaining,
                 help=(
-                    f"Limit: {LLAMA_DAILY_QUESTION_LIMIT} per user per day "
-                    f"({QUOTA_TIMEZONE}). Running both models consumes one "
-                    "Llama question."
+                    f"Limit: {MODEL_DAILY_LIMITS[model_key]} per user per day "
+                    f"({QUOTA_TIMEZONE}). Both consumes one from each model."
                 ),
             )
-
-            if llama_remaining == 0:
+            if remaining == 0:
                 st.warning(
-                    "The daily Llama 3.3 70B question limit has been reached."
+                    f"The daily {label} question limit has been reached."
                 )
-
             if is_current_user_admin():
-                usage_rows = list_llama_daily_usage()
-                admin_users = [
-                    row["user_key"]
-                    for row in usage_rows
-                ]
-
-                if get_current_user_key() not in admin_users:
-                    admin_users.append(
-                        get_current_user_key()
-                    )
-
+                usage_rows = list_model_daily_usage(model_key)
+                admin_users = [row["user_key"] for row in usage_rows]
+                admin_users.append(get_current_user_key())
                 reset_target = st.selectbox(
-                    "Admin quota reset user",
+                    f"Admin quota reset user ({label})",
                     options=sorted(set(admin_users)),
-                    key="llama_reset_user",
+                    key=f"quota_reset_user_{model_key}",
                 )
-
                 if st.button(
-                    "Admin: reset selected user's Llama quota",
-                    key="reset_llama_quota",
+                    f"Admin: reset selected user's {label} quota",
+                    key=f"reset_quota_{model_key}",
                 ):
-                    reset_llama_daily_usage(
-                        reset_target
-                    )
+                    reset_model_daily_usage(reset_target, model_key)
                     st.success(
-                        "Today's Ollama quota has been reset for "
+                        f"Today's {label} quota has been reset for "
                         + reset_target
                     )
                     st.rerun()
@@ -5835,14 +5862,9 @@ with tab_new_analysis:
                 errors.append(
                     "The dedicated Llama 3.3 70B Databricks model service is not configured."
                 )
-            if (
-                needs_llama70
-                and get_llama_daily_usage()
-                >= LLAMA_DAILY_QUESTION_LIMIT
-            ):
-                errors.append(
-                    "The daily Llama 3.3 70B question limit has been reached."
-                )
+            quota_message = quota_error(class_d_model_selection)
+            if quota_message:
+                errors.append(quota_message)
         elif not policy["ready"]:
             errors.append(
                 "The model path required by this information class is not configured."
@@ -5987,18 +6009,7 @@ with tab_new_analysis:
                         + class_d_model_label
                     )
 
-                    if class_d_model_selection in {
-                        "LLAMA70",
-                        "BOTH",
-                    }:
-                        new_count = (
-                            consume_llama_daily_usage()
-                        )
-                        if new_count is None:
-                            raise RuntimeError(
-                                "The Llama daily quota was reached before "
-                                "the analysis could start."
-                            )
+                    consume_model_daily_usage(class_d_model_selection)
 
                     run_id = trigger_class_d_analysis_job(
                         analysis_id,
@@ -6498,19 +6509,15 @@ def render_compare_llms():
                     ]
                 )
 
-                if ask_model_selection in {
-                    "LLAMA70",
-                    "BOTH",
-                }:
-                    llama_used = get_llama_daily_usage()
-                    llama_remaining = max(
-                        LLAMA_DAILY_QUESTION_LIMIT
-                        - llama_used,
+                for model_key in selected_quota_models(ask_model_selection):
+                    remaining = max(
+                        MODEL_DAILY_LIMITS[model_key]
+                        - get_model_daily_usage(model_key),
                         0,
                     )
                     st.caption(
-                        "Llama 3.3 70B questions remaining today: "
-                        f"{llama_remaining}"
+                        f"{MODEL_QUOTA_LABELS[model_key]} questions "
+                        f"remaining today: {remaining}"
                     )
             else:
                 ask_model_selection = "DEFAULT"
@@ -6640,15 +6647,9 @@ def render_compare_llms():
                     )
 
                 if class_for_ask == "D":
-                    if (
-                        ask_model_selection
-                        in {"LLAMA70", "BOTH"}
-                        and get_llama_daily_usage()
-                        >= LLAMA_DAILY_QUESTION_LIMIT
-                    ):
-                        ask_errors.append(
-                            "The daily Llama 3.3 70B question limit has been reached."
-                        )
+                    quota_message = quota_error(ask_model_selection)
+                    if quota_message:
+                        ask_errors.append(quota_message)
 
                 if not ASK_JOB_ID:
                     ask_errors.append(
@@ -6670,16 +6671,8 @@ def render_compare_llms():
                             include_reference_context=include_reference_context,
                         )
 
-                        if (
-                            class_for_ask == "D"
-                            and ask_model_selection
-                            in {"LLAMA70", "BOTH"}
-                        ):
-                            consumed = consume_llama_daily_usage()
-                            if consumed is None:
-                                raise RuntimeError(
-                                    "The Llama daily quota could not be reserved."
-                                )
+                        if class_for_ask == "D":
+                            consume_model_daily_usage(ask_model_selection)
 
                         run_id = trigger_question_job(
                             question_run_id
@@ -8842,19 +8835,10 @@ with tab_knowledge_graph:
                     "The Ask Job is not attached to this App deployment."
                 )
 
-            if (
-                graph_class == "D"
-                and graph_question_model_selection
-                in {
-                    "LLAMA70",
-                    "BOTH",
-                }
-                and get_llama_daily_usage()
-                >= LLAMA_DAILY_QUESTION_LIMIT
-            ):
-                graph_question_errors.append(
-                    "The daily Llama 3.3 70B question limit has been reached."
-                )
+            if graph_class == "D":
+                quota_message = quota_error(graph_question_model_selection)
+                if quota_message:
+                    graph_question_errors.append(quota_message)
 
             if graph_question_errors:
                 for error in graph_question_errors:
@@ -8888,21 +8872,10 @@ with tab_knowledge_graph:
                         )
                     )
 
-                    if (
-                        graph_class == "D"
-                        and graph_question_model_selection
-                        in {
-                            "LLAMA70",
-                            "BOTH",
-                        }
-                    ):
-                        consumed = (
-                            consume_llama_daily_usage()
+                    if graph_class == "D":
+                        consume_model_daily_usage(
+                            graph_question_model_selection
                         )
-                        if consumed is None:
-                            raise RuntimeError(
-                                "The Llama daily quota could not be reserved."
-                            )
 
                     graph_question_job_run_id = (
                         trigger_question_job(
@@ -11348,8 +11321,9 @@ workflow. Assistant correction checks never overwrite graph edges.
 ### Class D
 
 Class D may use GPT-OSS 20B, Llama 3.3 70B, or both against the same prepared
-evidence set. Llama 3.3 70B is limited to
-**{LLAMA_DAILY_QUESTION_LIMIT} questions per user per day** in the PoC.
+evidence set. The PoC limits are **{GPT20_DAILY_QUESTION_LIMIT} GPT-OSS 20B**
+and **{LLAMA_DAILY_QUESTION_LIMIT} Llama 3.3 70B** questions per user per day.
+Selecting Both uses one question from each model.
 
 ### Validation status
 
