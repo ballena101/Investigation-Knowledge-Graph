@@ -1106,13 +1106,14 @@ removes the encrypted payload from Neo4j.
 
 Raw Class D text is not transported as a Job parameter.
 
-### Llama resource control
+### Class D model resource control
 
-Llama 3.3 70B is limited to five questions per user per day in the PoC.
+GPT-OSS 20B is limited to 30 and Llama 3.3 70B to 10 questions per user
+per day in the PoC. A Both-model request uses one from each counter.
 
 This is a cost/resource-control mechanism, not a confidentiality control.
 
-Only configured App administrators can reset a user's daily counter.
+Only configured App administrators can reset a user's daily model counter.
 
 ### Independent model outputs
 
