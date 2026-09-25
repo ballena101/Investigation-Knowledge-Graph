@@ -145,45 +145,53 @@ The generated bundle must include:
 - Plotly in the App requirements;
 - the visual-refinement version in the manifest/marker.
 
-## 9. Build compatibility correction found during this update
+## 9. Build compatibility corrections found during this update
 
-During materialisation validation, the builder exposed a pre-existing compatibility issue in the operational refinement layer.
+Materialisation validation exposed a pre-existing mixed-state problem in the old source-transform pipeline.
 
-The monolithic App source already carried the current Class-D quota constants:
+The monolithic App source already contained parts of the current operational refinement, including the present Class-D quota implementation, while the legacy transform still expected earlier anchors. Replaying that migration caused the bundle build to fail before reaching the new visual refinement.
 
-- GPT-OSS 20B: 30 questions/day;
-- Llama 3.3 70B: 10 questions/day.
+The builder now detects an already-current quota implementation and does **not** replay the legacy quota migration. It applies only the still-needed operational pieces:
 
-The older operational refinement still expected the legacy Llama-only `5` constant as its transformation anchor. That caused materialisation to stop before the new visual refinement was reached.
+- removal of the duplicate Analyse Documents summary when present;
+- current News & Alerts triage/refinement logic;
+- current Similar Cases explanatory wording.
 
-The bundle builder now normalises only those pre-applied constants back to the legacy anchor immediately before the operational transform. The operational transform then reapplies the current constants together with its wider quota/UI migration.
+The Similar Cases wording step is also idempotent: it updates only legacy wording that is still present and leaves already-updated wording untouched.
 
-This is a build-compatibility correction; it does not change the intended quotas.
+This compatibility work does not change the intended Class-D limits or governance. It makes the bundle builder safe against the partially pre-materialised state of the monolithic App source.
+
+GitHub Actions materialisation run **91** (`36202319746`) completed successfully after these corrections.
 
 ## 10. Files changed for this refinement
 
 The implementation from this chat changes:
 
 - `src/ikf/app_visual_refinement.py` — purpose-fit UI transformation;
-- `scripts/build_databricks_app_bundle.py` — visual-refinement integration, manifest/bundle update and quota-anchor compatibility normalisation;
+- `scripts/build_databricks_app_bundle.py` — visual-refinement integration, manifest/bundle update and idempotent compatibility handling for already-materialised operational refinements;
 - `app/requirements.txt` — Plotly dependency;
 - generated `databricks_app/**` — refreshed automatically after successful materialisation;
-- documentation — this record plus current documentation/index updates.
+- `docs/36_purpose_fit_app_visual_refinement.md` — complete change record;
+- `docs/README.md` — current documentation index and operational App flow updated to include Timeline and to show SHIELD as project-only rather than App-visible.
 
-## 11. Validation expectations
+## 11. Validation status and expectations
 
-Before treating this App revision as runtime validated, confirm:
+Completed at source/materialisation level:
 
-1. materialised bundle builds and compiles successfully in GitHub Actions;
-2. generated `databricks_app/app.py` contains the Plotly timeline;
-3. Timeline renders as a visual event sequence for an existing completed analysis;
-4. **View timeline data** remains available and collapsed by default;
-5. only the five simplified timeline categories are exposed in the review UI;
-6. News & Alerts no longer shows **Alerts by country** or **Daily alert count**;
-7. vessel-type and event-type charts remain available;
-8. no SHIELD classification section is visible in the App;
-9. SHIELD code/governance/project assets remain present in the repository;
-10. no additional LLM execution is triggered by opening the Timeline.
+1. the materialised bundle builds successfully in GitHub Actions;
+2. Plotly is included in the App dependency set;
+3. the visual-refinement layer is included in the bundle contract/manifest path;
+4. SHIELD remains present in project code/governance while its App section is removed by the purpose-fit UI layer.
+
+Still to confirm after the next Databricks App pull/deployment:
+
+1. Timeline renders as a visual event sequence for an existing completed analysis;
+2. **View timeline data** remains available and collapsed by default;
+3. only the five simplified timeline categories are exposed in the review UI;
+4. News & Alerts no longer shows **Alerts by country** or **Daily alert count**;
+5. vessel-type and event-type charts remain available;
+6. no SHIELD classification section is visible in the App;
+7. no additional LLM execution is triggered by opening the Timeline.
 
 ## 12. Product direction
 
