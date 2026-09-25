@@ -27,6 +27,15 @@
     "live_news_query",
     "live_news_tab"
   ],
+  "applied_operational_refinements": [
+    "analysis_summary_findings_only",
+    "class_d_ask_quotas_gpt20_30_llama70_10",
+    "analysis_runs_do_not_consume_ask_quota",
+    "news_triage_semantics_and_filters",
+    "news_active_analysis_lexical_relevance",
+    "news_unique_fatal_alert_count",
+    "similar_cases_full_processed_maira_scope_wording"
+  ],
   "applied_parakeet_adoptions": [
     "parakeet_governance_imports",
     "parakeet_transcript_discovery",
@@ -91,10 +100,11 @@
   "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.4",
   "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.2",
   "branding_adoption_version": "IKF_APP_BRANDING_ADOPTION_V0.1",
-  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.10",
+  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.11",
   "files_api_download_adoption_version": "IKF_APP_FILES_API_DOWNLOAD_V0.1",
-  "materialized_app_sha256": "aae0f816b9d442d45bc351cbb96acebec2eb74cbdebe57ddf8c66ede3e0017b4",
+  "materialized_app_sha256": "1860d8931fda656db2306ae2a50d0b95ad2eaddfdc9207bbc5732eaf3a23be85",
   "news_adoption_version": "IKF_APP_NEWS_ADOPTION_V0.1",
+  "operational_refinement_version": "IKF_APP_OPERATIONAL_REFINEMENT_V0.2",
   "parakeet_adoption_version": "IKF_APP_PARAKEET_ADOPTION_V0.3",
   "shared_package_path": "src/ikf",
   "simplification_adoption_version": "IKF_APP_SIMPLIFICATION_ADOPTION_V0.5",

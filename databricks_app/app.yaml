@@ -46,8 +46,11 @@ env:
   - name: IKG_ADMIN_USERS
     valueFrom: ikg_admin_users
 
+  - name: GPT20_DAILY_QUESTION_LIMIT
+    value: "30"
+
   - name: LLAMA_DAILY_QUESTION_LIMIT
-    value: "5"
+    value: "10"
 
   - name: NEWS_DASHBOARD_URL
     value: "https://adb-7405609619074273.13.azuredatabricks.net/dashboardsv3/01f1adf31a9718cfafc6bba8e50e77fb/published?o=7405609619074273"

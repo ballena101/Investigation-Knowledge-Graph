@@ -83,7 +83,8 @@ IKG_ADMIN_USERS = {
 MAX_DOCUMENTS_PER_ANALYSIS = 5
 CLASS_D_CONTENT_RETENTION_HOURS = 24
 OTHER_CONTENT_RETENTION_HOURS = 72
-LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "5"))
+GPT20_DAILY_QUESTION_LIMIT = int(os.getenv("GPT20_DAILY_QUESTION_LIMIT", "30"))
+LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "10"))
 QUOTA_TIMEZONE = "Europe/Lisbon"
 
 IKF_SOURCE_VOLUME_ROOT = (
@@ -611,11 +612,11 @@ SELECT
         ELSE 'Other'
     END AS eventtype,
     CASE
-        WHEN (UPPER(headline) LIKE '%KILLED%') OR (UPPER(headline) LIKE '%DEAD%') OR (UPPER(headline) LIKE '%DEATH%') OR (UPPER(headline) LIKE '%DIED%') OR (UPPER(headline) LIKE '%FATAL%') OR (UPPER(headline) LIKE '%FATALITY%') OR (UPPER(headline) LIKE '%FATALITIES%') OR (UPPER(headline) LIKE '%LOSS OF LIFE%') THEN 'Fatal'
-        WHEN (UPPER(headline) LIKE '%HOSPITALIZED%') OR (UPPER(headline) LIKE '%INJURED%') THEN 'Very Serious Casualty'
-        WHEN UPPER(headline) LIKE '%FIRE%' THEN 'Very Serious Casualty'
-        WHEN UPPER(headline) LIKE '%COLLISION%' THEN 'Very Serious Casualty'
-        WHEN UPPER(headline) LIKE '%GROUNDING%' THEN 'Very Serious Casualty'
+        WHEN (UPPER(headline) LIKE '%KILLED%') OR (UPPER(headline) LIKE '%DEAD%') OR (UPPER(headline) LIKE '%DEATH%') OR (UPPER(headline) LIKE '%DIED%') OR (UPPER(headline) LIKE '%FATAL%') OR (UPPER(headline) LIKE '%FATALITY%') OR (UPPER(headline) LIKE '%FATALITIES%') OR (UPPER(headline) LIKE '%LOSS OF LIFE%') THEN 'Fatality signal'
+        WHEN (UPPER(headline) LIKE '%HOSPITALIZED%') OR (UPPER(headline) LIKE '%INJURED%') THEN 'Injury signal'
+        WHEN UPPER(headline) LIKE '%FIRE%' THEN 'Occurrence signal'
+        WHEN UPPER(headline) LIKE '%COLLISION%' THEN 'Occurrence signal'
+        WHEN UPPER(headline) LIKE '%GROUNDING%' THEN 'Occurrence signal'
         ELSE 'unknown'
     END AS severity,
     CASE
@@ -738,6 +739,29 @@ def quota_date():
     ).date().isoformat()
 
 
+def get_gpt20_daily_usage():
+    user_key = get_current_user_key()
+    usage_key = f"{user_key}|GPT20|{quota_date()}"
+    query = """
+    MERGE (u:ModelDailyUsage {usage_key: $usage_key})
+    ON CREATE SET
+        u.user_key = $user_key,
+        u.model_key = 'GPT20',
+        u.usage_date = $usage_date,
+        u.question_count = 0,
+        u.created_at = datetime()
+    RETURN u.question_count AS question_count
+    """
+    with get_driver().session() as session:
+        record = session.run(
+            query,
+            usage_key=usage_key,
+            user_key=user_key,
+            usage_date=quota_date(),
+        ).single()
+    return int(record["question_count"] or 0)
+
+
 def get_llama_daily_usage():
     user_key = get_current_user_key()
     usage_key = f"{user_key}|LLAMA70|{quota_date()}"
@@ -798,6 +822,56 @@ def consume_llama_daily_usage():
         if record
         else None
     )
+
+
+def reserve_class_d_question_usage(model_selection):
+    """Reserve the selected Class-D Ask allowances in one Neo4j transaction."""
+    plans = []
+    if model_selection in {"GPT20", "BOTH"}:
+        plans.append(("GPT20", GPT20_DAILY_QUESTION_LIMIT))
+    if model_selection in {"LLAMA70", "BOTH"}:
+        plans.append(("LLAMA70", LLAMA_DAILY_QUESTION_LIMIT))
+    if not plans:
+        return {}
+
+    user_key = get_current_user_key()
+    usage_date = quota_date()
+
+    def _reserve(tx):
+        counts = {}
+        for model_key, limit in plans:
+            usage_key = f"{user_key}|{model_key}|{usage_date}"
+            record = tx.run(
+                """
+                MERGE (u:ModelDailyUsage {usage_key: $usage_key})
+                ON CREATE SET
+                    u.user_key = $user_key,
+                    u.model_key = $model_key,
+                    u.usage_date = $usage_date,
+                    u.question_count = 0,
+                    u.created_at = datetime()
+                WITH u
+                WHERE u.question_count < $limit
+                SET
+                    u.question_count = u.question_count + 1,
+                    u.updated_at = datetime()
+                RETURN u.question_count AS question_count
+                """,
+                usage_key=usage_key,
+                user_key=user_key,
+                model_key=model_key,
+                usage_date=usage_date,
+                limit=limit,
+            ).single()
+            if record is None:
+                raise RuntimeError(
+                    f"The daily {model_key} Ask allowance has been reached."
+                )
+            counts[model_key] = int(record["question_count"] or 0)
+        return counts
+
+    with get_driver().session() as session:
+        return session.execute_write(_reserve)
 
 
 def list_llama_daily_usage():
@@ -6357,16 +6431,19 @@ with tab_home:
         )
 
 
+
 with tab_news:
     st.subheader("News & Alerts")
+    st.caption(
+        "External alert intelligence. Event type and triage signals are derived "
+        "from alert text for screening only; they are not an official casualty "
+        "classification or validated investigation evidence."
+    )
 
     if not SQL_WAREHOUSE_ID:
         st.warning(
             "**SQL warehouse not configured.** Set the `SQL_WAREHOUSE_ID` "
-            "environment variable in `app.yaml` to display live news data. "
-            "The app service principal also needs SELECT on "
-            "`bdw_analysis_prod.siana.eu_eea_alerts_hierarchy_v` and "
-            "`bdw_marinfo_prod.marinfo5.lot2a_ship`, plus SQL warehouse access."
+            "environment variable in `app.yaml` to display live news data."
         )
         if NEWS_DASHBOARD_URL:
             st.link_button(
@@ -6376,7 +6453,7 @@ with tab_news:
                 use_container_width=True,
             )
     else:
-        with st.spinner("Querying news alerts for the last 7 days\u2026"):
+        with st.spinner("Querying news alerts for the last 7 days…"):
             _news_df, _news_err = fetch_news_alerts_data()
 
         if _news_err:
@@ -6384,87 +6461,252 @@ with tab_news:
         elif _news_df is None or _news_df.empty:
             st.info("No alerts found for the last 7 days.")
         else:
-            k1, k2, k3, k4 = st.columns(4)
-            k1.metric("Total alerts", int(_news_df["alert_id"].nunique()))
-            _last_update = _news_df["load_date"].max()
-            k2.metric(
-                "Last update",
-                _last_update.strftime("%Y-%m-%d %H:%M") if pd.notna(_last_update) else "—",
-            )
-            k3.metric("Fatal incidents", int((_news_df["lossoflife"] == "Yes").sum()))
-            k4.metric("Countries", int(_news_df["match_country"].dropna().nunique()))
+            _filtered = _news_df.copy()
 
-            st.markdown("#### Alert locations")
-            _map_df = _news_df.dropna(
-                subset=["event_location_latitude", "event_location_longitude"]
-            ).rename(
-                columns={
-                    "event_location_latitude": "latitude",
-                    "event_location_longitude": "longitude",
-                }
+            _f1, _f2 = st.columns(2)
+            with _f1:
+                _countries = sorted(
+                    _news_df["match_country"].dropna().unique().tolist()
+                )
+                _selected_countries = st.multiselect(
+                    "Country affected",
+                    options=_countries,
+                    default=[],
+                    placeholder="All countries",
+                    key="news_country_filter",
+                )
+            with _f2:
+                _min_date = _news_df["alert_timestamp"].dt.date.min()
+                _max_date = _news_df["alert_timestamp"].dt.date.max()
+                _date_range = st.date_input(
+                    "Date range",
+                    value=(_min_date, _max_date),
+                    min_value=_min_date,
+                    max_value=_max_date,
+                    key="news_date_range",
+                )
+
+            _f3, _f4, _f5 = st.columns(3)
+            with _f3:
+                _event_types = st.multiselect(
+                    "Event type",
+                    options=sorted(_news_df["eventtype"].dropna().unique().tolist()),
+                    default=[],
+                    placeholder="All event types",
+                    key="news_event_type_filter",
+                )
+            with _f4:
+                _vessel_types = st.multiselect(
+                    "Vessel type",
+                    options=sorted(_news_df["vesseltype"].dropna().unique().tolist()),
+                    default=[],
+                    placeholder="All vessel types",
+                    key="news_vessel_type_filter",
+                )
+            with _f5:
+                _match_reasons = st.multiselect(
+                    "Matched by",
+                    options=sorted(_news_df["match_reason"].dropna().unique().tolist()),
+                    default=[],
+                    placeholder="All match reasons",
+                    key="news_match_reason_filter",
+                )
+
+            _text_search = st.text_input(
+                "Search alert text",
+                placeholder="e.g. engine fire, grounding, collision",
+                key="news_text_filter",
             )
-            if not _map_df.empty:
-                st.map(_map_df[["latitude", "longitude"]])
+
+            if _selected_countries:
+                _filtered = _filtered[
+                    _filtered["match_country"].isin(_selected_countries)
+                ]
+            if isinstance(_date_range, tuple) and len(_date_range) == 2:
+                _start_date, _end_date = _date_range
+                _filtered = _filtered[
+                    (_filtered["alert_timestamp"].dt.date >= _start_date)
+                    & (_filtered["alert_timestamp"].dt.date <= _end_date)
+                ]
+            if _event_types:
+                _filtered = _filtered[_filtered["eventtype"].isin(_event_types)]
+            if _vessel_types:
+                _filtered = _filtered[_filtered["vesseltype"].isin(_vessel_types)]
+            if _match_reasons:
+                _filtered = _filtered[_filtered["match_reason"].isin(_match_reasons)]
+            if _text_search.strip():
+                _filtered = _filtered[
+                    _filtered["headlinefull"].fillna("").str.contains(
+                        _text_search.strip(),
+                        case=False,
+                        regex=False,
+                    )
+                ]
+
+            _case_phrases = []
+            _case_terms = set()
+            if active_analysis_id:
+                try:
+                    _case_graph = load_analysis_graph(active_analysis_id)
+                    _stop = {
+                        "with", "from", "that", "this", "were", "into", "after",
+                        "before", "during", "vessel", "ship", "event", "finding",
+                        "factor", "safety", "system",
+                    }
+                    for _node in _case_graph.get("nodes") or []:
+                        if _node.get("node_kind") not in {
+                            "Event", "ContributingFactor", "SafetyIssue", "Finding", "System"
+                        }:
+                            continue
+                        _label = str(_node.get("label") or "").strip().casefold()
+                        if not _label or _label == "subject vessel":
+                            continue
+                        _case_phrases.append(_label)
+                        for _term in re.findall(r"\w+", _label, flags=re.UNICODE):
+                            if len(_term) >= 4 and _term not in _stop:
+                                _case_terms.add(_term)
+                except Exception:
+                    _case_phrases = []
+                    _case_terms = set()
+
+            if _case_phrases or _case_terms:
+                def _active_case_relevance(value):
+                    _text = str(value or "").casefold()
+                    return (
+                        3 * sum(1 for _phrase in _case_phrases if _phrase in _text)
+                        + sum(1 for _term in _case_terms if _term in _text)
+                    )
+
+                _filtered = _filtered.copy()
+                _filtered["_case_relevance"] = _filtered["headlinefull"].apply(
+                    _active_case_relevance
+                )
+                _related_only = st.checkbox(
+                    "Related to active analysis only",
+                    value=False,
+                    key="news_related_to_active_analysis",
+                    help=(
+                        "Deterministic lexical relevance to the active analysis graph. "
+                        "This is an external intelligence aid, not evidence linking the alert to the case."
+                    ),
+                )
+                if _related_only:
+                    _filtered = _filtered[_filtered["_case_relevance"] > 0]
+                st.caption(
+                    "Active-case relevance uses existing analysis concepts only; no extra LLM call is made."
+                )
+
+            if _filtered.empty:
+                st.info("No alerts match the selected filters.")
             else:
-                st.caption("No geo-located alerts available.")
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Total alerts", int(_filtered["alert_id"].nunique()))
+                _last_update = _filtered["load_date"].max()
+                k2.metric(
+                    "Last update",
+                    _last_update.strftime("%Y-%m-%d %H:%M") if pd.notna(_last_update) else "—",
+                )
+                k3.metric(
+                    "Fatal incidents",
+                    int(
+                        _filtered.loc[
+                            _filtered["lossoflife"] == "Yes",
+                            "alert_id",
+                        ].nunique()
+                    ),
+                )
+                k4.metric(
+                    "Countries",
+                    int(_filtered["match_country"].dropna().nunique()),
+                )
 
-            st.markdown("#### Alert details")
-            _detail_cols = [
-                "first_alert_timestamp", "alert_timestamp", "headlinefull",
-                "severity", "match_reason", "eventtype", "alert_version",
-            ]
-            _display_df = (
-                _news_df[_detail_cols]
-                .sort_values("alert_timestamp", ascending=False)
-                .reset_index(drop=True)
-            )
-            _display_df.columns = [
-                "First seen", "Latest update", "Headline",
-                "Severity", "Match reason", "Event type", "Version",
-            ]
-            st.dataframe(_display_df, use_container_width=True, height=400)
+                st.markdown("#### Alert locations")
+                _map_df = _filtered.dropna(
+                    subset=["event_location_latitude", "event_location_longitude"]
+                ).rename(
+                    columns={
+                        "event_location_latitude": "latitude",
+                        "event_location_longitude": "longitude",
+                    }
+                )
+                if not _map_df.empty:
+                    st.map(_map_df[["latitude", "longitude"]])
+                else:
+                    st.caption("No geo-located alerts available.")
 
-            ch1, ch2 = st.columns(2)
-            with ch1:
-                st.markdown("#### Alerts by vessel type")
-                _vtype = (
-                    _news_df.drop_duplicates(subset=["alert_id", "vesseltype"])
-                    .groupby("vesseltype")["alert_id"].nunique().sort_values(ascending=False).head(15)
+                st.markdown("#### Alert details")
+                _detail_cols = [
+                    "first_alert_timestamp", "alert_timestamp", "headlinefull",
+                    "severity", "match_reason", "eventtype", "alert_version",
+                ]
+                _display_df = (
+                    _filtered[_detail_cols]
+                    .sort_values("alert_timestamp", ascending=False)
+                    .reset_index(drop=True)
                 )
-                if not _vtype.empty:
-                    st.bar_chart(_vtype)
-            with ch2:
-                st.markdown("#### Alerts by country")
-                _country = (
-                    _news_df[_news_df["match_country"].notna()]
-                    .drop_duplicates(subset=["alert_id", "match_country"])
-                    .groupby("match_country")["alert_id"].nunique().sort_values(ascending=False).head(15)
+                _display_df.columns = [
+                    "First seen", "Latest update", "Headline",
+                    "Triage signal", "Match reason", "Event type", "Version",
+                ]
+                st.dataframe(
+                    _display_df,
+                    column_config={
+                        "Triage signal": st.column_config.TextColumn(
+                            "Triage signal",
+                            help=(
+                                "Headline-derived screening signal; not an official "
+                                "casualty classification."
+                            ),
+                        )
+                    },
+                    use_container_width=True,
+                    height=400,
                 )
-                if not _country.empty:
-                    st.bar_chart(_country)
 
-            ch3, ch4 = st.columns(2)
-            with ch3:
-                st.markdown("#### Alerts by event type")
-                _etype = (
-                    _news_df.drop_duplicates(subset=["alert_id", "eventtype"])
-                    .groupby("eventtype")["alert_id"].nunique().sort_values(ascending=False)
-                )
-                if not _etype.empty:
-                    st.bar_chart(_etype)
-            with ch4:
-                st.markdown("#### Daily alert count")
-                _daily = (
-                    _news_df.assign(day=_news_df["alert_timestamp"].dt.date)
-                    .drop_duplicates(subset=["alert_id", "day"])
-                    .groupby("day")["alert_id"].nunique().sort_index()
-                )
-                if not _daily.empty:
-                    st.bar_chart(_daily)
+                ch1, ch2 = st.columns(2)
+                with ch1:
+                    st.markdown("#### Alerts by vessel type")
+                    _vtype = (
+                        _filtered.drop_duplicates(subset=["alert_id", "vesseltype"])
+                        .groupby("vesseltype")["alert_id"].nunique()
+                        .sort_values(ascending=False).head(15)
+                    )
+                    if not _vtype.empty:
+                        st.bar_chart(_vtype)
+                with ch2:
+                    st.markdown("#### Alerts by country")
+                    _country = (
+                        _filtered[_filtered["match_country"].notna()]
+                        .drop_duplicates(subset=["alert_id", "match_country"])
+                        .groupby("match_country")["alert_id"].nunique()
+                        .sort_values(ascending=False).head(15)
+                    )
+                    if not _country.empty:
+                        st.bar_chart(_country)
+
+                ch3, ch4 = st.columns(2)
+                with ch3:
+                    st.markdown("#### Alerts by event type")
+                    _etype = (
+                        _filtered.drop_duplicates(subset=["alert_id", "eventtype"])
+                        .groupby("eventtype")["alert_id"].nunique()
+                        .sort_values(ascending=False)
+                    )
+                    if not _etype.empty:
+                        st.bar_chart(_etype)
+                with ch4:
+                    st.markdown("#### Daily alert count")
+                    _daily = (
+                        _filtered.assign(day=_filtered["alert_timestamp"].dt.date)
+                        .drop_duplicates(subset=["alert_id", "day"])
+                        .groupby("day")["alert_id"].nunique().sort_index()
+                    )
+                    if not _daily.empty:
+                        st.bar_chart(_daily)
 
     st.caption(
-        "News is treated as external, unvalidated information. "
-        "It is not mixed with validated investigation findings."
+        "News remains external, unvalidated information and is not mixed with "
+        "validated investigation findings."
     )
 
 with tab_transcriptions:
@@ -7147,58 +7389,6 @@ with tab_new_analysis:
                     "Llama 3.3 70B Databricks service is not configured."
                 )
 
-            llama_used = get_llama_daily_usage()
-            llama_remaining = max(
-                LLAMA_DAILY_QUESTION_LIMIT
-                - llama_used,
-                0,
-            )
-            st.metric(
-                "Llama 3.3 70B questions remaining today",
-                llama_remaining,
-                help=(
-                    f"Limit: {LLAMA_DAILY_QUESTION_LIMIT} per user per day "
-                    f"({QUOTA_TIMEZONE}). Running both models consumes one "
-                    "Llama question."
-                ),
-            )
-
-            if llama_remaining == 0:
-                st.warning(
-                    "The daily Llama 3.3 70B question limit has been reached."
-                )
-
-            if is_current_user_admin():
-                usage_rows = list_llama_daily_usage()
-                admin_users = [
-                    row["user_key"]
-                    for row in usage_rows
-                ]
-
-                if get_current_user_key() not in admin_users:
-                    admin_users.append(
-                        get_current_user_key()
-                    )
-
-                reset_target = st.selectbox(
-                    "Admin quota reset user",
-                    options=sorted(set(admin_users)),
-                    key="llama_reset_user",
-                )
-
-                if st.button(
-                    "Admin: reset selected user's Llama quota",
-                    key="reset_llama_quota",
-                ):
-                    reset_llama_daily_usage(
-                        reset_target
-                    )
-                    st.success(
-                        "Today's Llama 70B quota has been reset for "
-                        + reset_target
-                    )
-                    st.rerun()
-
     with st.form(
         "new_analysis_form",
         clear_on_submit=False,
@@ -7342,14 +7532,6 @@ with tab_new_analysis:
             if needs_llama70 and not CLASS_D_LLAMA70_ENDPOINT:
                 errors.append(
                     "The dedicated Llama 3.3 70B Databricks model service is not configured."
-                )
-            if (
-                needs_llama70
-                and get_llama_daily_usage()
-                >= LLAMA_DAILY_QUESTION_LIMIT
-            ):
-                errors.append(
-                    "The daily Llama 3.3 70B question limit has been reached."
                 )
         elif not policy["ready"]:
             errors.append(
@@ -7495,18 +7677,6 @@ with tab_new_analysis:
                         + class_d_model_label
                     )
 
-                    if class_d_model_selection in {
-                        "LLAMA70",
-                        "BOTH",
-                    }:
-                        new_count = (
-                            consume_llama_daily_usage()
-                        )
-                        if new_count is None:
-                            raise RuntimeError(
-                                "The Llama daily quota was reached before "
-                                "the analysis could start."
-                            )
 
                     run_id = trigger_class_d_analysis_job(
                         analysis_id,
@@ -7607,202 +7777,6 @@ with tab_new_analysis:
 
 
 
-    st.divider()
-    st.markdown("### Analysis summary")
-    st.caption(
-        "Compact overview of what the completed analysis produced. "
-        "Use Findings & Evidence for item-level inspection and source pages, "
-        "Knowledge Graph for relationship exploration, and Review & Validate "
-        "for human decisions."
-    )
-
-    try:
-        result_analyses = load_analysis_groups()
-    except Exception as exc:
-        result_analyses = []
-        st.error(
-            "Analysis results could not be loaded."
-        )
-        st.exception(exc)
-
-    if result_analyses:
-        result_by_id = {
-            item["analysis_id"]: item
-            for item in result_analyses
-        }
-
-        result_analysis_id = (
-            active_analysis_id
-            if active_analysis_id
-            in result_by_id
-            else list(result_by_id)[0]
-        )
-        result_meta = result_by_id[
-            result_analysis_id
-        ]
-        st.caption(
-            "Using active analysis: "
-            + str(
-                result_meta.get(
-                    "analysis_title"
-                )
-                or result_analysis_id
-            )
-        )
-
-        if result_meta.get("status") != "COMPLETED":
-            st.info(
-                "Structured results become available after processing "
-                "completes. Use Refresh status above to update the four-stage view."
-            )
-        else:
-            completed_model_runs = [
-                item
-                for item in load_model_runs(
-                    result_analysis_id
-                )
-                if item.get("status") == "COMPLETED"
-            ]
-
-            if len(completed_model_runs) > 1:
-                result_model_by_id = {
-                    item["model_run_id"]: item
-                    for item in completed_model_runs
-                }
-                result_model_run_id = st.selectbox(
-                    "Model output",
-                    options=list(
-                        result_model_by_id
-                    ),
-                    format_func=lambda value: (
-                        result_model_by_id[value].get(
-                            "model_label"
-                        )
-                        or result_model_by_id[value].get(
-                            "model_key"
-                        )
-                        or value
-                    ),
-                    key=(
-                        "analyse_result_model_"
-                        + result_analysis_id
-                    ),
-                )
-                result_graph = load_model_run_graph(
-                    result_analysis_id,
-                    result_model_run_id,
-                )
-            elif len(completed_model_runs) == 1:
-                result_graph = load_model_run_graph(
-                    result_analysis_id,
-                    completed_model_runs[0][
-                        "model_run_id"
-                    ],
-                )
-            else:
-                result_graph = load_analysis_graph(
-                    result_analysis_id
-                )
-
-            result_nodes = result_graph[
-                "nodes"
-            ]
-            result_edges = result_graph[
-                "edges"
-            ]
-
-            nodes_by_kind = {}
-            for node in result_nodes:
-                nodes_by_kind.setdefault(
-                    node.get("node_kind")
-                    or "Other",
-                    [],
-                ).append(node)
-
-            event_nodes = nodes_by_kind.get(
-                "Event",
-                [],
-            )
-            contributing_nodes = nodes_by_kind.get(
-                "ContributingFactor",
-                [],
-            )
-            finding_nodes = nodes_by_kind.get(
-                "Finding",
-                [],
-            )
-            safety_issue_nodes = nodes_by_kind.get(
-                "SafetyIssue",
-                [],
-            )
-            recommendation_nodes = nodes_by_kind.get(
-                "Recommendation",
-                [],
-            )
-
-            result_metrics = st.columns(5)
-            result_metrics[0].metric(
-                "Events",
-                len(event_nodes),
-            )
-            result_metrics[1].metric(
-                "Contributing factors",
-                len(contributing_nodes),
-            )
-            result_metrics[2].metric(
-                "Findings",
-                len(finding_nodes),
-            )
-            result_metrics[3].metric(
-                "Safety issues",
-                len(safety_issue_nodes),
-            )
-            result_metrics[4].metric(
-                "Recommendations",
-                len(recommendation_nodes),
-            )
-
-            analytical_relationships = [
-                edge
-                for edge in result_edges
-                if (
-                    edge.get("edge_class")
-                    != "STRUCTURAL"
-                    and edge.get("relationship")
-                    in {
-                        "FOLLOWED_BY",
-                        "CONTRIBUTED_TO",
-                        "RESULTED_IN",
-                        "AFFECTED",
-                        "SUPPORTS",
-                    }
-                )
-            ]
-
-            summary_second_row = st.columns(3)
-            summary_second_row[0].metric(
-                "Analytical relationships",
-                len(analytical_relationships),
-            )
-            summary_second_row[1].metric(
-                "Graph concepts",
-                len(result_nodes),
-            )
-            summary_second_row[2].metric(
-                "Graph relationships",
-                len(result_edges),
-            )
-
-            st.info(
-                "For the detailed content behind these counts, open "
-                "Findings & Evidence. To explore how the concepts connect, "
-                "open Knowledge Graph. Human validation remains in "
-                "Review & Validate."
-            )
-    else:
-        st.info(
-            "No analyses are available yet."
-        )
 
 @st.fragment
 def render_compare_llms():
@@ -7988,19 +7962,23 @@ def render_compare_llms():
                     ]
                 )
 
-                if ask_model_selection in {
-                    "LLAMA70",
-                    "BOTH",
-                }:
-                    llama_used = get_llama_daily_usage()
-                    llama_remaining = max(
-                        LLAMA_DAILY_QUESTION_LIMIT
-                        - llama_used,
+                if ask_model_selection in {"GPT20", "BOTH"}:
+                    gpt20_remaining = max(
+                        GPT20_DAILY_QUESTION_LIMIT - get_gpt20_daily_usage(),
                         0,
                     )
                     st.caption(
-                        "Llama 3.3 70B questions remaining today: "
-                        f"{llama_remaining}"
+                        "GPT-OSS 20B Ask questions remaining today: "
+                        f"{gpt20_remaining} / {GPT20_DAILY_QUESTION_LIMIT}"
+                    )
+                if ask_model_selection in {"LLAMA70", "BOTH"}:
+                    llama_remaining = max(
+                        LLAMA_DAILY_QUESTION_LIMIT - get_llama_daily_usage(),
+                        0,
+                    )
+                    st.caption(
+                        "Llama 3.3 70B Ask questions remaining today: "
+                        f"{llama_remaining} / {LLAMA_DAILY_QUESTION_LIMIT}"
                     )
             else:
                 ask_model_selection = "DEFAULT"
@@ -8387,13 +8365,18 @@ def render_compare_llms():
 
                 if class_for_ask == "D":
                     if (
-                        ask_model_selection
-                        in {"LLAMA70", "BOTH"}
-                        and get_llama_daily_usage()
-                        >= LLAMA_DAILY_QUESTION_LIMIT
+                        ask_model_selection in {"GPT20", "BOTH"}
+                        and get_gpt20_daily_usage() >= GPT20_DAILY_QUESTION_LIMIT
                     ):
                         ask_errors.append(
-                            "The daily Llama 3.3 70B question limit has been reached."
+                            "The daily GPT-OSS 20B Ask limit has been reached."
+                        )
+                    if (
+                        ask_model_selection in {"LLAMA70", "BOTH"}
+                        and get_llama_daily_usage() >= LLAMA_DAILY_QUESTION_LIMIT
+                    ):
+                        ask_errors.append(
+                            "The daily Llama 3.3 70B Ask limit has been reached."
                         )
 
                 if not ASK_JOB_ID:
@@ -8416,16 +8399,10 @@ def render_compare_llms():
                             include_reference_context=include_reference_context,
                         )
 
-                        if (
-                            class_for_ask == "D"
-                            and ask_model_selection
-                            in {"LLAMA70", "BOTH"}
-                        ):
-                            consumed = consume_llama_daily_usage()
-                            if consumed is None:
-                                raise RuntimeError(
-                                    "The Llama daily quota could not be reserved."
-                                )
+                        if class_for_ask == "D":
+                            reserve_class_d_question_usage(
+                                ask_model_selection
+                            )
 
                         run_id = trigger_question_job(
                             question_run_id
@@ -9436,8 +9413,10 @@ with tab_findings:
     with similar_left:
         st.markdown("**MAIRA investigation reports**")
         st.caption(
-            "Deterministic lexical retrieval from processed case concepts. "
-            "No embedding or LLM similarity score is used."
+            "Search scope: all processed MAIRA INVESTIGATION / MAIN_REPORT passages "
+            "with canonical passages; the current report package is excluded. "
+            "Matching is deterministic and lexical over existing case concepts. "
+            "No embedding or LLM similarity score is used at this stage."
         )
 
         if (
@@ -9739,9 +9718,9 @@ with tab_findings:
     with similar_right:
         st.markdown("**News & alerts**")
         st.info(
-            "External/news similarity remains separate from validated "
-            "investigation knowledge and is handled in the News/dashboard "
-            "workstream."
+            "Recent alerts remain external, unverified intelligence. In News & Alerts, "
+            "use ‘Related to active analysis only’ for deterministic lexical screening "
+            "against active-analysis concepts; this does not turn an alert into evidence."
         )
 
 
