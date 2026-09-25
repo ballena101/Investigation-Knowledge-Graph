@@ -29,6 +29,9 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
     ):
         assert (output / name).is_file(), name
 
+    requirements = (output / "requirements.txt").read_text(encoding="utf-8")
+    assert "pandas>=2.2,<3" in requirements
+
     shared = output / "src" / "ikf"
     for name in (
         "app_adoption.py", "app_files_api_adoption.py", "app_audio_adoption.py",
