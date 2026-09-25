@@ -34,6 +34,7 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
         "app_adoption.py", "app_files_api_adoption.py", "app_audio_adoption.py",
         "app_audio_fixup.py", "app_parakeet_adoption.py", "app_timeline_adoption.py",
         "app_ui_adoption.py", "app_workflow_adoption.py", "app_simplification_adoption.py",
+        "app_news_adoption.py", "app_branding_adoption.py",
         "timeline.py", "transcription_governance.py", "source_routing.py",
         "evidence_locations.py", "question_scope.py", "review_governance.py",
         "shield_governance.py", "emcip_governance.py", "graph_governance.py", "retention.py",
@@ -44,6 +45,10 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
 def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     output = build_test_bundle(tmp_path)
     materialized = (output / "app.py").read_text(encoding="utf-8")
+
+    assert 'page_title="Safety Investigation AI Sandbox"' in materialized
+    assert 'st.title("Safety Investigation AI Sandbox")' in materialized
+    assert "Safety Investigation Knowledge & AI Support" not in materialized
 
     assert 'CLASS_D_LLAMA70_ENDPOINT = os.getenv(' in materialized
     assert "CLASS_D_OLLAMA_LLAMA70_URL" not in materialized
@@ -58,6 +63,18 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert '"Range": f"bytes={start}-{end}"' in materialized
     assert "http.client.IncompleteRead" in materialized
 
+    # User-authored live News & Alerts integration remains materialized.
+    assert "import pandas as pd" in materialized
+    assert 'SQL_WAREHOUSE_ID = os.getenv("SQL_WAREHOUSE_ID")' in materialized
+    assert "bdw_analysis_prod.siana.eu_eea_alerts_hierarchy_v" in materialized
+    assert "bdw_marinfo_prod.marinfo5.lot2a_ship" in materialized
+    assert "fetch_news_alerts_data" in materialized
+    assert "Querying news alerts for the last 7 days" in materialized
+    assert "Total alerts" in materialized
+    assert "Alert locations" in materialized
+    assert "Alerts by vessel type" in materialized
+    assert "Daily alert count" in materialized
+
     assert 'TRANSCRIPTION_JOB_ID = os.getenv(' in materialized
     assert "list_type_d_audio_sources" in materialized
     assert "Transcribe selected audio" in materialized
@@ -66,7 +83,6 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert "document_kind = 'TRANSCRIPT'" in materialized
     assert "Audio / reviewed transcript — Class D" not in materialized
 
-    # Independent ASR technologies share one governed workflow.
     assert "PARAKEET_TDT_06B_V3" in materialized
     assert "NVIDIA Parakeet TDT 0.6B v3" in materialized
     assert "Transcription engine / model" in materialized
@@ -80,7 +96,6 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert '(?:large-v3|turbo|parakeet-tdt-0\\.6b-v3)\\.json' in materialized
     assert '(?:large-v3|turbo)\\.json' not in materialized
 
-    # Published capability and IKF-observed performance must remain clearly separated.
     assert '"Transcription model capabilities"' in materialized
     assert '"Published languages": "99"' in materialized
     assert '"Published languages": "25 European languages"' in materialized
@@ -141,6 +156,8 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     app_yaml = (output / "app.yaml").read_text(encoding="utf-8")
     assert "EMCIP_MAPPING_JOB_ID" not in app_yaml
     assert "CLASS_D_OLLAMA_LLAMA70_URL" not in app_yaml
+    assert "SQL_WAREHOUSE_ID" in app_yaml
+    assert 'value: "372b5b52ba082619"' in app_yaml
     compile(materialized, str(output / "app.py"), "exec")
 
 
@@ -148,7 +165,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     output = build_test_bundle(tmp_path)
     manifest = json.loads((output / "ikf_bundle_manifest.json").read_text(encoding="utf-8"))
 
-    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.9"
+    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.10"
     assert manifest["parakeet_adoption_version"] == "IKF_APP_PARAKEET_ADOPTION_V0.3"
     assert set(manifest["applied_parakeet_adoptions"]) >= {
         "parakeet_governance_imports",
@@ -163,6 +180,15 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert manifest["ui_adoption_version"] == "IKF_APP_UI_ADOPTION_V0.3"
     assert manifest["workflow_adoption_version"] == "IKF_APP_WORKFLOW_ADOPTION_V0.1"
     assert manifest["simplification_adoption_version"] == "IKF_APP_SIMPLIFICATION_ADOPTION_V0.5"
+    assert manifest["news_adoption_version"] == "IKF_APP_NEWS_ADOPTION_V0.1"
+    assert manifest["branding_adoption_version"] == "IKF_APP_BRANDING_ADOPTION_V0.1"
+    assert set(manifest["applied_news_adoptions"]) == {
+        "pandas_news_dependency",
+        "sql_warehouse_binding",
+        "live_news_query",
+        "live_news_tab",
+    }
+    assert manifest["applied_branding_adoptions"] == ["safety_investigation_ai_sandbox"]
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert manifest["shared_package_path"] == "src/ikf"
 
@@ -179,4 +205,6 @@ def test_bundled_bootstrap_prefers_materialized_source(tmp_path):
     assert "transform_app_timeline_source" in bootstrap
     assert "transform_app_workflow_source" in bootstrap
     assert "transform_app_simplification_source" in bootstrap
+    assert "transform_app_news_source" in bootstrap
+    assert "transform_app_branding_source" in bootstrap
     assert (output / "src" / "ikf").is_dir()
