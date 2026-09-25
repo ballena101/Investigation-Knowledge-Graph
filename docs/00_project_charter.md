@@ -64,17 +64,18 @@ Model choice
 When only one model is selected, only that branch runs. When both are selected,
 neither model receives the other model's result before comparison.
 
-## Llama daily quota
+## Class D daily model quotas
 
-Llama 3.3 70B is limited in the PoC to **5 questions per user per day**.
+GPT-OSS 20B is limited to **30 questions per user per day** and Llama 3.3
+70B to **10 questions per user per day** in the PoC.
 
-A Both-model analysis consumes one Llama question. At five questions, further
-Llama-only or Both-model requests are blocked until the next day.
+A Both-model analysis consumes one question from each counter. At a selected
+model's limit, requests using that model are blocked until the next day.
 
 Quota timezone: `Europe/Lisbon`.
 
 Only identities configured in `IKG_ADMIN_USERS` may reset the current day's
-Llama counter. No administrator email is hard-coded in source.
+model counter. No administrator email is hard-coded in source.
 
 This is a PoC resource/cost control, not a model-safety characteristic.
 
