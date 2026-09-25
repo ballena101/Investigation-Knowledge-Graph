@@ -11,7 +11,10 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install faster-whisper==1.2.1 transformers==5.17.0 safetensors>=0.4 huggingface-hub>=0.34,<2
+# Version-range requirements are quoted deliberately. Databricks executes %pip
+# through a shell and unquoted '<' / '>' characters can be interpreted as shell
+# redirection rather than as PEP 440 version operators.
+# MAGIC %pip install faster-whisper==1.2.1 transformers==5.17.0 "safetensors>=0.4" "huggingface-hub>=0.34,<2"
 
 # COMMAND ----------
 
