@@ -41,6 +41,7 @@ if not MATERIALIZED_MARKER.is_file():
     from ikf.app_simplification_adoption import transform_app_simplification_source
     from ikf.app_news_adoption import transform_app_news_source
     from ikf.app_branding_adoption import transform_app_branding_source
+    from ikf.app_operational_refinement import transform_app_operational_refinement
 
     source, _ = transform_app_source(source)
     source, _ = transform_app_files_api_source(source)
@@ -53,6 +54,7 @@ if not MATERIALIZED_MARKER.is_file():
     source, _ = transform_app_audio_fixup_source(source)
     source, _ = transform_app_news_source(source)
     source, _ = transform_app_branding_source(source)
+    source, _ = transform_app_operational_refinement(source)
 
 code = compile(source, str(APP_FILE), "exec")
 exec(code, {"__name__": "__main__", "__file__": str(APP_FILE)})
