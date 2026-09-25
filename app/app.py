@@ -825,6 +825,37 @@ def fetch_news_alerts_data():
         return None, str(e)
 
 
+NEWS_RELEVANCE_KINDS = {
+    "Event", "ContributingFactor", "SafetyIssue", "Finding", "System"
+}
+
+
+def news_relevance_terms(graph):
+    """Use bounded graph concept labels for a transparent screening cue."""
+    terms = []
+    seen = set()
+    for node in graph.get("nodes", []):
+        if node.get("node_kind") not in NEWS_RELEVANCE_KINDS:
+            continue
+        label = " ".join(str(node.get("label") or "").split()).strip()
+        key = label.casefold()
+        if len(key) < 4 or key in seen:
+            continue
+        seen.add(key)
+        terms.append(label)
+        if len(terms) == 20:
+            break
+    return terms
+
+
+def matching_news_terms(headline, terms):
+    text = str(headline or "")
+    return [
+        term for term in terms
+        if re.search(r"(?<!\w)" + re.escape(term) + r"(?!\w)", text, re.I)
+    ]
+
+
 def resolve_model_policy(information_class):
     policy = INFORMATION_CLASSES[information_class]
 
@@ -5665,7 +5696,7 @@ with tab_news:
         elif _news_df is None or _news_df.empty:
             st.info("No alerts found.")
         else:
-            # ---------- Filters ----------
+            # Screening filters; no model call is made for relevance.
             _fcol1, _fcol2 = st.columns(2)
             with _fcol1:
                 _all_countries = sorted(
@@ -5693,11 +5724,53 @@ with tab_news:
                     key="news_date_range",
                 )
 
+            _fcol3, _fcol4, _fcol5 = st.columns(3)
+            with _fcol3:
+                _sel_events = st.multiselect(
+                    "Event type",
+                    sorted(_news_df["eventtype"].dropna().unique().tolist()),
+                    key="news_event_filter",
+                )
+            with _fcol4:
+                _sel_vessels = st.multiselect(
+                    "Vessel type",
+                    sorted(_news_df["vesseltype"].dropna().unique().tolist()),
+                    key="news_vessel_filter",
+                )
+            with _fcol5:
+                _sel_reasons = st.multiselect(
+                    "Match reason",
+                    sorted(_news_df["match_reason"].dropna().unique().tolist()),
+                    key="news_reason_filter",
+                )
+            _news_search = st.text_input(
+                "Search alert headlines", key="news_text_search"
+            ).strip()
+            _related_only = st.checkbox(
+                "Related to active analysis only",
+                disabled=not active_analysis_id,
+                key="news_related_only",
+                help="Matches graph concept labels in alert headlines; a screening cue only.",
+            )
+            _related_only = bool(_related_only and active_analysis_id)
+
             # Apply filters
             _filtered = _news_df.copy()
             if _sel_countries:
                 _filtered = _filtered[
                     _filtered["match_country"].isin(_sel_countries)
+                ]
+            if _sel_events:
+                _filtered = _filtered[_filtered["eventtype"].isin(_sel_events)]
+            if _sel_vessels:
+                _filtered = _filtered[_filtered["vesseltype"].isin(_sel_vessels)]
+            if _sel_reasons:
+                _filtered = _filtered[_filtered["match_reason"].isin(_sel_reasons)]
+            if _news_search:
+                _filtered = _filtered[
+                    _filtered["headlinefull"].fillna("").str.contains(
+                        _news_search, case=False, regex=False
+                    )
                 ]
             if isinstance(_date_range, tuple) and len(_date_range) == 2:
                 _d_start, _d_end = _date_range
@@ -5705,6 +5778,27 @@ with tab_news:
                     (_filtered["alert_timestamp"].dt.date >= _d_start)
                     & (_filtered["alert_timestamp"].dt.date <= _d_end)
                 ]
+            if _related_only and active_analysis_id:
+                _terms = news_relevance_terms(
+                    load_analysis_graph(active_analysis_id)
+                )
+                if _terms:
+                    _filtered = _filtered.copy()
+                    _filtered["related_concepts"] = _filtered[
+                        "headlinefull"
+                    ].fillna("").map(
+                        lambda value: matching_news_terms(value, _terms)
+                    )
+                    _filtered = _filtered[
+                        _filtered["related_concepts"].map(bool)
+                    ]
+                    st.caption(
+                        f"Screened against {len(_terms)} active-analysis "
+                        "concept labels. A match does not confirm a case link."
+                    )
+                else:
+                    _filtered = _filtered.iloc[0:0]
+                    st.info("The active analysis has no eligible graph concepts yet.")
 
             if _filtered.empty:
                 st.info("No alerts match the selected filters.")
@@ -5713,8 +5807,10 @@ with tab_news:
                 k1, k2, k3 = st.columns(3)
                 k1.metric("Total alerts", int(_filtered["alert_id"].nunique()))
                 k2.metric(
-                    "Fatal incidents",
-                    int((_filtered["lossoflife"] == "Yes").sum()),
+                    "Fatal-alert triage signals",
+                    int(_filtered.loc[
+                        _filtered["lossoflife"] == "Yes", "alert_id"
+                    ].nunique()),
                 )
                 k3.metric(
                     "Countries",
@@ -5822,6 +5918,12 @@ with tab_news:
                     "first_alert_timestamp", "alert_timestamp", "headlinefull",
                     "severity", "match_reason", "eventtype",
                 ]
+                if _related_only:
+                    _filtered = _filtered.copy()
+                    _filtered["related_concepts_display"] = _filtered[
+                        "related_concepts"
+                    ].map(lambda terms: ", ".join(terms))
+                    _detail_cols.append("related_concepts_display")
                 _display_df = (
                     _filtered[_detail_cols]
                     .sort_values("alert_timestamp", ascending=False)
@@ -5829,8 +5931,8 @@ with tab_news:
                 )
                 _display_df.columns = [
                     "First seen", "Latest update", "Headline",
-                    "Severity", "Match reason", "Event type",
-                ]
+                    "Triage signal", "Match reason", "Event type",
+                ] + (["Related concepts"] if _related_only else [])
                 for _tcol in ["First seen", "Latest update"]:
                     _display_df[_tcol] = pd.to_datetime(
                         _display_df[_tcol], errors="coerce"
@@ -5847,8 +5949,8 @@ with tab_news:
                         "Latest update": st.column_config.TextColumn(
                             "Latest update", width="small",
                         ),
-                        "Severity": st.column_config.TextColumn(
-                            "Severity", width="small",
+                        "Triage signal": st.column_config.TextColumn(
+                            "Triage signal", width="small",
                         ),
                         "Match reason": st.column_config.TextColumn(
                             "Match reason", width="small",
