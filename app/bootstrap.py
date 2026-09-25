@@ -43,12 +43,12 @@ if not MATERIALIZED_MARKER.is_file():
     source, _ = transform_app_source(source)
     source, _ = transform_app_files_api_source(source)
     source, _ = transform_app_audio_source(source)
-    source, _ = transform_app_audio_fixup_source(source)
     source, _ = transform_app_timeline_source(source)
     source, _ = transform_app_ui_source(source)
     source, _ = transform_app_workflow_source(source)
     source, _ = transform_app_simplification_source(source)
     source, _ = transform_app_parakeet_source(source)
+    source, _ = transform_app_audio_fixup_source(source)
 
 code = compile(source, str(APP_FILE), "exec")
 exec(code, {"__name__": "__main__", "__file__": str(APP_FILE)})
