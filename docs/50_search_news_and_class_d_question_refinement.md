@@ -148,3 +148,14 @@ This update does not introduce a new model endpoint, embedding service or recurr
 
 - Evaluate a semantic/embedding reranker for the Similar Cases shortlist.
 - Add an explicit live MAIRA `query-ready / registered main reports` coverage KPI after deciding whether that check should be computed on demand or persisted by the MAIRA catalogue-sync process.
+
+## MAIRA PDF visibility reconciliation
+
+Run `notebooks/55_reconcile_maira_pdf_and_ikf_catalogue.py` in the IKF
+Databricks Git folder for a read-only comparison of MAIRA Volume PDFs,
+`maira.documents`, `maira.passages`, and IKF Neo4j `SourceDocument` entries.
+It prints exact missing paths/IDs and distinguishes registered main reports
+with passages from annexes and unprocessed PDFs. If registered document IDs
+are absent in IKF, run notebook 33 to sync the catalogue and refresh the App;
+notebook 37 validates query-ready main reports. The GitHub repository does
+not contain MAIRA source PDFs by design.
