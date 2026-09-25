@@ -5681,44 +5681,48 @@ with tab_new_analysis:
                     "Controlled Ollama Llama 3.3 70B service is not configured."
                 )
 
-        for model_key in selected_quota_models(class_d_model_selection):
-            remaining = max(
-                MODEL_DAILY_LIMITS[model_key]
-                - get_model_daily_usage(model_key),
-                0,
+        selected_models = selected_quota_models(class_d_model_selection)
+        st.caption(
+            "Daily limits: "
+            + ", ".join(
+                f"{MODEL_QUOTA_LABELS[key]} {MODEL_DAILY_LIMITS[key]}"
+                for key in selected_models
             )
-            label = MODEL_QUOTA_LABELS[model_key]
-            st.metric(
-                f"{label} questions remaining today",
-                remaining,
-                help=(
-                    f"Limit: {MODEL_DAILY_LIMITS[model_key]} per user per day "
-                    f"({QUOTA_TIMEZONE}). Both consumes one from each model."
-                ),
-            )
-            if remaining == 0:
-                st.warning(
-                    f"The daily {label} question limit has been reached."
+            + f" questions per user ({QUOTA_TIMEZONE})."
+        )
+        if st.button("Check remaining Class D questions", key="check_d_quota"):
+            st.session_state["class_d_quota_snapshot"] = {
+                key: max(
+                    MODEL_DAILY_LIMITS[key] - get_model_daily_usage(key),
+                    0,
                 )
-            if is_current_user_admin():
-                usage_rows = list_model_daily_usage(model_key)
-                admin_users = [row["user_key"] for row in usage_rows]
-                admin_users.append(get_current_user_key())
-                reset_target = st.selectbox(
-                    f"Admin quota reset user ({label})",
-                    options=sorted(set(admin_users)),
-                    key=f"quota_reset_user_{model_key}",
+                for key in selected_models
+            }
+        quota_snapshot = st.session_state.get("class_d_quota_snapshot", {})
+        for model_key in selected_models:
+            if model_key in quota_snapshot:
+                st.metric(
+                    f"{MODEL_QUOTA_LABELS[model_key]} questions remaining",
+                    quota_snapshot[model_key],
+                    help="Last checked value; refresh before relying on it.",
                 )
-                if st.button(
-                    f"Admin: reset selected user's {label} quota",
-                    key=f"reset_quota_{model_key}",
-                ):
-                    reset_model_daily_usage(reset_target, model_key)
-                    st.success(
-                        f"Today's {label} quota has been reset for "
-                        + reset_target
-                    )
-                    st.rerun()
+        if is_current_user_admin():
+            with st.expander("Admin: reset a Class D quota", expanded=False):
+                reset_model = st.selectbox(
+                    "Model", options=list(MODEL_DAILY_LIMITS),
+                    format_func=lambda key: MODEL_QUOTA_LABELS[key],
+                    key="quota_reset_model",
+                )
+                reset_target = st.text_input(
+                    "User email or username",
+                    value=get_current_user_key(),
+                    key="quota_reset_user",
+                )
+                if st.button("Reset today's quota", key="reset_model_quota"):
+                    if reset_target.strip():
+                        reset_model_daily_usage(reset_target, reset_model)
+                        st.session_state.pop("class_d_quota_snapshot", None)
+                        st.success("Quota reset. Check remaining questions to refresh.")
 
     with st.form(
         "new_analysis_form",
@@ -6509,16 +6513,14 @@ def render_compare_llms():
                     ]
                 )
 
-                for model_key in selected_quota_models(ask_model_selection):
-                    remaining = max(
-                        MODEL_DAILY_LIMITS[model_key]
-                        - get_model_daily_usage(model_key),
-                        0,
+                st.caption(
+                    "Daily limits: "
+                    + ", ".join(
+                        f"{MODEL_QUOTA_LABELS[key]} {MODEL_DAILY_LIMITS[key]}"
+                        for key in selected_quota_models(ask_model_selection)
                     )
-                    st.caption(
-                        f"{MODEL_QUOTA_LABELS[model_key]} questions "
-                        f"remaining today: {remaining}"
-                    )
+                    + " questions per user. Check remaining counts in New analysis."
+                )
             else:
                 ask_model_selection = "DEFAULT"
                 ask_policy = resolve_model_policy(
