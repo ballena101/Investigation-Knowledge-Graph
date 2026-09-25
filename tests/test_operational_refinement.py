@@ -24,7 +24,10 @@ def test_operational_refinement_materializes_expected_app(tmp_path):
     assert "Triage signal" in source
     assert "headline-derived screening signal" in source.lower()
     assert "Search scope: all processed MAIRA INVESTIGATION / MAIN_REPORT passages" in source
+    assert "MAIRA search coverage:" in source
+    assert "Deterministic weighted score:" in source
 
     manifest = (output / "ikf_bundle_manifest.json").read_text(encoding="utf-8")
-    assert '"bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.11"' in manifest
+    assert '"bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.12"' in manifest
     assert '"operational_refinement_version": "IKF_APP_OPERATIONAL_REFINEMENT_V0.2"' in manifest
+    assert '"similarity_refinement_version": "IKF_APP_SIMILARITY_REFINEMENT_V0.1"' in manifest
