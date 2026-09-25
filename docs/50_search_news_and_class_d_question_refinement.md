@@ -51,6 +51,13 @@ Recommended future architecture:
 
 The News view continues to query the SIANA EU/EEA alert hierarchy through the configured Databricks SQL warehouse. It remains external intelligence and never becomes investigation evidence automatically.
 
+The live News & Alerts table, map and filters were restored from the latest
+shared App source after a repository update had left only the dashboard link.
+The warehouse query now runs when the user selects **Load / refresh news
+alerts**. Its results stay in that user's App session, so unrelated Streamlit
+tab refreshes do not repeatedly start SQL queries. The dashboard link remains
+available when warehouse access is not configured.
+
 This update adds:
 
 - event-type filter;
