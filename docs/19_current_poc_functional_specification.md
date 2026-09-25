@@ -164,36 +164,32 @@ Each side must show:
 
 No automatic merged "winner" is produced.
 
-## 6. Llama question quota
+## 6. Class D model question quotas
 
-The larger Llama route has a PoC resource-control quota.
+The PoC uses separate per-user, per-calendar-day cost-control counters for
+Class D GPT-OSS 20B and Llama 3.3 70B. Both invoke paid cloud endpoints;
+these application limits are not provider-imposed limits or model-safety rules.
 
-Default:
+| Selection | GPT-OSS 20B counter | Llama 3.3 70B counter |
+| --- | ---: | ---: |
+| GPT-OSS 20B | 1 | 0 |
+| Llama 3.3 70B | 0 | 1 |
+| Both | 1 | 1 |
 
-**5 Llama questions per user per calendar day**
+The default limits are **30 GPT-OSS 20B** and **10 Llama 3.3 70B**
+questions per user per calendar day, in `Europe/Lisbon`.
+The App displays remaining counts, blocks a selection if either selected
+counter is exhausted, and reserves Both counters in one Neo4j transaction.
+Only identities listed in `IKG_ADMIN_USERS` can reset the current day's
+counter for a selected user and model; reset timestamp and admin identity
+remain auditable.
 
-Timezone:
-
-`Europe/Lisbon`
-
-Rules:
-
-- Llama-only run = 1 Llama question;
-- Both-model run = 1 Llama question;
-- GPT-OSS 20B-only run = 0 Llama questions;
-- at the limit, Llama and Both are blocked until the next day;
-- the remaining count is visible before submission;
-- only an identity listed in `IKG_ADMIN_USERS` may reset a counter;
-- an administrator may reset today's counter for a specified user;
-- resets are auditable with reset timestamp and admin identity.
-
-Configuration:
-
-`LLAMA_DAILY_QUESTION_LIMIT=5`
-
-The value can later be changed to 10 without changing application code.
-
-This is a PoC compute/cost control, not a model-safety rule.
+Configuration: `GPT20_DAILY_QUESTION_LIMIT=30` and
+`LLAMA_DAILY_QUESTION_LIMIT=10`. The Databricks App `app.yaml`
+sets both explicitly. A Class D analysis and a Class D Ask/graph question
+each reserve quota when queued; retrying a failed job may require an
+administrator review/reset of the reservation. Counters do not meter tokens,
+audio GPU processing, or other cloud costs.
 
 ## 7. Class D direct text
 
@@ -488,7 +484,7 @@ Implemented in repository:
 - encrypted direct-text ingress;
 - independent model-run namespaces;
 - side-by-side rendering;
-- configurable Llama daily quota, default 5;
+- separate configurable Class D model quotas, GPT-OSS 30 and Llama 10;
 - administrator-only quota reset;
 - privacy validation;
 - evidence-grounded graph pipeline;
