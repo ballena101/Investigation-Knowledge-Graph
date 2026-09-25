@@ -33,6 +33,7 @@ EXPECTED_APP_ENV_NAMES = {
     "CLASS_D_LLAMA70_ENDPOINT",
     "DIRECT_TEXT_ENCRYPTION_KEY",
     "IKG_ADMIN_USERS",
+    "GPT20_DAILY_QUESTION_LIMIT",
     "LLAMA_DAILY_QUESTION_LIMIT",
     "NEWS_DASHBOARD_URL",
     "SQL_WAREHOUSE_ID",
@@ -81,6 +82,8 @@ def test_app_yaml_exposes_expected_release_candidate_environment_contract():
     assert "streamlit\n  - run\n  - bootstrap.py" in text
     assert "EMCIP_MAPPING_JOB_ID" not in text
     assert "CLASS_D_OLLAMA_LLAMA70_URL" not in text
+    assert re.search(r'name:\s*GPT20_DAILY_QUESTION_LIMIT\s*\n\s*value:\s*"30"', text)
+    assert re.search(r'name:\s*LLAMA_DAILY_QUESTION_LIMIT\s*\n\s*value:\s*"10"', text)
 
 
 def test_app_yaml_value_from_resource_contract_is_exact():
