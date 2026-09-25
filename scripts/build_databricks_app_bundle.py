@@ -57,12 +57,12 @@ def build_bundle(output: Path) -> Path:
     transformed_app_source, applied_policy = transform_app_source(original_app_source)
     transformed_app_source, applied_files_api = transform_app_files_api_source(transformed_app_source)
     transformed_app_source, applied_audio = transform_app_audio_source(transformed_app_source)
-    transformed_app_source, applied_audio_fixup = transform_app_audio_fixup_source(transformed_app_source)
     transformed_app_source, applied_timeline = transform_app_timeline_source(transformed_app_source)
     transformed_app_source, applied_ui = transform_app_ui_source(transformed_app_source)
     transformed_app_source, applied_workflow = transform_app_workflow_source(transformed_app_source)
     transformed_app_source, applied_simplification = transform_app_simplification_source(transformed_app_source)
     transformed_app_source, applied_parakeet = transform_app_parakeet_source(transformed_app_source)
+    transformed_app_source, applied_audio_fixup = transform_app_audio_fixup_source(transformed_app_source)
     compile(transformed_app_source, str(output / "app.py"), "exec")
     (output / "app.py").write_text(transformed_app_source, encoding="utf-8")
 
