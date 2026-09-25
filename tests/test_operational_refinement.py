@@ -27,4 +27,4 @@ def test_operational_refinement_materializes_expected_app(tmp_path):
 
     manifest = (output / "ikf_bundle_manifest.json").read_text(encoding="utf-8")
     assert '"bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.11"' in manifest
-    assert '"operational_refinement_version": "IKF_APP_OPERATIONAL_REFINEMENT_V0.1"' in manifest
+    assert '"operational_refinement_version": "IKF_APP_OPERATIONAL_REFINEMENT_V0.2"' in manifest
