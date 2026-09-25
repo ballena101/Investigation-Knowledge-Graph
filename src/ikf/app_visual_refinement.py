@@ -1,16 +1,15 @@
-"""Visual timeline and News & Alerts UI refinements for the IKF App.
+"""Purpose-fit UI refinements for the IKF Databricks App.
 
 This layer intentionally changes presentation only. It preserves the governed
-TimelineEvent/KG evidence model, provenance, chronology rules and investigator
-review workflow while making the chronology easier to read at a glance.
+TimelineEvent/KG evidence model, provenance, chronology rules, SHIELD project
+capabilities and investigator review workflow while keeping the deployed app
+focused on the investigator's core tasks.
 """
 
 from __future__ import annotations
 
-import re
 
-
-VISUAL_REFINEMENT_VERSION = "IKF_APP_VISUAL_REFINEMENT_V0.1"
+VISUAL_REFINEMENT_VERSION = "IKF_APP_VISUAL_REFINEMENT_V0.2"
 
 
 _CATEGORY_HELPERS = r'''
@@ -286,6 +285,38 @@ _EVENT_TYPE_NEW = '''            event_type = st.selectbox(
 '''
 
 
+_COUNTRY_CHART = '''                with ch2:
+                    st.markdown("#### Alerts by country")
+                    _country = (
+                        _filtered[_filtered["match_country"].notna()]
+                        .drop_duplicates(subset=["alert_id", "match_country"])
+                        .groupby("match_country")["alert_id"].nunique()
+                        .sort_values(ascending=False).head(15)
+                    )
+                    if not _country.empty:
+                        st.bar_chart(_country)
+'''
+
+_DAILY_CHART = '''                with ch4:
+                    st.markdown("#### Daily alert count")
+                    _daily = (
+                        _filtered.assign(day=_filtered["alert_timestamp"].dt.date)
+                        .drop_duplicates(subset=["alert_id", "day"])
+                        .groupby("day")["alert_id"].nunique().sort_index()
+                    )
+                    if not _daily.empty:
+                        st.bar_chart(_daily)
+'''
+
+_SHIELD_START = '''with tab_review:
+    st.divider()
+    st.markdown("### SHIELD classification of contributing factors")
+'''
+
+_SHIELD_END = '''with tab_about:
+'''
+
+
 def _replace_once(source: str, old: str, new: str, label: str) -> str:
     count = source.count(old)
     if count != 1:
@@ -309,23 +340,34 @@ def _replace_default_timeline_table(source: str) -> str:
     return source[:table_start] + _VISUAL_TIMELINE_BLOCK + source[selector_start:]
 
 
-def _remove_news_bottom_charts(source: str) -> str:
-    news_start = source.find('with tab_news:\n')
-    if news_start < 0:
-        raise RuntimeError("Visual refinement could not locate News & Alerts.")
-    chart_start = source.find("    # ---------- Charts row ----------\n", news_start)
-    if chart_start < 0:
-        raise RuntimeError("Visual refinement could not locate the News chart row.")
+def _remove_news_charts(source: str) -> str:
+    source = _replace_once(
+        source,
+        _COUNTRY_CHART,
+        "",
+        "Alerts by country chart",
+    )
+    source = _replace_once(
+        source,
+        _DAILY_CHART,
+        "",
+        "Daily alert count chart",
+    )
+    return source
 
-    next_tab = re.search(r"\n\nwith tab_[a-zA-Z0-9_]+:\n", source[chart_start:])
-    if not next_tab:
-        raise RuntimeError("Visual refinement could not locate the tab after News charts.")
-    chart_end = chart_start + next_tab.start()
-    return source[:chart_start] + source[chart_end:]
+
+def _remove_shield_app_section(source: str) -> str:
+    start = source.find(_SHIELD_START)
+    if start < 0:
+        raise RuntimeError("Visual refinement could not locate the SHIELD app section.")
+    end = source.find(_SHIELD_END, start)
+    if end < 0:
+        raise RuntimeError("Visual refinement could not locate the end of SHIELD app section.")
+    return source[:start] + source[end:]
 
 
 def transform_app_visual_refinement(source: str) -> tuple[str, tuple[str, ...]]:
-    """Apply visual timeline and News & Alerts simplifications."""
+    """Apply purpose-fit visual and navigation simplifications."""
 
     applied: list[str] = []
 
@@ -363,7 +405,10 @@ def transform_app_visual_refinement(source: str) -> tuple[str, tuple[str, ...]]:
     )
     applied.append("five_phase_choices")
 
-    source = _remove_news_bottom_charts(source)
-    applied.append("remove_news_summary_charts")
+    source = _remove_news_charts(source)
+    applied.extend(["remove_alerts_by_country", "remove_daily_alert_count"])
+
+    source = _remove_shield_app_section(source)
+    applied.append("hide_shield_from_app_only")
 
     return source, tuple(applied)
