@@ -38,9 +38,10 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
         "app_audio_fixup.py", "app_parakeet_adoption.py", "app_timeline_adoption.py",
         "app_ui_adoption.py", "app_workflow_adoption.py", "app_simplification_adoption.py",
         "app_news_adoption.py", "app_branding_adoption.py", "app_operational_refinement.py",
-        "timeline.py", "transcription_governance.py", "source_routing.py",
-        "evidence_locations.py", "question_scope.py", "review_governance.py",
-        "shield_governance.py", "emcip_governance.py", "graph_governance.py", "retention.py",
+        "app_similarity_refinement.py", "timeline.py", "transcription_governance.py",
+        "source_routing.py", "evidence_locations.py", "question_scope.py",
+        "review_governance.py", "shield_governance.py", "emcip_governance.py",
+        "graph_governance.py", "retention.py",
     ):
         assert (shared / name).is_file(), name
 
@@ -79,6 +80,8 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert "Related to active analysis only" in materialized
     assert "Triage signal" in materialized
     assert "headline-derived screening signal" in materialized.lower()
+    assert "Search alert text" in materialized
+    assert "Matched by" in materialized
 
     assert 'TRANSCRIPTION_JOB_ID = os.getenv(' in materialized
     assert "list_type_d_audio_sources" in materialized
@@ -140,8 +143,13 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert "reserve_class_d_question_usage" in materialized
     assert "GPT-OSS 20B Ask questions remaining today" in materialized
     assert "Llama 3.3 70B Ask questions remaining today" in materialized
+    assert "analysis_runs_do_not_consume_ask_quota" not in materialized
 
     assert "Search scope: all processed MAIRA INVESTIGATION / MAIN_REPORT passages" in materialized
+    assert "MAIRA search coverage:" in materialized
+    assert "maira_query_ready_main_reports" in materialized
+    assert "matched_concepts" in materialized
+    assert "Deterministic weighted score:" in materialized
     assert "apply_latest_relationship_reviews_to_graph" in materialized
     assert "rejected relationship(s) hidden" in materialized
     assert 'st.markdown("### Ask about this graph scope")' not in materialized
@@ -182,7 +190,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     output = build_test_bundle(tmp_path)
     manifest = json.loads((output / "ikf_bundle_manifest.json").read_text(encoding="utf-8"))
 
-    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.11"
+    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.12"
     assert manifest["parakeet_adoption_version"] == "IKF_APP_PARAKEET_ADOPTION_V0.3"
     assert set(manifest["applied_parakeet_adoptions"]) >= {
         "parakeet_governance_imports",
@@ -199,7 +207,8 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert manifest["simplification_adoption_version"] == "IKF_APP_SIMPLIFICATION_ADOPTION_V0.5"
     assert manifest["news_adoption_version"] == "IKF_APP_NEWS_ADOPTION_V0.1"
     assert manifest["branding_adoption_version"] == "IKF_APP_BRANDING_ADOPTION_V0.1"
-    assert manifest["operational_refinement_version"] == "IKF_APP_OPERATIONAL_REFINEMENT_V0.1"
+    assert manifest["operational_refinement_version"] == "IKF_APP_OPERATIONAL_REFINEMENT_V0.2"
+    assert manifest["similarity_refinement_version"] == "IKF_APP_SIMILARITY_REFINEMENT_V0.1"
     assert set(manifest["applied_news_adoptions"]) == {
         "pandas_news_dependency",
         "sql_warehouse_binding",
@@ -215,6 +224,11 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         "news_active_analysis_lexical_relevance",
         "news_unique_fatal_alert_count",
         "similar_cases_full_processed_maira_scope_wording",
+    }
+    assert set(manifest["applied_similarity_refinements"]) == {
+        "weighted_candidate_provenance",
+        "maira_query_ready_coverage_display",
+        "weighted_match_explanation",
     }
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert manifest["shared_package_path"] == "src/ikf"
@@ -235,4 +249,5 @@ def test_bundled_bootstrap_prefers_materialized_source(tmp_path):
     assert "transform_app_news_source" in bootstrap
     assert "transform_app_branding_source" in bootstrap
     assert "transform_app_operational_refinement" in bootstrap
+    assert "transform_app_similarity_refinement" in bootstrap
     assert (output / "src" / "ikf").is_dir()
