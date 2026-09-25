@@ -30,6 +30,12 @@
 
 # COMMAND ----------
 
+# Load the freshly installed transcription dependencies before creating widgets
+# or reading any protected job parameters.
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
 dbutils.widgets.dropdown(
     "action",
     "TRANSCRIBE",
