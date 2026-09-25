@@ -585,8 +585,9 @@ Runtime environment variables:
 - `DIRECT_TEXT_ENCRYPTION_KEY`
 - `IKG_ADMIN_USERS`
 
-Llama 3.3 70B is limited to five questions per user per day in the PoC.
-The limit is persisted in Neo4j and only configured administrators can reset it.
+GPT-OSS 20B is limited to 30 and Llama 3.3 70B to 10 questions per user
+per day in the PoC. Separate counters are persisted in Neo4j; only configured
+administrators can reset them.
 
 See `docs/17_class_d_dual_model_poc.md`.
 
