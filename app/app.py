@@ -8495,6 +8495,12 @@ with tab_findings:
                 "similar_cases_run_"
                 + knowledge_analysis_id
             )
+            similar_candidates_key = (
+                "similar_cases_candidates_" + knowledge_analysis_id
+            )
+            similar_status_key = (
+                "similar_cases_status_" + knowledge_analysis_id
+            )
             similar_action, similar_refresh = (
                 st.columns(2)
             )
@@ -8525,7 +8531,12 @@ with tab_findings:
 
             if refresh_similar:
                 load_similar_case_candidates.clear()
-                st.rerun()
+                st.session_state[similar_candidates_key] = (
+                    load_similar_case_candidates(knowledge_analysis_id)
+                )
+                run_id = st.session_state.get(similar_run_key)
+                if run_id:
+                    st.session_state[similar_status_key] = get_analysis_job_run(run_id)
 
             if find_similar:
                 try:
@@ -8537,7 +8548,8 @@ with tab_findings:
                     st.session_state[
                         similar_run_key
                     ] = similar_job_run_id
-                    load_similar_case_candidates.clear()
+                    st.session_state[similar_status_key] = None
+                    st.session_state[similar_candidates_key] = []
                     st.success(
                         "Similar-case retrieval queued. Use Refresh "
                         "similar-case status to update the results."
@@ -8548,12 +8560,23 @@ with tab_findings:
                     )
                     st.exception(exc)
 
-            render_async_job_status(
-                st.session_state.get(
-                    similar_run_key
-                ),
-                "Similar-case retrieval",
-            )
+            similar_run_id = st.session_state.get(similar_run_key)
+            similar_run_info = st.session_state.get(similar_status_key)
+            if similar_run_id:
+                run_state = (similar_run_info or {}).get("state") or {}
+                state_label = (
+                    run_state.get("result_state")
+                    or run_state.get("life_cycle_state")
+                    or "QUEUED — press ↻ to check status"
+                )
+                st.caption(
+                    f"Similar-case retrieval · {state_label} · run {similar_run_id}"
+                )
+                if run_state.get("result_state") == "FAILED":
+                    st.error(
+                        "Notebook 52 failed. Open this Databricks Job run's "
+                        "output for the error, then share it for diagnosis."
+                    )
 
             if not SIMILAR_CASES_JOB_ID:
                 st.caption(
@@ -8561,11 +8584,7 @@ with tab_findings:
                     "App deployment yet."
                 )
 
-            similar_candidates = (
-                load_similar_case_candidates(
-                    knowledge_analysis_id
-                )
-            )
+            similar_candidates = st.session_state.get(similar_candidates_key, [])
 
             if similar_candidates:
                 global_source_by_id = {
@@ -8774,8 +8793,8 @@ with tab_findings:
                                     )
             else:
                 st.info(
-                    "No similar-case retrieval result is stored yet for "
-                    "this analysis."
+                    "Press ↻ to load the latest stored similar-case result "
+                    "after the Job completes."
                 )
         else:
             st.info(
