@@ -4,5 +4,6 @@ streamlit-cytoscape==0.2.1
 databricks-sdk==0.139.0
 cryptography==46.0.2
 pandas>=2.2,<3
+pydeck>=0.9,<1
 
 pymupdf==1.26.4
