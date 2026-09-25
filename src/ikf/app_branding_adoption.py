@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 
-BRANDING_ADOPTION_VERSION = "IKF_APP_BRANDING_ADOPTION_V0.2"
+BRANDING_ADOPTION_VERSION = "IKF_APP_BRANDING_ADOPTION_V0.1"
 
 
 _LEGACY_TRANSCRIPT_REVIEW_PATTERN = re.compile(
@@ -34,8 +34,6 @@ _LEGACY_TRANSCRIPT_REVIEW_PATTERN = re.compile(
 def transform_app_branding_source(source: str) -> tuple[str, tuple[str, ...]]:
     """Apply the approved App name and remove one obsolete transcript helper."""
 
-    applied: list[str] = []
-
     # The latest App baseline contains the governed publication-aware function
     # earlier in the module. An obsolete review-only helper appears later and,
     # because Python uses the last definition, would otherwise shadow the
@@ -49,7 +47,6 @@ def transform_app_branding_source(source: str) -> tuple[str, tuple[str, ...]]:
         raise RuntimeError(
             "Final App adoption expected one obsolete transcript-review helper."
         )
-    applied.append("remove_obsolete_transcript_review_override")
 
     expected_signature = (
         "def save_transcript_review(record, reviewed_text, analysis_context_id=None):"
@@ -78,6 +75,4 @@ def transform_app_branding_source(source: str) -> tuple[str, tuple[str, ...]]:
 
     source = source.replace(page_old, page_new, 1)
     source = source.replace(title_old, title_new, 1)
-    applied.append("safety_investigation_ai_sandbox")
-
-    return source, tuple(applied)
+    return source, ("safety_investigation_ai_sandbox",)
