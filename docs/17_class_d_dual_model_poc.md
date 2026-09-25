@@ -98,26 +98,22 @@ Each model run has its own:
 
 A model cannot overwrite the other model's graph.
 
-## Llama usage control
+## Class D model usage control
 
-The PoC default limits Llama 3.3 70B to:
-
-**5 questions per user per day**
-
-The value is configurable with `LLAMA_DAILY_QUESTION_LIMIT`; it can be raised
-to 10 later without changing application code. The current PoC default remains
-5.
+The PoC limits GPT-OSS 20B to **30** and Llama 3.3 70B to **10**
+questions per user per day. The limits are configurable with
+`GPT20_DAILY_QUESTION_LIMIT` and `LLAMA_DAILY_QUESTION_LIMIT`.
 
 Timezone:
 
 `Europe/Lisbon`
 
-A run using "Both models" consumes one Ollama question.
+A run using "Both models" consumes one question from each model counter.
 
 Usage is persisted in Neo4j as `ModelDailyUsage`.
 
-When the limit is reached, the App blocks further Ollama questions until the
-next day.
+When a selected model reaches its limit, the App blocks requests using that
+model until the next day.
 
 Only a configured App administrator can reset the counter. An administrator
 may reset today's counter for a specified user; the reset records the admin
