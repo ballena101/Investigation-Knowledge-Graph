@@ -51,6 +51,25 @@ def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _normalise_preapplied_quota_constants(source: str) -> str:
+    """Let the legacy operational transform run when quota constants were pre-applied.
+
+    The monolithic App source already carries the current GPT-OSS 20B / Llama
+    quota constants, while the operational refinement still owns the wider UI
+    and reservation migration.  Collapse only those two constants back to the
+    transform's legacy anchor so the complete refinement can execute once.
+    """
+
+    current = (
+        'GPT20_DAILY_QUESTION_LIMIT = int(os.getenv("GPT20_DAILY_QUESTION_LIMIT", "30"))\n'
+        'LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "10"))'
+    )
+    legacy = 'LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "5"))'
+    if current in source and legacy not in source:
+        return source.replace(current, legacy, 1)
+    return source
+
+
 def build_bundle(output: Path) -> Path:
     output = output.resolve()
     repo_root = REPO_ROOT.resolve()
@@ -79,6 +98,7 @@ def build_bundle(output: Path) -> Path:
     transformed_app_source, applied_audio_fixup = transform_app_audio_fixup_source(transformed_app_source)
     transformed_app_source, applied_news = transform_app_news_source(transformed_app_source)
     transformed_app_source, applied_branding = transform_app_branding_source(transformed_app_source)
+    transformed_app_source = _normalise_preapplied_quota_constants(transformed_app_source)
     transformed_app_source, applied_operational = transform_app_operational_refinement(transformed_app_source)
     transformed_app_source, applied_similarity = transform_app_similarity_refinement(transformed_app_source)
     transformed_app_source, applied_visual = transform_app_visual_refinement(transformed_app_source)
