@@ -1,16 +1,11 @@
-"""Final operational refinements for the Safety Investigation AI Sandbox.
-
-This deterministic layer is intentionally applied after the other App adoptions.
-It keeps product-facing cleanup, Class-D Ask quotas, Similar Cases wording and
-News triage refinements separate from the core investigation/governance logic.
-"""
+"""Final operational refinements for the Safety Investigation AI Sandbox."""
 
 from __future__ import annotations
 
 import re
 
 
-OPERATIONAL_REFINEMENT_VERSION = "IKF_APP_OPERATIONAL_REFINEMENT_V0.1"
+OPERATIONAL_REFINEMENT_VERSION = "IKF_APP_OPERATIONAL_REFINEMENT_V0.2"
 
 
 def _replace_once(source: str, old: str, new: str, name: str) -> str:
@@ -44,7 +39,6 @@ def _apply_question_quota_refinement(source: str) -> str:
     gpt_helper = '''def get_gpt20_daily_usage():
     user_key = get_current_user_key()
     usage_key = f"{user_key}|GPT20|{quota_date()}"
-
     query = """
     MERGE (u:ModelDailyUsage {usage_key: $usage_key})
     ON CREATE SET
@@ -55,7 +49,6 @@ def _apply_question_quota_refinement(source: str) -> str:
         u.created_at = datetime()
     RETURN u.question_count AS question_count
     """
-
     with get_driver().session() as session:
         record = session.run(
             query,
@@ -63,7 +56,6 @@ def _apply_question_quota_refinement(source: str) -> str:
             user_key=user_key,
             usage_date=quota_date(),
         ).single()
-
     return int(record["question_count"] or 0)
 
 
@@ -72,18 +64,16 @@ def _apply_question_quota_refinement(source: str) -> str:
         source,
         "def get_llama_daily_usage():\n",
         gpt_helper + "def get_llama_daily_usage():\n",
-        "GPT-OSS daily usage helper",
+        "GPT-OSS usage helper",
     )
 
     reservation_helper = '''def reserve_class_d_question_usage(model_selection):
-    """Atomically reserve per-user Ask allowances for the selected Class-D model(s)."""
-
+    """Reserve the selected Class-D Ask allowances in one Neo4j transaction."""
     plans = []
     if model_selection in {"GPT20", "BOTH"}:
         plans.append(("GPT20", GPT20_DAILY_QUESTION_LIMIT))
     if model_selection in {"LLAMA70", "BOTH"}:
         plans.append(("LLAMA70", LLAMA_DAILY_QUESTION_LIMIT))
-
     if not plans:
         return {}
 
@@ -132,18 +122,19 @@ def _apply_question_quota_refinement(source: str) -> str:
         source,
         "def list_llama_daily_usage():\n",
         reservation_helper + "def list_llama_daily_usage():\n",
-        "atomic Class-D Ask reservation",
+        "Class-D Ask reservation helper",
     )
 
-    # Ask quotas are for free-text Ask interactions, not for creating/running an analysis.
+    # Remove the analysis-page quota widget/admin controls. Ask allowances apply
+    # only to free-text questions, not to analysis creation or analysis runs.
     form_marker = '    with st.form(\n        "new_analysis_form",\n'
     form_pos = source.find(form_marker)
     quota_pos = source.rfind("            llama_used = get_llama_daily_usage()\n", 0, form_pos)
-    if quota_pos < 0 or form_pos < 0 or quota_pos >= form_pos:
-        raise RuntimeError("Could not remove Analyse Documents Llama quota display.")
+    if quota_pos < 0 or form_pos < 0:
+        raise RuntimeError("Could not locate Analyse Documents quota block.")
     source = source[:quota_pos] + source[form_pos:]
 
-    analysis_guard_pattern = re.compile(
+    analysis_guard = re.compile(
         r'\n            if \(\n'
         r'                needs_llama70\n'
         r'                and get_llama_daily_usage\(\)\n'
@@ -153,11 +144,11 @@ def _apply_question_quota_refinement(source: str) -> str:
         r'                    "The daily Llama 3\.3 70B question limit has been reached\."\n'
         r'                \)\n'
     )
-    source, count = analysis_guard_pattern.subn("\n", source, count=1)
+    source, count = analysis_guard.subn("\n", source, count=1)
     if count != 1:
         raise RuntimeError("Could not remove analysis-time Llama quota guard.")
 
-    analysis_consume_pattern = re.compile(
+    analysis_consume = re.compile(
         r'\n                    if class_d_model_selection in \{\n'
         r'                        "LLAMA70",\n'
         r'                        "BOTH",\n'
@@ -171,11 +162,11 @@ def _apply_question_quota_refinement(source: str) -> str:
         r'                                "the analysis could start\."\n'
         r'                            \)\n'
     )
-    source, count = analysis_consume_pattern.subn("\n", source, count=1)
+    source, count = analysis_consume.subn("\n", source, count=1)
     if count != 1:
-        raise RuntimeError("Could not remove analysis-time Llama quota consumption.")
+        raise RuntimeError("Could not remove analysis-time quota consumption.")
 
-    ask_display_pattern = re.compile(
+    ask_display = re.compile(
         r'                if ask_model_selection in \{\n'
         r'                    "LLAMA70",\n'
         r'                    "BOTH",\n'
@@ -191,7 +182,7 @@ def _apply_question_quota_refinement(source: str) -> str:
         r'                        f"\{llama_remaining\}"\n'
         r'                    \)\n'
     )
-    ask_display = '''                if ask_model_selection in {"GPT20", "BOTH"}:
+    ask_display_new = '''                if ask_model_selection in {"GPT20", "BOTH"}:
                     gpt20_remaining = max(
                         GPT20_DAILY_QUESTION_LIMIT - get_gpt20_daily_usage(),
                         0,
@@ -200,7 +191,6 @@ def _apply_question_quota_refinement(source: str) -> str:
                         "GPT-OSS 20B Ask questions remaining today: "
                         f"{gpt20_remaining} / {GPT20_DAILY_QUESTION_LIMIT}"
                     )
-
                 if ask_model_selection in {"LLAMA70", "BOTH"}:
                     llama_remaining = max(
                         LLAMA_DAILY_QUESTION_LIMIT - get_llama_daily_usage(),
@@ -211,11 +201,11 @@ def _apply_question_quota_refinement(source: str) -> str:
                         f"{llama_remaining} / {LLAMA_DAILY_QUESTION_LIMIT}"
                     )
 '''
-    source, count = ask_display_pattern.subn(ask_display, source, count=1)
+    source, count = ask_display.subn(ask_display_new, source, count=1)
     if count != 1:
-        raise RuntimeError("Could not update Ask LLMs quota display.")
+        raise RuntimeError("Could not update Ask quota display.")
 
-    ask_guard_pattern = re.compile(
+    ask_guard = re.compile(
         r'                if class_for_ask == "D":\n'
         r'                    if \(\n'
         r'                        ask_model_selection\n'
@@ -227,7 +217,7 @@ def _apply_question_quota_refinement(source: str) -> str:
         r'                            "The daily Llama 3\.3 70B question limit has been reached\."\n'
         r'                        \)\n'
     )
-    ask_guard = '''                if class_for_ask == "D":
+    ask_guard_new = '''                if class_for_ask == "D":
                     if (
                         ask_model_selection in {"GPT20", "BOTH"}
                         and get_gpt20_daily_usage() >= GPT20_DAILY_QUESTION_LIMIT
@@ -243,11 +233,11 @@ def _apply_question_quota_refinement(source: str) -> str:
                             "The daily Llama 3.3 70B Ask limit has been reached."
                         )
 '''
-    source, count = ask_guard_pattern.subn(ask_guard, source, count=1)
+    source, count = ask_guard.subn(ask_guard_new, source, count=1)
     if count != 1:
-        raise RuntimeError("Could not update Ask LLMs quota guards.")
+        raise RuntimeError("Could not update Ask quota guards.")
 
-    ask_consume_pattern = re.compile(
+    ask_consume = re.compile(
         r'                        if \(\n'
         r'                            class_for_ask == "D"\n'
         r'                            and ask_model_selection\n'
@@ -259,64 +249,113 @@ def _apply_question_quota_refinement(source: str) -> str:
         r'                                    "The Llama daily quota could not be reserved\."\n'
         r'                                \)\n'
     )
-    ask_consume = '''                        if class_for_ask == "D":
+    source, count = ask_consume.subn(
+        '''                        if class_for_ask == "D":
                             reserve_class_d_question_usage(
                                 ask_model_selection
                             )
-'''
-    source, count = ask_consume_pattern.subn(ask_consume, source, count=1)
+''',
+        source,
+        count=1,
+    )
     if count != 1:
-        raise RuntimeError("Could not replace Ask LLMs quota reservation.")
+        raise RuntimeError("Could not replace Ask quota reservation.")
 
     return source
 
 
 def _apply_news_refinement(source: str) -> str:
+    # Keep the current governed data query but relabel headline-derived severity
+    # values as triage signals rather than official casualty classifications.
     sql_start = source.find('_NEWS_ALERTS_SQL = r"""')
     sql_end = source.find('\n"""', sql_start + 25)
     if sql_start < 0 or sql_end < 0:
         raise RuntimeError("Could not locate News SQL block.")
-
     sql = source[sql_start:sql_end]
     sql = sql.replace("THEN 'Fatal'", "THEN 'Fatality signal'", 1)
     sql = sql.replace("THEN 'Very Serious Casualty'", "THEN 'Injury signal'", 1)
     sql = sql.replace("THEN 'Very Serious Casualty'", "THEN 'Occurrence signal'", 3)
     source = source[:sql_start] + sql + source[sql_end:]
 
-    source = _replace_once(
-        source,
-        'with tab_news:\n    st.subheader("News & Alerts")\n',
-        'with tab_news:\n    st.subheader("News & Alerts")\n'
-        '    st.caption(\n'
-        '        "External alert intelligence. Event type and triage signals are derived "\n'
-        '        "from alert text for screening only; they are not an official casualty "\n'
-        '        "classification or validated investigation evidence."\n'
-        '    )\n',
-        "News triage disclaimer",
+    news_start = source.find("\nwith tab_news:\n")
+    news_end = source.find("\nwith tab_transcriptions:\n", news_start)
+    if news_start < 0 or news_end < 0:
+        raise RuntimeError("Could not locate the materialized News tab.")
+
+    news_tab = r'''
+with tab_news:
+    st.subheader("News & Alerts")
+    st.caption(
+        "External alert intelligence. Event type and triage signals are derived "
+        "from alert text for screening only; they are not an official casualty "
+        "classification or validated investigation evidence."
     )
 
-    apply_filters_marker = '''            # Apply filters
+    if not SQL_WAREHOUSE_ID:
+        st.warning(
+            "**SQL warehouse not configured.** Set the `SQL_WAREHOUSE_ID` "
+            "environment variable in `app.yaml` to display live news data."
+        )
+        if NEWS_DASHBOARD_URL:
+            st.link_button(
+                "Open News & Alerts dashboard (fallback)",
+                NEWS_DASHBOARD_URL,
+                type="primary",
+                use_container_width=True,
+            )
+    else:
+        with st.spinner("Querying news alerts for the last 7 days…"):
+            _news_df, _news_err = fetch_news_alerts_data()
+
+        if _news_err:
+            st.error(f"Failed to load news data: {_news_err}")
+        elif _news_df is None or _news_df.empty:
+            st.info("No alerts found for the last 7 days.")
+        else:
             _filtered = _news_df.copy()
-'''
-    extra_filters = '''            _fcol3, _fcol4, _fcol5 = st.columns(3)
-            with _fcol3:
-                _sel_event_types = st.multiselect(
+
+            _f1, _f2 = st.columns(2)
+            with _f1:
+                _countries = sorted(
+                    _news_df["match_country"].dropna().unique().tolist()
+                )
+                _selected_countries = st.multiselect(
+                    "Country affected",
+                    options=_countries,
+                    default=[],
+                    placeholder="All countries",
+                    key="news_country_filter",
+                )
+            with _f2:
+                _min_date = _news_df["alert_timestamp"].dt.date.min()
+                _max_date = _news_df["alert_timestamp"].dt.date.max()
+                _date_range = st.date_input(
+                    "Date range",
+                    value=(_min_date, _max_date),
+                    min_value=_min_date,
+                    max_value=_max_date,
+                    key="news_date_range",
+                )
+
+            _f3, _f4, _f5 = st.columns(3)
+            with _f3:
+                _event_types = st.multiselect(
                     "Event type",
                     options=sorted(_news_df["eventtype"].dropna().unique().tolist()),
                     default=[],
                     placeholder="All event types",
                     key="news_event_type_filter",
                 )
-            with _fcol4:
-                _sel_vessel_types = st.multiselect(
+            with _f4:
+                _vessel_types = st.multiselect(
                     "Vessel type",
                     options=sorted(_news_df["vesseltype"].dropna().unique().tolist()),
                     default=[],
                     placeholder="All vessel types",
                     key="news_vessel_type_filter",
                 )
-            with _fcol5:
-                _sel_match_reasons = st.multiselect(
+            with _f5:
+                _match_reasons = st.multiselect(
                     "Matched by",
                     options=sorted(_news_df["match_reason"].dropna().unique().tolist()),
                     default=[],
@@ -324,44 +363,33 @@ def _apply_news_refinement(source: str) -> str:
                     key="news_match_reason_filter",
                 )
 
-            _news_text_search = st.text_input(
+            _text_search = st.text_input(
                 "Search alert text",
                 placeholder="e.g. engine fire, grounding, collision",
                 key="news_text_filter",
             )
 
-''' + apply_filters_marker
-    source = _replace_once(
-        source,
-        apply_filters_marker,
-        extra_filters,
-        "News filters",
-    )
-
-    date_filter = '''            if isinstance(_date_range, tuple) and len(_date_range) == 2:
-                _d_start, _d_end = _date_range
+            if _selected_countries:
                 _filtered = _filtered[
-                    (_filtered["alert_timestamp"].dt.date >= _d_start)
-                    & (_filtered["alert_timestamp"].dt.date <= _d_end)
+                    _filtered["match_country"].isin(_selected_countries)
                 ]
-'''
-    date_filter_plus = date_filter + '''            if _sel_event_types:
+            if isinstance(_date_range, tuple) and len(_date_range) == 2:
+                _start_date, _end_date = _date_range
                 _filtered = _filtered[
-                    _filtered["eventtype"].isin(_sel_event_types)
+                    (_filtered["alert_timestamp"].dt.date >= _start_date)
+                    & (_filtered["alert_timestamp"].dt.date <= _end_date)
                 ]
-            if _sel_vessel_types:
+            if _event_types:
+                _filtered = _filtered[_filtered["eventtype"].isin(_event_types)]
+            if _vessel_types:
+                _filtered = _filtered[_filtered["vesseltype"].isin(_vessel_types)]
+            if _match_reasons:
+                _filtered = _filtered[_filtered["match_reason"].isin(_match_reasons)]
+            if _text_search.strip():
                 _filtered = _filtered[
-                    _filtered["vesseltype"].isin(_sel_vessel_types)
-                ]
-            if _sel_match_reasons:
-                _filtered = _filtered[
-                    _filtered["match_reason"].isin(_sel_match_reasons)
-                ]
-            if _news_text_search.strip():
-                _needle = _news_text_search.strip().casefold()
-                _filtered = _filtered[
-                    _filtered["headlinefull"].fillna("").str.casefold().str.contains(
-                        _needle,
+                    _filtered["headlinefull"].fillna("").str.contains(
+                        _text_search.strip(),
+                        case=False,
                         regex=False,
                     )
                 ]
@@ -371,7 +399,7 @@ def _apply_news_refinement(source: str) -> str:
             if active_analysis_id:
                 try:
                     _case_graph = load_analysis_graph(active_analysis_id)
-                    _case_stopwords = {
+                    _stop = {
                         "with", "from", "that", "this", "were", "into", "after",
                         "before", "during", "vessel", "ship", "event", "finding",
                         "factor", "safety", "system",
@@ -385,28 +413,24 @@ def _apply_news_refinement(source: str) -> str:
                         if not _label or _label == "subject vessel":
                             continue
                         _case_phrases.append(_label)
-                        for _word in _label.replace("-", " ").replace("/", " ").split():
-                            _word = _word.strip(".,:;()[]{}")
-                            if len(_word) >= 4 and _word not in _case_stopwords:
-                                _case_terms.add(_word)
+                        for _term in re.findall(r"\w+", _label, flags=re.UNICODE):
+                            if len(_term) >= 4 and _term not in _stop:
+                                _case_terms.add(_term)
                 except Exception:
                     _case_phrases = []
                     _case_terms = set()
 
             if _case_phrases or _case_terms:
-                def _news_case_relevance(value):
+                def _active_case_relevance(value):
                     _text = str(value or "").casefold()
-                    _phrase_score = 3 * sum(
-                        1 for _phrase in _case_phrases if _phrase in _text
+                    return (
+                        3 * sum(1 for _phrase in _case_phrases if _phrase in _text)
+                        + sum(1 for _term in _case_terms if _term in _text)
                     )
-                    _term_score = sum(
-                        1 for _term in _case_terms if _term in _text
-                    )
-                    return _phrase_score + _term_score
 
                 _filtered = _filtered.copy()
                 _filtered["_case_relevance"] = _filtered["headlinefull"].apply(
-                    _news_case_relevance
+                    _active_case_relevance
                 )
                 _related_only = st.checkbox(
                     "Related to active analysis only",
@@ -420,34 +444,123 @@ def _apply_news_refinement(source: str) -> str:
                 if _related_only:
                     _filtered = _filtered[_filtered["_case_relevance"] > 0]
                 st.caption(
-                    "Active-case relevance uses only existing analysis concepts; no extra LLM call is made."
+                    "Active-case relevance uses existing analysis concepts only; no extra LLM call is made."
                 )
+
+            if _filtered.empty:
+                st.info("No alerts match the selected filters.")
+            else:
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Total alerts", int(_filtered["alert_id"].nunique()))
+                _last_update = _filtered["load_date"].max()
+                k2.metric(
+                    "Last update",
+                    _last_update.strftime("%Y-%m-%d %H:%M") if pd.notna(_last_update) else "—",
+                )
+                k3.metric(
+                    "Fatal incidents",
+                    int(
+                        _filtered.loc[
+                            _filtered["lossoflife"] == "Yes",
+                            "alert_id",
+                        ].nunique()
+                    ),
+                )
+                k4.metric(
+                    "Countries",
+                    int(_filtered["match_country"].dropna().nunique()),
+                )
+
+                st.markdown("#### Alert locations")
+                _map_df = _filtered.dropna(
+                    subset=["event_location_latitude", "event_location_longitude"]
+                ).rename(
+                    columns={
+                        "event_location_latitude": "latitude",
+                        "event_location_longitude": "longitude",
+                    }
+                )
+                if not _map_df.empty:
+                    st.map(_map_df[["latitude", "longitude"]])
+                else:
+                    st.caption("No geo-located alerts available.")
+
+                st.markdown("#### Alert details")
+                _detail_cols = [
+                    "first_alert_timestamp", "alert_timestamp", "headlinefull",
+                    "severity", "match_reason", "eventtype", "alert_version",
+                ]
+                _display_df = (
+                    _filtered[_detail_cols]
+                    .sort_values("alert_timestamp", ascending=False)
+                    .reset_index(drop=True)
+                )
+                _display_df.columns = [
+                    "First seen", "Latest update", "Headline",
+                    "Triage signal", "Match reason", "Event type", "Version",
+                ]
+                st.dataframe(
+                    _display_df,
+                    column_config={
+                        "Triage signal": st.column_config.TextColumn(
+                            "Triage signal",
+                            help=(
+                                "Headline-derived screening signal; not an official "
+                                "casualty classification."
+                            ),
+                        )
+                    },
+                    use_container_width=True,
+                    height=400,
+                )
+
+                ch1, ch2 = st.columns(2)
+                with ch1:
+                    st.markdown("#### Alerts by vessel type")
+                    _vtype = (
+                        _filtered.drop_duplicates(subset=["alert_id", "vesseltype"])
+                        .groupby("vesseltype")["alert_id"].nunique()
+                        .sort_values(ascending=False).head(15)
+                    )
+                    if not _vtype.empty:
+                        st.bar_chart(_vtype)
+                with ch2:
+                    st.markdown("#### Alerts by country")
+                    _country = (
+                        _filtered[_filtered["match_country"].notna()]
+                        .drop_duplicates(subset=["alert_id", "match_country"])
+                        .groupby("match_country")["alert_id"].nunique()
+                        .sort_values(ascending=False).head(15)
+                    )
+                    if not _country.empty:
+                        st.bar_chart(_country)
+
+                ch3, ch4 = st.columns(2)
+                with ch3:
+                    st.markdown("#### Alerts by event type")
+                    _etype = (
+                        _filtered.drop_duplicates(subset=["alert_id", "eventtype"])
+                        .groupby("eventtype")["alert_id"].nunique()
+                        .sort_values(ascending=False)
+                    )
+                    if not _etype.empty:
+                        st.bar_chart(_etype)
+                with ch4:
+                    st.markdown("#### Daily alert count")
+                    _daily = (
+                        _filtered.assign(day=_filtered["alert_timestamp"].dt.date)
+                        .drop_duplicates(subset=["alert_id", "day"])
+                        .groupby("day")["alert_id"].nunique().sort_index()
+                    )
+                    if not _daily.empty:
+                        st.bar_chart(_daily)
+
+    st.caption(
+        "News remains external, unvalidated information and is not mixed with "
+        "validated investigation findings."
+    )
 '''
-    source = _replace_once(
-        source,
-        date_filter,
-        date_filter_plus,
-        "News active-analysis relevance",
-    )
-
-    source = _replace_once(
-        source,
-        'int((_filtered["lossoflife"] == "Yes").sum())',
-        'int(_filtered.loc[_filtered["lossoflife"] == "Yes", "alert_id"].nunique())',
-        "unique fatal-alert KPI",
-    )
-
-    source = source.replace(
-        '"Severity", "Match reason", "Event type",',
-        '"Triage signal", "Match reason", "Event type",',
-        1,
-    )
-    source = source.replace(
-        '"Severity": st.column_config.TextColumn(\n                            "Severity", width="small",\n                        ),',
-        '"Triage signal": st.column_config.TextColumn(\n                            "Triage signal", width="small",\n                            help="Headline-derived screening signal; not an official casualty classification.",\n                        ),',
-        1,
-    )
-
+    source = source[:news_start] + "\n" + news_tab + source[news_end:]
     return source
 
 
@@ -462,16 +575,14 @@ def _apply_similar_cases_refinement(source: str) -> str:
         '            "No embedding or LLM similarity score is used at this stage."',
         "Similar Cases corpus explanation",
     )
-
     source = _replace_once(
         source,
         '            "External/news similarity remains separate from validated "\n'
         '            "investigation knowledge and is handled in the News/dashboard "\n'
         '            "workstream."',
         '            "Recent alerts remain external, unverified intelligence. In News & Alerts, "\n'
-        '            "use ‘Related to active analysis only’ to apply a deterministic lexical "\n'
-        '            "screen against the active analysis concepts; this does not turn an alert "\n'
-        '            "into investigation evidence."',
+        '            "use ‘Related to active analysis only’ for deterministic lexical screening "\n'
+        '            "against active-analysis concepts; this does not turn an alert into evidence."',
         "Similar Cases News guidance",
     )
     return source
@@ -479,7 +590,6 @@ def _apply_similar_cases_refinement(source: str) -> str:
 
 def transform_app_operational_refinement(source: str) -> tuple[str, tuple[str, ...]]:
     applied = []
-
     source = _remove_analysis_summary(source)
     applied.append("analysis_summary_findings_only")
 
