@@ -37,6 +37,10 @@ from ikf.app_similarity_refinement import (
     SIMILARITY_REFINEMENT_VERSION,
     transform_app_similarity_refinement,
 )
+from ikf.app_visual_refinement import (
+    VISUAL_REFINEMENT_VERSION,
+    transform_app_visual_refinement,
+)
 
 COPIED_APP_FILES = ("bootstrap.py", "app.yaml", "requirements.txt")
 MATERIALIZED_MARKER = ".ikf_shared_policy_materialized"
@@ -77,6 +81,7 @@ def build_bundle(output: Path) -> Path:
     transformed_app_source, applied_branding = transform_app_branding_source(transformed_app_source)
     transformed_app_source, applied_operational = transform_app_operational_refinement(transformed_app_source)
     transformed_app_source, applied_similarity = transform_app_similarity_refinement(transformed_app_source)
+    transformed_app_source, applied_visual = transform_app_visual_refinement(transformed_app_source)
     compile(transformed_app_source, str(output / "app.py"), "exec")
     (output / "app.py").write_text(transformed_app_source, encoding="utf-8")
 
@@ -89,11 +94,11 @@ def build_bundle(output: Path) -> Path:
         AUDIO_FIXUP_VERSION, TIMELINE_ADOPTION_VERSION, UI_ADOPTION_VERSION,
         WORKFLOW_ADOPTION_VERSION, SIMPLIFICATION_ADOPTION_VERSION, PARAKEET_ADOPTION_VERSION,
         NEWS_ADOPTION_VERSION, BRANDING_ADOPTION_VERSION, OPERATIONAL_REFINEMENT_VERSION,
-        SIMILARITY_REFINEMENT_VERSION,
+        SIMILARITY_REFINEMENT_VERSION, VISUAL_REFINEMENT_VERSION,
     ]) + "\n", encoding="utf-8")
 
     manifest = {
-        "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.12",
+        "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.13",
         "adoption_version": ADOPTION_VERSION,
         "files_api_download_adoption_version": FILES_API_DOWNLOAD_ADOPTION_VERSION,
         "audio_adoption_version": AUDIO_ADOPTION_VERSION,
@@ -107,6 +112,7 @@ def build_bundle(output: Path) -> Path:
         "branding_adoption_version": BRANDING_ADOPTION_VERSION,
         "operational_refinement_version": OPERATIONAL_REFINEMENT_VERSION,
         "similarity_refinement_version": SIMILARITY_REFINEMENT_VERSION,
+        "visual_refinement_version": VISUAL_REFINEMENT_VERSION,
         "source_app_sha256": _sha256_text(original_app_source),
         "materialized_app_sha256": _sha256_text(transformed_app_source),
         "applied_policy_adoptions": list(applied_policy),
@@ -121,6 +127,7 @@ def build_bundle(output: Path) -> Path:
         "applied_branding_adoptions": list(applied_branding),
         "applied_operational_refinements": list(applied_operational),
         "applied_similarity_refinements": list(applied_similarity),
+        "applied_visual_refinements": list(applied_visual),
         "shared_package_path": "src/ikf",
     }
     (output / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -134,7 +141,7 @@ def build_bundle(output: Path) -> Path:
         bundle_package / "app_ui_adoption.py", bundle_package / "app_workflow_adoption.py",
         bundle_package / "app_simplification_adoption.py", bundle_package / "app_news_adoption.py",
         bundle_package / "app_branding_adoption.py", bundle_package / "app_operational_refinement.py",
-        bundle_package / "app_similarity_refinement.py",
+        bundle_package / "app_similarity_refinement.py", bundle_package / "app_visual_refinement.py",
         bundle_package / "timeline.py", bundle_package / "transcription_governance.py",
         bundle_package / "source_routing.py", bundle_package / "evidence_locations.py",
         bundle_package / "question_scope.py", bundle_package / "review_governance.py",
