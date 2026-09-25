@@ -32,6 +32,9 @@ from ikf.app_branding_adoption import BRANDING_ADOPTION_VERSION, transform_app_b
 from ikf.app_operational_refinement import (
     OPERATIONAL_REFINEMENT_VERSION,
     transform_app_operational_refinement,
+    _remove_analysis_summary,
+    _apply_news_refinement,
+    _apply_similar_cases_refinement,
 )
 from ikf.app_similarity_refinement import (
     SIMILARITY_REFINEMENT_VERSION,
@@ -51,23 +54,39 @@ def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _normalise_preapplied_quota_constants(source: str) -> str:
-    """Let the legacy operational transform run when quota constants were pre-applied.
+def _apply_operational_refinement_compatibly(source: str) -> tuple[str, tuple[str, ...]]:
+    """Apply operational refinements without replaying an already-materialized quota migration."""
 
-    The monolithic App source already carries the current GPT-OSS 20B / Llama
-    quota constants, while the operational refinement still owns the wider UI
-    and reservation migration.  Collapse only those two constants back to the
-    transform's legacy anchor so the complete refinement can execute once.
-    """
-
-    current = (
-        'GPT20_DAILY_QUESTION_LIMIT = int(os.getenv("GPT20_DAILY_QUESTION_LIMIT", "30"))\n'
-        'LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "10"))'
+    quota_already_current = (
+        "MODEL_DAILY_LIMITS" in source
+        or "def get_gpt20_daily_usage" in source
+        or "GPT20_DAILY_QUESTION_LIMIT" in source
     )
-    legacy = 'LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "5"))'
-    if current in source and legacy not in source:
-        return source.replace(current, legacy, 1)
-    return source
+
+    if not quota_already_current:
+        return transform_app_operational_refinement(source)
+
+    applied = [
+        "class_d_ask_quotas_already_present_in_source",
+        "analysis_runs_do_not_consume_ask_quota_already_present_in_source",
+    ]
+
+    if 'st.markdown("### Analysis summary")' in source:
+        source = _remove_analysis_summary(source)
+        applied.append("analysis_summary_findings_only")
+
+    source = _apply_news_refinement(source)
+    applied.extend(
+        [
+            "news_triage_semantics_and_filters",
+            "news_active_analysis_lexical_relevance",
+            "news_unique_fatal_alert_count",
+        ]
+    )
+
+    source = _apply_similar_cases_refinement(source)
+    applied.append("similar_cases_full_processed_maira_scope_wording")
+    return source, tuple(applied)
 
 
 def build_bundle(output: Path) -> Path:
@@ -98,8 +117,7 @@ def build_bundle(output: Path) -> Path:
     transformed_app_source, applied_audio_fixup = transform_app_audio_fixup_source(transformed_app_source)
     transformed_app_source, applied_news = transform_app_news_source(transformed_app_source)
     transformed_app_source, applied_branding = transform_app_branding_source(transformed_app_source)
-    transformed_app_source = _normalise_preapplied_quota_constants(transformed_app_source)
-    transformed_app_source, applied_operational = transform_app_operational_refinement(transformed_app_source)
+    transformed_app_source, applied_operational = _apply_operational_refinement_compatibly(transformed_app_source)
     transformed_app_source, applied_similarity = transform_app_similarity_refinement(transformed_app_source)
     transformed_app_source, applied_visual = transform_app_visual_refinement(transformed_app_source)
     compile(transformed_app_source, str(output / "app.py"), "exec")
