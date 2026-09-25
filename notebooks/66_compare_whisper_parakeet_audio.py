@@ -18,6 +18,12 @@
 
 # COMMAND ----------
 
+# Load the freshly installed ASR packages into this notebook process.
+# This runs before any benchmark state is created, so restarting is safe.
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
 AUDIO_PATH = ""  # /Volumes/.../investigation_sources/audios/file.wav
 START_S = 0.0
 END_S = 120.0
