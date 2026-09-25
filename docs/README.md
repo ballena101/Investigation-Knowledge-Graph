@@ -9,46 +9,49 @@ The Commodore Clipper material is retained as a controlled reference and benchma
 1. [28_app_information_architecture.md](28_app_information_architecture.md)  
    Current operational App separation: Analyse Documents, Findings & Evidence, Knowledge Graph, Ask / Compare LLMs, Review & Validate, with News & Alerts kept separate as an external-signal capability.
 
-2. [25_implementation_status_and_roadmap.md](25_implementation_status_and_roadmap.md)  
+2. [36_purpose_fit_app_visual_refinement.md](36_purpose_fit_app_visual_refinement.md)  
+   Current purpose-fit App refinement: Plotly visual timeline, five timeline categories/phases, simplified News & Alerts, and SHIELD hidden from the App while retained in the IKF project.
+
+3. [25_implementation_status_and_roadmap.md](25_implementation_status_and_roadmap.md)  
    Current DONE / NEXT / PENDING operational implementation tracker.
 
-3. [08_roadmap.md](08_roadmap.md)  
+4. [08_roadmap.md](08_roadmap.md)  
    Current capability objectives, baseline-consolidation milestone, validation maturity model and future phases.
 
-4. [30_cost_efficient_validation_strategy.md](30_cost_efficient_validation_strategy.md)  
+5. [30_cost_efficient_validation_strategy.md](30_cost_efficient_validation_strategy.md)  
    Authoritative engineering rule for local/GitHub-first validation and minimal-cost Databricks integration proof.
 
-5. [32_local_governance_extraction_status.md](32_local_governance_extraction_status.md)  
+6. [32_local_governance_extraction_status.md](32_local_governance_extraction_status.md)  
    Current local-first governance extraction/adoption status and latest regression state.
 
-6. [LOCAL_RELEASE_CANDIDATE.md](LOCAL_RELEASE_CANDIDATE.md)  
+7. [LOCAL_RELEASE_CANDIDATE.md](LOCAL_RELEASE_CANDIDATE.md)  
    Frozen locally validated baseline and deployment-bundle contract for the next Databricks integration proof.
 
-7. [33_gate0_cost_audit_and_minimum_integration_proof.md](33_gate0_cost_audit_and_minimum_integration_proof.md)  
+8. [33_gate0_cost_audit_and_minimum_integration_proof.md](33_gate0_cost_audit_and_minimum_integration_proof.md)  
    Mandatory Gate-0 sequence, GO/STOP criteria and minimum cloud-validation plan.
 
-8. [34_gate0_execution_record_template.md](34_gate0_execution_record_template.md)  
+9. [34_gate0_execution_record_template.md](34_gate0_execution_record_template.md)  
    Execution record to capture the actual billing results, resource actions, cloud checks and incremental cost.
 
-9. [35_ikf_cloud_resource_inventory.md](35_ikf_cloud_resource_inventory.md)  
+10. [35_ikf_cloud_resource_inventory.md](35_ikf_cloud_resource_inventory.md)  
    Known IKF App, Job, endpoint and persisted-artifact identifiers for billing attribution. The audit remains broad so unexpected resources remain visible.
 
-10. [18_model_validation_and_feedback.md](18_model_validation_and_feedback.md)  
+11. [18_model_validation_and_feedback.md](18_model_validation_and_feedback.md)  
    Model validation, benchmark metrics and the controlled use of human-validated knowledge as evaluation/retrieval/feedback material.
 
-11. [16_unified_input_and_model_routing.md](16_unified_input_and_model_routing.md)  
+12. [16_unified_input_and_model_routing.md](16_unified_input_and_model_routing.md)  
    Input modes, information classes, model routing and privacy controls.
 
-12. [15_data_protection_confidentiality.md](15_data_protection_confidentiality.md)  
+13. [15_data_protection_confidentiality.md](15_data_protection_confidentiality.md)  
    Confidentiality, minimisation, Article-9-oriented design and privacy gate.
 
-13. [13_automated_analysis_orchestration.md](13_automated_analysis_orchestration.md)  
+14. [13_automated_analysis_orchestration.md](13_automated_analysis_orchestration.md)  
    Lakeflow Job lifecycle and processing stages.
 
-14. [03_architecture.md](03_architecture.md) and [04_data_model.md](04_data_model.md)  
+15. [03_architecture.md](03_architecture.md) and [04_data_model.md](04_data_model.md)  
    Technical architecture and graph/data model.
 
-15. [22_maira_passage_integration.md](22_maira_passage_integration.md)  
+16. [22_maira_passage_integration.md](22_maira_passage_integration.md)  
    MAIRA passage contract, provenance preservation and removal of parallel document-chunking logic from IKF.
 
 ## Current source/knowledge ownership
@@ -56,7 +59,7 @@ The Commodore Clipper material is retained as a controlled reference and benchma
 - **MAIRA** — canonical published investigation documents, passages, provenance, governed terminology and governed retrieval.
 - **IKF** — orchestration, analysis runs, questions, review, graph/knowledge presentation and validated-knowledge workflows.
 - **REFERENCE_CONTEXT** — separate legal / IMO / technical reference corpus.
-- **SHIELD** — separate persistent classification/taxonomy corpus.
+- **SHIELD** — separate persistent classification/taxonomy corpus retained in the project; it is not currently exposed in the purpose-fit App.
 - **EMCIP controlled vocabulary** — MAIRA-owned governed analytical vocabulary consumed by IKF.
 - **News & Alerts** — external/unvalidated signals kept separate from validated investigation knowledge.
 
@@ -72,6 +75,9 @@ structured candidate outputs + provenance
         ├──────────────→ Findings & Evidence
         │                 item-level evidence + cited source pages
         │
+        ├──────────────→ Timeline
+        │                 Plotly event sequence + governed chronology
+        │
         ├──────────────→ Knowledge Graph
         │                 graph exploration + scoped graph questions
         │
@@ -79,8 +85,10 @@ structured candidate outputs + provenance
         │                 scoped questions + governed retrieval + citations
         │
         └──────────────→ Review & Validate
-                          relationship review → EMCIP → SHIELD
+                          relationship review → EMCIP
 ```
+
+SHIELD remains available as a project/governance capability but is intentionally hidden from the current operational App so the product stays fit for the investigator purpose.
 
 Human review remains authoritative. AI output is candidate knowledge unless and until the relevant validation workflow records a human decision.
 
@@ -132,7 +140,7 @@ The reference case is retained because it provides reviewed graph/evidence mater
 - [23_maira_bosuil_integration_plan.md](23_maira_bosuil_integration_plan.md) — MAIRA reuse, EMCIP/query/relationship governance, selective Bosuil-derived design experiments, Directive/IMO reference context, Class-D safeguards and SHIELD sequencing.
 - [26_generic_emcip_mapping_review.md](26_generic_emcip_mapping_review.md) — MAIRA-registry shortlist, LLM proposal, human validation and provenance controls.
 - [27_reference_context_retrieval.md](27_reference_context_retrieval.md) — separation of SOURCE_EVIDENCE, REFERENCE_CONTEXT and controlled-taxonomy roles.
-- [29_shield_two_gate_workflow.md](29_shield_two_gate_workflow.md) — persistent SHIELD corpus, Gate-1 contributing-factor validation, grounded assistant proposal and Gate-2 human review.
+- [29_shield_two_gate_workflow.md](29_shield_two_gate_workflow.md) — persistent SHIELD corpus, Gate-1 contributing-factor validation, grounded assistant proposal and Gate-2 human review. This remains project documentation even though SHIELD is not exposed in the current App.
 
 ## Runtime validation
 
@@ -152,6 +160,7 @@ Earlier documents may preserve historical PoC design decisions that have since b
 - `LOCAL_RELEASE_CANDIDATE.md`;
 - `33_gate0_cost_audit_and_minimum_integration_proof.md`;
 - `34_gate0_execution_record_template.md`;
-- `35_ikf_cloud_resource_inventory.md`.
+- `35_ikf_cloud_resource_inventory.md`;
+- `36_purpose_fit_app_visual_refinement.md`.
 
 Future documentation updates should prefer revising these current baseline documents over creating additional overlapping architecture descriptions.
