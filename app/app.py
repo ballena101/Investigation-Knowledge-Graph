@@ -1,7 +1,9 @@
 import hashlib
+import html
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -10,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 import fitz
+import pandas as pd
+import pydeck as pdk
 import streamlit as st
 from cryptography.fernet import Fernet
 from databricks.sdk import WorkspaceClient
@@ -573,6 +577,252 @@ def get_driver():
 @st.cache_resource
 def get_workspace_client():
     return WorkspaceClient()
+
+
+_NEWS_ALERTS_SQL = r"""
+WITH ranked AS (
+    SELECT
+        a.*,
+        REGEXP_EXTRACT(a.sub_headline_text, 'IMO:\\s*(\\d{7})', 1) AS imo_number,
+        ROW_NUMBER() OVER (PARTITION BY a.alert_group_id ORDER BY a.alert_version DESC) AS rn
+    FROM bdw_analysis_prod.siana.eu_eea_alerts_hierarchy_v a
+    WHERE
+        a.headline NOT RLIKE '(?i)\\b(inland|river|pond|lake|canal|waterway)\\b'
+        AND UPPER(a.headline) NOT LIKE '%SANCTIONED%'
+        AND UPPER(a.headline) NOT LIKE '%SANCTION%'
+        AND UPPER(a.headline) NOT LIKE '%WINDWARD%'
+        AND NOT (
+            (
+                UPPER(a.headline) LIKE '%MIGRANT%'
+                OR UPPER(a.headline) LIKE '%MIGRANTS%'
+                OR UPPER(a.headline) LIKE '%IMMIGRANT%'
+                OR UPPER(a.headline) LIKE '%IMMIGRANTS%'
+                OR UPPER(a.headline) LIKE '%IMMIGRATION%'
+                OR UPPER(a.headline) LIKE '%REFUGEE%'
+                OR UPPER(a.headline) LIKE '%REFUGEES%'
+                OR UPPER(a.headline) LIKE '%ASYLUM%'
+            )
+            AND NOT (
+                UPPER(a.headline) LIKE '% KILLED %'
+                OR UPPER(a.headline) LIKE '% DEAD %'
+                OR UPPER(a.headline) LIKE '% DEATH %'
+                OR UPPER(a.headline) LIKE '% DIED %'
+                OR UPPER(a.headline) LIKE '% FATAL %'
+                OR UPPER(a.headline) LIKE '% FATALITY %'
+                OR UPPER(a.headline) LIKE '% FATALITIES %'
+                OR UPPER(a.headline) LIKE '% LOSS OF LIFE %'
+            )
+        )
+),
+base AS (
+    SELECT * FROM ranked WHERE rn = 1
+),
+expanded AS (
+    SELECT *, flag_country AS match_country, 'Flag' AS match_reason
+    FROM base WHERE flag_country IS NOT NULL
+    UNION ALL
+    SELECT *, location_country AS match_country, 'Location' AS match_reason
+    FROM base WHERE location_country IS NOT NULL
+    UNION ALL
+    SELECT *, crew_country AS match_country, 'Crew' AS match_reason
+    FROM base WHERE crew_country IS NOT NULL
+    UNION ALL
+    SELECT *, NULL AS match_country, alert_reason AS match_reason
+    FROM base
+    WHERE flag_country IS NULL AND location_country IS NULL AND crew_country IS NULL
+)
+SELECT
+    alert_id,
+    alert_timestamp,
+    first_alert_timestamp,
+    alert_version,
+    headline,
+    CONCAT(
+        headline,
+        CASE WHEN ISNOTNULL(previous_headlines)
+             THEN CONCAT(CHR(10), '---', CHR(10), previous_headlines)
+             ELSE '' END
+    ) AS headlinefull,
+    event_location_latitude,
+    event_location_longitude,
+    match_country,
+    match_reason,
+    CASE
+        WHEN (UPPER(headline) LIKE '%CONTAINER SHIP%') OR (UPPER(headline) LIKE '%CONTAINERSHIP%') THEN 'Container Ship'
+        WHEN UPPER(headline) LIKE '%BULK CARRIER%' THEN 'Bulk Carrier'
+        WHEN UPPER(headline) LIKE '%CHEMICAL TANKER%' THEN 'Chemical Tanker'
+        WHEN UPPER(headline) LIKE '%PRODUCT TANKER%' THEN 'Product Tanker'
+        WHEN (UPPER(headline) LIKE '%CRUDE OIL TANKER%') OR (UPPER(headline) LIKE '%OIL TANKER%') THEN 'Oil Tanker'
+        WHEN UPPER(headline) LIKE '%TANKER%' THEN 'Tanker'
+        WHEN UPPER(headline) LIKE '%LNG CARRIER%' THEN 'LNG Carrier'
+        WHEN UPPER(headline) LIKE '%LPG CARRIER%' THEN 'LPG Carrier'
+        WHEN (UPPER(headline) LIKE '%RO-RO%') OR (UPPER(headline) LIKE '%RORO%') THEN 'Ro-Ro'
+        WHEN UPPER(headline) LIKE '%FERRY%' THEN 'Ferry'
+        WHEN UPPER(headline) LIKE '%PASSENGER SHIP%' THEN 'Passenger Ship'
+        WHEN UPPER(headline) LIKE '%PASSENGER VESSEL%' THEN 'Passenger Vessel'
+        WHEN UPPER(headline) LIKE '%CRUISE SHIP%' THEN 'Cruise Ship'
+        WHEN UPPER(headline) LIKE '%FISHING VESSEL%' THEN 'Fishing Vessel'
+        WHEN UPPER(headline) LIKE '%FISHING BOAT%' THEN 'Fishing Vessel'
+        WHEN UPPER(headline) LIKE '%TRAWLER%' THEN 'Trawler'
+        WHEN (UPPER(headline) LIKE '%TUGBOAT%') OR (UPPER(headline) LIKE '%TUG BOAT%') THEN 'Tug'
+        WHEN UPPER(headline) LIKE '%TUG%' THEN 'Tug'
+        WHEN UPPER(headline) LIKE '%PILOT BOAT%' THEN 'Pilot Boat'
+        WHEN UPPER(headline) LIKE '%WORKBOAT%' THEN 'Workboat'
+        WHEN UPPER(headline) LIKE '%TOWBOAT%' THEN 'Towboat'
+        WHEN UPPER(headline) LIKE '%BARGE%' THEN 'Barge'
+        WHEN UPPER(headline) LIKE '%SAILING YACHT%' THEN 'Sailing Yacht'
+        WHEN UPPER(headline) LIKE '%YACHT%' THEN 'Yacht'
+        WHEN UPPER(headline) LIKE '%SAILBOAT%' THEN 'Sailboat'
+        WHEN UPPER(headline) LIKE '%CARGO VESSEL%' THEN 'Cargo Vessel'
+        WHEN (UPPER(headline) LIKE '%CARGO SHIP%') OR (UPPER(headline) LIKE '%FREIGHTER%') THEN 'Cargo Ship'
+        WHEN UPPER(headline) LIKE '%BOAT%' THEN 'Boat'
+        WHEN UPPER(headline) LIKE '%SHIP%' THEN 'Ship'
+        WHEN UPPER(headline) LIKE '%VESSEL%' THEN 'Vessel'
+        ELSE 'unknown'
+    END AS vesseltype,
+    CASE
+        WHEN (UPPER(headline) LIKE '%COLLISION%') OR (UPPER(headline) LIKE '%CRASH%') THEN 'Collision'
+        WHEN UPPER(headline) LIKE '%ALLISION%' THEN 'Allision'
+        WHEN (UPPER(headline) LIKE '%CAPSIZE%') OR (UPPER(headline) LIKE '%CAPSIZED%') OR (UPPER(headline) LIKE '%CAPSIZING%') OR (UPPER(headline) LIKE '%OVERTURN%') THEN 'Capsize'
+        WHEN (UPPER(headline) LIKE '%RUNS AGROUND%') OR (UPPER(headline) LIKE '%RAN AGROUND%') OR (UPPER(headline) LIKE '%RUN AGROUND%') OR (UPPER(headline) LIKE '%GROUNDED%') OR (UPPER(headline) LIKE '%GROUNDING%') OR (UPPER(headline) LIKE '%STRANDED%') THEN 'Grounding'
+        WHEN (UPPER(headline) LIKE '%FIRE%') OR (UPPER(headline) LIKE '%BURNS%') OR (UPPER(headline) LIKE '%BURNING%') OR (UPPER(headline) LIKE '%BLAZE%') THEN 'Fire'
+        WHEN (UPPER(headline) LIKE '%EXPLOSION%') OR (UPPER(headline) LIKE '%EXPLODES%') OR (UPPER(headline) LIKE '%EXPLODED%') OR (UPPER(headline) LIKE '%BLAST%') THEN 'Explosion'
+        WHEN (UPPER(headline) LIKE '%SINKING%') OR (UPPER(headline) LIKE '%SINKS%') OR (UPPER(headline) LIKE '%SANK%') OR (UPPER(headline) LIKE '%SUNK%') OR (UPPER(headline) LIKE '%GOES DOWN%') THEN 'Sinking'
+        WHEN (UPPER(headline) LIKE '%FLOOD%') OR (UPPER(headline) LIKE '%FLOODING%') OR (UPPER(headline) LIKE '%FLOODED%') THEN 'Flooding'
+        WHEN (UPPER(headline) LIKE '%OIL SPILL%') OR (UPPER(headline) LIKE '%SPILL%') OR (UPPER(headline) LIKE '%POLLUTION%') OR (UPPER(headline) LIKE '%LEAK%') THEN 'Pollution'
+        WHEN UPPER(headline) LIKE '%MISSING%' THEN 'Missing Person'
+        WHEN (UPPER(headline) LIKE '%OVERBOARD%') OR (UPPER(headline) LIKE '%MAN OVERBOARD%') THEN 'Person Overboard'
+        WHEN (UPPER(headline) LIKE '%RESCUED%') OR (UPPER(headline) LIKE '%RESCUE%') OR (UPPER(headline) LIKE '%EVACUATED%') THEN 'Rescue'
+        WHEN (UPPER(headline) LIKE '%INJURED%') OR (UPPER(headline) LIKE '%HOSPITALIZED%') OR (UPPER(headline) LIKE '%HURT%') THEN 'Injury'
+        WHEN (UPPER(headline) LIKE '%KILLED%') OR (UPPER(headline) LIKE '%DEAD%') OR (UPPER(headline) LIKE '%DIES%') OR (UPPER(headline) LIKE '%DEATH%') THEN 'Fatality'
+        ELSE 'Other'
+    END AS eventtype,
+    CASE
+        WHEN (UPPER(headline) LIKE '%KILLED%') OR (UPPER(headline) LIKE '%DEAD%') OR (UPPER(headline) LIKE '%DEATH%') OR (UPPER(headline) LIKE '%DIED%') OR (UPPER(headline) LIKE '%FATAL%') OR (UPPER(headline) LIKE '%FATALITY%') OR (UPPER(headline) LIKE '%FATALITIES%') OR (UPPER(headline) LIKE '%LOSS OF LIFE%') THEN 'Fatal'
+        WHEN (UPPER(headline) LIKE '%HOSPITALIZED%') OR (UPPER(headline) LIKE '%INJURED%') THEN 'Very Serious Casualty'
+        WHEN UPPER(headline) LIKE '%FIRE%' THEN 'Very Serious Casualty'
+        WHEN UPPER(headline) LIKE '%COLLISION%' THEN 'Very Serious Casualty'
+        WHEN UPPER(headline) LIKE '%GROUNDING%' THEN 'Very Serious Casualty'
+        ELSE 'unknown'
+    END AS severity,
+    CASE
+        WHEN (UPPER(headline) LIKE '% KILLED %') OR (UPPER(headline) LIKE '% DEAD %') OR (UPPER(headline) LIKE '% DEATH %') OR (UPPER(headline) LIKE '% DIED %') OR (UPPER(headline) LIKE '% FATAL %') OR (UPPER(headline) LIKE '% FATALITY %') OR (UPPER(headline) LIKE '% FATALITIES %') OR (UPPER(headline) LIKE '% LOSS OF LIFE %') THEN 'Yes'
+        ELSE 'No'
+    END AS lossoflife,
+    load_date
+FROM expanded
+"""
+
+
+def fetch_news_alerts_data():
+    """Fetch EU/EEA alerts via SQL Statement Execution API."""
+    if not SQL_WAREHOUSE_ID:
+        return None, ("SQL warehouse not configured. Set the SQL_WAREHOUSE_ID "
+                      "environment variable in app.yaml to display live news data.\n\n"
+                      "The app service principal also needs SELECT on "
+                      "bdw_analysis_prod.siana.eu_eea_alerts_hierarchy_v "
+                      "and bdw_marinfo_prod.marinfo5.lot2a_ship, plus "
+                      "SQL warehouse access.")
+
+    # Use the logged-in user's OBO token so the query runs with the
+    # user's warehouse & table permissions (avoids SP grant requirements).
+    # We call the SQL Statement API via urllib directly to avoid the
+    # Databricks SDK auth conflict (SP OAuth env vars vs user PAT token).
+    user_token = get_user_access_token()
+    if not user_token:
+        # Fall back to SP client when no user token is available.
+        try:
+            w = get_workspace_client()
+            response = w.api_client.do(
+                "POST",
+                "/api/2.0/sql/statements",
+                body={
+                    "warehouse_id": SQL_WAREHOUSE_ID,
+                    "statement": _NEWS_ALERTS_SQL,
+                    "wait_timeout": "50s",
+                    "format": "JSON_ARRAY",
+                    "disposition": "INLINE",
+                },
+            )
+        except Exception as e:
+            return None, str(e)
+    else:
+        host = os.getenv("DATABRICKS_HOST", "").rstrip("/")
+        if host and not host.startswith("http"):
+            host = f"https://{host}"
+        api_headers = {
+            "Authorization": f"Bearer {user_token}",
+            "Content-Type": "application/json",
+        }
+        try:
+            req = urllib.request.Request(
+                f"{host}/api/2.0/sql/statements",
+                data=json.dumps({
+                    "warehouse_id": SQL_WAREHOUSE_ID,
+                    "statement": _NEWS_ALERTS_SQL,
+                    "wait_timeout": "50s",
+                    "format": "JSON_ARRAY",
+                    "disposition": "INLINE",
+                }).encode("utf-8"),
+                headers=api_headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                response = json.loads(resp.read())
+        except Exception as e:
+            return None, str(e)
+
+    try:
+        statement_id = response.get("statement_id")
+        status_state = response.get("status", {}).get("state")
+        poll_count = 0
+        host = os.getenv("DATABRICKS_HOST", "").rstrip("/")
+        if host and not host.startswith("http"):
+            host = f"https://{host}"
+        while status_state in ("PENDING", "RUNNING") and poll_count < 12:
+            time.sleep(5)
+            if user_token:
+                poll_req = urllib.request.Request(
+                    f"{host}/api/2.0/sql/statements/{statement_id}",
+                    headers={
+                        "Authorization": f"Bearer {user_token}",
+                        "Content-Type": "application/json",
+                    },
+                    method="GET",
+                )
+                with urllib.request.urlopen(poll_req, timeout=60) as resp:
+                    response = json.loads(resp.read())
+            else:
+                response = get_workspace_client().api_client.do(
+                    "GET",
+                    f"/api/2.0/sql/statements/{statement_id}",
+                )
+            status_state = response.get("status", {}).get("state")
+            poll_count += 1
+
+        if status_state != "SUCCEEDED":
+            error_msg = response.get("status", {}).get("error", {}).get(
+                "message", f"Query state: {status_state}"
+            )
+            return None, error_msg
+
+        columns = [
+            col["name"]
+            for col in response.get("manifest", {}).get("schema", {}).get("columns", [])
+        ]
+        rows = response.get("result", {}).get("data_array", [])
+
+        df = pd.DataFrame(rows, columns=columns)
+
+        for col in ["event_location_latitude", "event_location_longitude"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df["alert_version"] = pd.to_numeric(df["alert_version"], errors="coerce")
+        for col in ["alert_timestamp", "first_alert_timestamp", "load_date"]:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+
+        return df, None
+    except Exception as e:
+        return None, str(e)
 
 
 def resolve_model_policy(information_class):
@@ -5384,36 +5634,261 @@ with tab_home:
 
 with tab_news:
     st.subheader("News & Alerts")
-    st.caption(
-        "Existing Databricks AI/BI dashboard for maritime-safety news and "
-        "country-level alerts."
-    )
 
-    n1, n2, n3 = st.columns(3)
-    n1.metric(
-        "Country dashboard",
-        "Connected" if NEWS_DASHBOARD_URL else "Ready to connect",
-    )
-    n2.metric("News table access", "Read-only")
-    n3.metric("LLM questions", "Next step")
-
-    st.info(
-        "News is treated as external, unvalidated information. It is not "
-        "mixed silently with validated investigation findings."
-    )
-
-    if NEWS_DASHBOARD_URL:
-        st.link_button(
-            "Open News & Alerts dashboard",
-            NEWS_DASHBOARD_URL,
-            type="primary",
-            use_container_width=True,
+    if not SQL_WAREHOUSE_ID:
+        st.warning(
+            "**SQL warehouse not configured.** Set the `SQL_WAREHOUSE_ID` "
+            "environment variable in `app.yaml` to display live news data. "
+            "The app service principal also needs SELECT on "
+            "`bdw_analysis_prod.siana.eu_eea_alerts_hierarchy_v` and "
+            "`bdw_marinfo_prod.marinfo5.lot2a_ship`, plus SQL warehouse access."
         )
+        if NEWS_DASHBOARD_URL:
+            st.link_button(
+                "Open News & Alerts dashboard (fallback)",
+                NEWS_DASHBOARD_URL,
+                type="primary",
+                use_container_width=True,
+            )
     else:
-        st.write(
-            "Copy the published dashboard link from Databricks and configure "
-            "it as NEWS_DASHBOARD_URL for this App."
+        if st.button("Load / refresh news alerts", key="load_news_alerts"):
+            with st.spinner("Querying news alerts\u2026"):
+                st.session_state["news_alerts_snapshot"] = fetch_news_alerts_data()
+        _news_df, _news_err = st.session_state.get(
+            "news_alerts_snapshot", (None, None)
         )
+
+        if _news_df is None and _news_err is None:
+            st.info("Select Load / refresh news alerts to query the warehouse.")
+        elif _news_err:
+            st.error(f"Failed to load news data: {_news_err}")
+        elif _news_df is None or _news_df.empty:
+            st.info("No alerts found.")
+        else:
+            # ---------- Filters ----------
+            _fcol1, _fcol2 = st.columns(2)
+            with _fcol1:
+                _all_countries = sorted(
+                    _news_df["match_country"].dropna().unique().tolist()
+                )
+                _sel_countries = st.multiselect(
+                    "Country affected",
+                    options=_all_countries,
+                    default=[],
+                    placeholder="All countries",
+                    key="news_country_filter",
+                )
+            with _fcol2:
+                _min_date = _news_df["alert_timestamp"].dt.date.min()
+                _max_date = _news_df["alert_timestamp"].dt.date.max()
+                _default_start = max(
+                    _min_date,
+                    (pd.Timestamp.now() - pd.Timedelta(days=7)).date(),
+                )
+                _date_range = st.date_input(
+                    "Date range",
+                    value=(_default_start, _max_date),
+                    min_value=_min_date,
+                    max_value=_max_date,
+                    key="news_date_range",
+                )
+
+            # Apply filters
+            _filtered = _news_df.copy()
+            if _sel_countries:
+                _filtered = _filtered[
+                    _filtered["match_country"].isin(_sel_countries)
+                ]
+            if isinstance(_date_range, tuple) and len(_date_range) == 2:
+                _d_start, _d_end = _date_range
+                _filtered = _filtered[
+                    (_filtered["alert_timestamp"].dt.date >= _d_start)
+                    & (_filtered["alert_timestamp"].dt.date <= _d_end)
+                ]
+
+            if _filtered.empty:
+                st.info("No alerts match the selected filters.")
+            else:
+                # ---------- KPI row (full width) ----------
+                k1, k2, k3 = st.columns(3)
+                k1.metric("Total alerts", int(_filtered["alert_id"].nunique()))
+                k2.metric(
+                    "Fatal incidents",
+                    int((_filtered["lossoflife"] == "Yes").sum()),
+                )
+                k3.metric(
+                    "Countries",
+                    int(_filtered["match_country"].dropna().nunique()),
+                )
+
+                # ---------- Map + legend (full width) ----------
+                st.markdown("#### Alert locations")
+                _PALETTE = [
+                    [31, 119, 180, 190],
+                    [255, 127, 14, 190],
+                    [44, 160, 44, 190],
+                    [214, 39, 40, 190],
+                    [148, 103, 189, 190],
+                    [140, 86, 75, 190],
+                    [227, 119, 194, 190],
+                    [188, 189, 34, 190],
+                    [23, 190, 207, 190],
+                    [255, 187, 120, 190],
+                    [152, 223, 138, 190],
+                    [255, 152, 150, 190],
+                ]
+                _unique_types = sorted(
+                    _filtered["vesseltype"].fillna("unknown").unique()
+                )
+                _type_colors = {
+                    t: _PALETTE[i % len(_PALETTE)]
+                    for i, t in enumerate(_unique_types)
+                }
+
+                _map_col, _legend_col = st.columns([5, 1])
+                with _map_col:
+                    _map_df = (
+                        _filtered.dropna(
+                            subset=["event_location_latitude", "event_location_longitude"]
+                        )
+                        .rename(columns={
+                            "event_location_latitude": "latitude",
+                            "event_location_longitude": "longitude",
+                        })
+                        .copy()
+                    )
+                    if not _map_df.empty:
+                        _map_df["color"] = (
+                            _map_df["vesseltype"]
+                            .fillna("unknown")
+                            .map(_type_colors)
+                        )
+                        _map_df["headline_html"] = (
+                            _map_df["headlinefull"]
+                            .fillna(_map_df["headline"])
+                            .str.replace("\n", "<br/>", regex=False)
+                        )
+                        _layer = pdk.Layer(
+                            "ScatterplotLayer",
+                            data=_map_df,
+                            get_position=["longitude", "latitude"],
+                            get_color="color",
+                            get_radius=40000,
+                            pickable=True,
+                            auto_highlight=True,
+                        )
+                        _view = pdk.ViewState(
+                            latitude=_map_df["latitude"].mean(),
+                            longitude=_map_df["longitude"].mean(),
+                            zoom=3,
+                            pitch=0,
+                        )
+                        st.pydeck_chart(
+                            pdk.Deck(
+                                layers=[_layer],
+                                initial_view_state=_view,
+                                map_style="light",
+                                tooltip={
+                                    "html": (
+                                        "<b>{headline_html}</b><br/>"
+                                        "Vessel type: {vesseltype}<br/>"
+                                        "Country: {match_country}<br/>"
+                                        "Reason: {match_reason}"
+                                    ),
+                                    "style": {
+                                        "backgroundColor": "#f0f0f0",
+                                        "color": "#333333",
+                                    },
+                                },
+                            ),
+                            use_container_width=True,
+                        )
+                    else:
+                        st.caption("No geo-located alerts available.")
+                with _legend_col:
+                    _legend_items = "<br>".join(
+                        f'<span style="color:rgba({c[0]},{c[1]},{c[2]},1)">'
+                        f"\u25CF</span> {t}"
+                        for t, c in _type_colors.items()
+                    )
+                    st.markdown(
+                        f"<small><b>Vessel types</b><br>{_legend_items}</small>",
+                        unsafe_allow_html=True,
+                    )
+
+                # ---------- Detail table (full width) ----------
+                st.markdown("#### Alert details")
+                _detail_cols = [
+                    "first_alert_timestamp", "alert_timestamp", "headlinefull",
+                    "severity", "match_reason", "eventtype",
+                ]
+                _display_df = (
+                    _filtered[_detail_cols]
+                    .sort_values("alert_timestamp", ascending=False)
+                    .reset_index(drop=True)
+                )
+                _display_df.columns = [
+                    "First seen", "Latest update", "Headline",
+                    "Severity", "Match reason", "Event type",
+                ]
+                for _tcol in ["First seen", "Latest update"]:
+                    _display_df[_tcol] = pd.to_datetime(
+                        _display_df[_tcol], errors="coerce"
+                    ).dt.strftime("%d %b %H:%M")
+                st.dataframe(
+                    _display_df,
+                    column_config={
+                        "Headline": st.column_config.TextColumn(
+                            "Headline", width="large",
+                        ),
+                        "First seen": st.column_config.TextColumn(
+                            "First seen", width="small",
+                        ),
+                        "Latest update": st.column_config.TextColumn(
+                            "Latest update", width="small",
+                        ),
+                        "Severity": st.column_config.TextColumn(
+                            "Severity", width="small",
+                        ),
+                        "Match reason": st.column_config.TextColumn(
+                            "Match reason", width="small",
+                        ),
+                        "Event type": st.column_config.TextColumn(
+                            "Event type", width="small",
+                        ),
+                    },
+                    use_container_width=True,
+                    height=400,
+                )
+
+                # ---------- Charts row ----------
+                _ch1, _ch2 = st.columns(2)
+                with _ch1:
+                    st.markdown("#### Alerts by vessel type")
+                    _vtype = (
+                        _filtered.drop_duplicates(subset=["alert_id", "vesseltype"])
+                        .groupby("vesseltype")["alert_id"]
+                        .nunique()
+                        .sort_values(ascending=False)
+                        .head(15)
+                    )
+                    if not _vtype.empty:
+                        st.bar_chart(_vtype)
+                with _ch2:
+                    st.markdown("#### Alerts by event type")
+                    _etype = (
+                        _filtered.drop_duplicates(subset=["alert_id", "eventtype"])
+                        .groupby("eventtype")["alert_id"]
+                        .nunique()
+                        .sort_values(ascending=False)
+                    )
+                    if not _etype.empty:
+                        st.bar_chart(_etype)
+
+    st.caption(
+        "News is treated as external, unvalidated information. "
+        "It is not mixed with validated investigation findings."
+    )
 
 with tab_transcriptions:
     st.subheader("Type D audio transcriptions")
