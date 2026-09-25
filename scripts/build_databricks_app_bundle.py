@@ -34,7 +34,6 @@ from ikf.app_operational_refinement import (
     transform_app_operational_refinement,
     _remove_analysis_summary,
     _apply_news_refinement,
-    _apply_similar_cases_refinement,
 )
 from ikf.app_similarity_refinement import (
     SIMILARITY_REFINEMENT_VERSION,
@@ -52,6 +51,35 @@ MANIFEST_NAME = "ikf_bundle_manifest.json"
 
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _apply_similar_cases_wording_compatibly(source: str) -> str:
+    old_scope = (
+        '            "Deterministic lexical retrieval from processed case concepts. "\n'
+        '            "No embedding or LLM similarity score is used."'
+    )
+    new_scope = (
+        '            "Search scope: all processed MAIRA INVESTIGATION / MAIN_REPORT passages "\n'
+        '            "with canonical passages; the current report package is excluded. "\n'
+        '            "Matching is deterministic and lexical over existing case concepts. "\n'
+        '            "No embedding or LLM similarity score is used at this stage."'
+    )
+    if old_scope in source:
+        source = source.replace(old_scope, new_scope, 1)
+
+    old_news = (
+        '            "External/news similarity remains separate from validated "\n'
+        '            "investigation knowledge and is handled in the News/dashboard "\n'
+        '            "workstream."'
+    )
+    new_news = (
+        '            "Recent alerts remain external, unverified intelligence. In News & Alerts, "\n'
+        '            "use ‘Related to active analysis only’ for deterministic lexical screening "\n'
+        '            "against active-analysis concepts; this does not turn an alert into evidence."'
+    )
+    if old_news in source:
+        source = source.replace(old_news, new_news, 1)
+    return source
 
 
 def _apply_operational_refinement_compatibly(source: str) -> tuple[str, tuple[str, ...]]:
@@ -84,7 +112,7 @@ def _apply_operational_refinement_compatibly(source: str) -> tuple[str, tuple[st
         ]
     )
 
-    source = _apply_similar_cases_refinement(source)
+    source = _apply_similar_cases_wording_compatibly(source)
     applied.append("similar_cases_full_processed_maira_scope_wording")
     return source, tuple(applied)
 
