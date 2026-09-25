@@ -711,6 +711,7 @@ SELECT
     END AS lossoflife,
     load_date
 FROM expanded
+WHERE alert_timestamp >= DATEADD(DAY, -7, now())
 """
 
 
@@ -8803,11 +8804,75 @@ with tab_findings:
 
     with similar_right:
         st.markdown("**News & alerts**")
-        st.info(
-            "External/news similarity remains separate from validated "
-            "investigation knowledge and is handled in the News/dashboard "
-            "workstream."
+        st.caption(
+            "Potentially related recent alerts, screened against the selected "
+            "analysis graph. News is external and unverified."
         )
+        if knowledge_analyses and knowledge_meta.get("status") == "COMPLETED":
+            news_key = "related_news_" + knowledge_analysis_id
+            if st.button(
+                "Find related news alerts",
+                key="find_related_news_" + knowledge_analysis_id,
+                use_container_width=True,
+            ):
+                with st.spinner("Screening recent news alerts…"):
+                    terms = news_relevance_terms(
+                        load_analysis_graph(knowledge_analysis_id)
+                    )
+                    if not terms:
+                        st.session_state[news_key] = ([], None, 0)
+                    else:
+                        news_df, news_error = fetch_news_alerts_data()
+                        matches = []
+                        if news_error is None and news_df is not None:
+                            for _, alert in news_df.iterrows():
+                                headline = str(alert.get("headlinefull") or "")
+                                shared = matching_news_terms(headline, terms)
+                                if shared:
+                                    matches.append({
+                                        "Alert ID": alert.get("alert_id"),
+                                        "Latest update": alert.get("alert_timestamp"),
+                                        "Alert": headline,
+                                        "Matched concepts": ", ".join(shared),
+                                        "_score": len(shared),
+                                    })
+                            matches.sort(
+                                key=lambda item: item["_score"], reverse=True
+                            )
+                            unique_matches = []
+                            seen_alerts = set()
+                            for item in matches:
+                                alert_id = str(item["Alert ID"])
+                                if alert_id not in seen_alerts:
+                                    unique_matches.append(item)
+                                    seen_alerts.add(alert_id)
+                                if len(unique_matches) == 20:
+                                    break
+                            matches = unique_matches
+                        st.session_state[news_key] = (matches, news_error, len(terms))
+
+            result = st.session_state.get(news_key)
+            if result is not None:
+                matches, news_error, term_count = result
+                if news_error:
+                    st.error("Related-alert search failed: " + str(news_error))
+                elif not term_count:
+                    st.info("No eligible graph concepts to screen for related alerts.")
+                elif not matches:
+                    st.info("No identified related news alerts in the current feed.")
+                else:
+                    st.caption(
+                        f"{len(matches)} potentially related alerts shown; "
+                        f"screened against {term_count} graph concepts. "
+                        "A matching term does not establish a case link."
+                    )
+                    st.dataframe(
+                        pd.DataFrame(matches).drop(columns=["_score"]),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+        else:
+            st.info("Select a completed analysis to search related news alerts.")
 
 
 with tab_knowledge_graph:
