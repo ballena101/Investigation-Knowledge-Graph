@@ -5240,7 +5240,7 @@ def load_type_d_audio_bytes(record):
     return audio_bytes
 
 
-def create_transcription_run(*, source_path, source_name, model):
+def create_transcription_run(*, source_path, source_name, model, analysis_context_id=None):
     source_path = normalise_type_d_audio_path(
         source_path,
         audio_root=IKF_SOURCE_VOLUME_ROOT.rstrip("/") + "/audios",
@@ -5255,6 +5255,7 @@ def create_transcription_run(*, source_path, source_name, model):
                 source_path: $source_path,
                 source_name: $source_name,
                 model: $model,
+                analysis_context_id: $analysis_context_id,
                 classification: 'D',
                 status: 'PENDING',
                 processing_stage: 'PENDING',
@@ -5267,6 +5268,7 @@ def create_transcription_run(*, source_path, source_name, model):
             source_path=source_path,
             source_name=source_name,
             model=model,
+            analysis_context_id=analysis_context_id,
             created_by=get_current_user_key(),
         ).consume()
     return run_id
@@ -5286,6 +5288,7 @@ def load_latest_transcription_run(source_path, model):
                 r.status AS status,
                 r.processing_stage AS processing_stage,
                 r.job_run_id AS job_run_id,
+                r.analysis_context_id AS analysis_context_id,
                 r.source_sha256 AS source_sha256,
                 r.output_path AS output_path,
                 r.detected_language AS detected_language,
@@ -5344,7 +5347,7 @@ def trigger_type_d_transcription_job(transcription_run_id):
     return str(job_run_id)
 
 
-def save_transcript_review(record, reviewed_text):
+def save_transcript_review(record, reviewed_text, analysis_context_id=None):
     reviewer = get_current_user_key()
     reviewed_text = str(reviewed_text or "").strip()
     if not reviewed_text:
@@ -5379,6 +5382,7 @@ def save_transcript_review(record, reviewed_text):
                 r.source_name = $source_name,
                 r.source_path = $source_path,
                 r.model = $model,
+                r.analysis_context_id = $analysis_context_id,
                 r.reviewed_text_sha256 = $text_hash,
                 r.encrypted_text = $encrypted_text,
                 r.encryption_scheme = 'FERNET',
@@ -5396,6 +5400,7 @@ def save_transcript_review(record, reviewed_text):
             source_name=record.get("source_name"),
             source_path=record.get("source_path"),
             model=record["model"],
+            analysis_context_id=analysis_context_id,
             text_hash=text_hash,
             encrypted_text=encrypted_text,
             reviewer=reviewer,
@@ -5424,6 +5429,7 @@ def load_latest_transcript_review(source_sha256, model):
                 r.publication_job_run_id AS publication_job_run_id,
                 r.publication_error AS publication_error,
                 r.source_document_id AS source_document_id,
+                r.analysis_context_id AS analysis_context_id,
                 toString(r.reviewed_at) AS reviewed_at,
                 toString(r.published_at) AS published_at
             ORDER BY r.reviewed_at DESC
@@ -5433,6 +5439,28 @@ def load_latest_transcript_review(source_sha256, model):
             model=model,
         ).single()
     return record.data() if record else None
+
+
+def ensure_transcript_analysis_association(document_id, analysis_context_id):
+    """Persist case context without changing the analysis evidence set."""
+    if not document_id or not analysis_context_id:
+        return False
+    with get_driver().session() as session:
+        record = session.run(
+            """
+            MATCH (d:SourceDocument {document_id: $document_id})
+            MATCH (a:AnalysisGroup {analysis_id: $analysis_id})
+            MERGE (d)-[rel:ASSOCIATED_WITH_ANALYSIS]->(a)
+            SET rel.context_only = true,
+                rel.updated_at = datetime(),
+                rel.updated_by = $updated_by
+            RETURN d.document_id AS document_id
+            """,
+            document_id=document_id,
+            analysis_id=analysis_context_id,
+            updated_by=get_current_user_key(),
+        ).single()
+    return record is not None
 
 
 def trigger_transcript_publication_job(review_id):
@@ -6295,6 +6323,19 @@ with tab_transcriptions:
                 model,
             )
 
+            if active_analysis_id and active_analysis:
+                st.caption(
+                    "Investigation context: "
+                    + str(active_analysis.get("analysis_title") or active_analysis_id)
+                    + " · association only; this transcript changes findings/graph only "
+                      "when explicitly included in an analysis."
+                )
+            else:
+                st.caption(
+                    "No active analysis context. The accepted transcript will remain "
+                    "available as a normal Class-D document."
+                )
+
             st.markdown("### Processing")
             process_status = (
                 "VALIDATED"
@@ -6324,11 +6365,24 @@ with tab_transcriptions:
             status_col, stage_col, run_col, refresh_col = st.columns(
                 [1.0, 1.45, 1.0, 0.35]
             )
-            status_col.metric("Status", process_status)
-            stage_col.metric("Stage", process_stage)
-            run_col.metric(
-                "Job run",
-                (transcription_run or {}).get("job_run_id") or "—",
+            status_col.markdown(
+                '<div style="font-size:0.70rem;color:#6b7280;line-height:1.1;">Status</div>'
+                '<div style="font-size:1.05rem;font-weight:600;line-height:1.3;">'
+                + html.escape(str(process_status)) + '</div>',
+                unsafe_allow_html=True,
+            )
+            stage_col.markdown(
+                '<div style="font-size:0.70rem;color:#6b7280;line-height:1.1;">Stage</div>'
+                '<div style="font-size:1.05rem;font-weight:600;line-height:1.3;">'
+                + html.escape(str(process_stage)) + '</div>',
+                unsafe_allow_html=True,
+            )
+            run_col.markdown(
+                '<div style="font-size:0.70rem;color:#6b7280;line-height:1.1;">Job run</div>'
+                '<div style="font-size:1.05rem;font-weight:600;line-height:1.3;">'
+                + html.escape(str((transcription_run or {}).get("job_run_id") or "—"))
+                + '</div>',
+                unsafe_allow_html=True,
             )
             with refresh_col:
                 st.caption("Refresh")
@@ -6444,6 +6498,7 @@ with tab_transcriptions:
                                 source_path=selected_audio_path,
                                 source_name=selected_audio["name"],
                                 model=requested_model,
+                                analysis_context_id=active_analysis_id,
                             )
                             job_run_id = trigger_type_d_transcription_job(new_run_id)
                             queued_runs.append(
@@ -6517,6 +6572,11 @@ with tab_transcriptions:
                     machine_record["source_sha256"],
                     model,
                 )
+                if accepted_document and latest_review:
+                    ensure_transcript_analysis_association(
+                        accepted_document.get("document_id"),
+                        latest_review.get("analysis_context_id"),
+                    )
                 reviewed_default = machine_text
                 if (
                     latest_review
@@ -6628,6 +6688,9 @@ with tab_transcriptions:
                             review = save_transcript_review(
                                 machine_record,
                                 reviewed_text,
+                                analysis_context_id=(transcription_run or {}).get(
+                                    "analysis_context_id"
+                                ) or active_analysis_id,
                             )
                             if review.get("publication_status") != "PUBLISHED":
                                 publication_job_run_id = trigger_transcript_publication_job(

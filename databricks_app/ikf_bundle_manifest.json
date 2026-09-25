@@ -9,7 +9,10 @@
     "transcript_review_publication",
     "class_d_transcript_catalogue_scope",
     "single_transcription_workspace",
-    "reviewed_transcript_decryption"
+    "reviewed_transcript_decryption",
+    "active_analysis_transcription_context",
+    "published_transcript_analysis_association",
+    "compact_processing_metadata"
   ],
   "applied_files_api_adoptions": [
     "files_api_transport_imports",
@@ -77,10 +80,10 @@
     "workflow_wording_cleanup"
   ],
   "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.4",
-  "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.1",
+  "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.2",
   "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.9",
   "files_api_download_adoption_version": "IKF_APP_FILES_API_DOWNLOAD_V0.1",
-  "materialized_app_sha256": "b08fbd8bf2c24592ed2d77ad11f43d95acbf9ff142e71efc2296f68f3bc0010c",
+  "materialized_app_sha256": "43d6c7c9e3e0ff327e7fed524fab90cfd086286c514a96b13228f7b65494f1c0",
   "parakeet_adoption_version": "IKF_APP_PARAKEET_ADOPTION_V0.3",
   "shared_package_path": "src/ikf",
   "simplification_adoption_version": "IKF_APP_SIMPLIFICATION_ADOPTION_V0.5",
