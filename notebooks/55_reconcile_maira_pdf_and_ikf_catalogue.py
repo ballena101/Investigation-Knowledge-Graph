@@ -141,7 +141,10 @@ for document_id, item in doc_by_id.items():
         "status": ", ".join(reasons) or "READY",
     })
 
-audit = pd.DataFrame(rows)
+audit = pd.DataFrame(rows, columns=[
+    "document_id", "country_code", "investigation_body", "report_title",
+    "document_role", "passages", "ikf_selector", "file_path", "status",
+])
 main = audit[audit["document_role"] == "MAIN_REPORT"]
 print("PDFs in MAIRA investigation Volume:", len(pdf_paths))
 print("PDFs not registered in MAIRA documents:", len(unregistered_pdfs))
@@ -152,10 +155,30 @@ print("MAIRA documents available in IKF selector:", int(audit["ikf_selector"].su
 print("Registered source paths missing from Volume:", len(missing_source_files))
 print("Stale IKF MAIRA catalogue IDs:", len(set(ikf) - set(doc_by_id)))
 
-display(audit.sort_values(["status", "country_code", "report_title", "document_id"]))
-display(pd.DataFrame({"pdf_path_unregistered": unregistered_pdfs}))
-display(pd.DataFrame({"registered_path_not_in_volume": missing_source_files}))
-display(pd.DataFrame({"stale_ikf_maira_document_id": sorted(set(ikf) - set(doc_by_id))}))
+def show_nonempty(label, frame):
+    if frame.empty:
+        print(f"{label}: none")
+    else:
+        print(f"{label}: {len(frame)} row(s)")
+        display(frame)
+
+
+show_nonempty(
+    "Registered investigation documents",
+    audit.sort_values(["status", "country_code", "report_title", "document_id"]),
+)
+show_nonempty(
+    "Unregistered PDFs",
+    pd.DataFrame({"pdf_path_unregistered": unregistered_pdfs}),
+)
+show_nonempty(
+    "Registered paths absent from Volume",
+    pd.DataFrame({"registered_path_not_in_volume": missing_source_files}),
+)
+show_nonempty(
+    "Stale IKF catalogue IDs",
+    pd.DataFrame({"stale_ikf_maira_document_id": sorted(set(ikf) - set(doc_by_id))}),
+)
 
 print(
     "Next: if catalogue IDs are missing, run IKF notebook 33 and refresh the App; "
