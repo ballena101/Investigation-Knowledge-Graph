@@ -178,8 +178,11 @@ these application limits are not provider-imposed limits or model-safety rules.
 
 The default limits are **30 GPT-OSS 20B** and **10 Llama 3.3 70B**
 questions per user per calendar day, in `Europe/Lisbon`.
-The App displays remaining counts, blocks a selection if either selected
-counter is exhausted, and reserves Both counters in one Neo4j transaction.
+The App displays the configured limits and offers an explicit check for
+remaining counts. It checks the selected counters on submission, blocks an
+exhausted selection, and reserves Both counters in one Neo4j transaction.
+Quota reads are not run on every Streamlit page refresh because every tab is
+evaluated during a rerun; the displayed remaining count is a checked snapshot.
 Only identities listed in `IKG_ADMIN_USERS` can reset the current day's
 counter for a selected user and model; reset timestamp and admin identity
 remain auditable.
