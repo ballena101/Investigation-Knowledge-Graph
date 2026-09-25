@@ -75,6 +75,20 @@ This update adds:
 - unique-alert counting for the fatal-alert KPI;
 - safer triage terminology.
 
+### Related alerts for a selected analysis
+
+In Findings & Evidence → Similar cases, **Find related news alerts** runs an
+on-demand seven-day SIANA alert query and screens headlines against up to 20
+Event, ContributingFactor, SafetyIssue, Finding and System labels in the
+selected completed analysis graph. Results show alert text, update time and
+matched concepts, deduplicated by alert ID and bounded to 20. The panel
+explicitly says when no related alerts are identified. This is lexical
+screening of external, unverified news; it does not create a persistent
+investigation-to-alert relationship or promote news to case evidence.
+
+Live warehouse permissions, query output and App deployment still require
+runtime validation in Databricks.
+
 ### Triage terminology
 
 Headline-derived severity-like labels are now presented as **triage signals**, not as an official casualty severity classification. They are screening heuristics based on alert text and must not be interpreted as an IMO/Directive/EMCIP legal classification.
@@ -122,6 +136,7 @@ This update does not introduce a new model endpoint, embedding service or recurr
 - Findings & Evidence retained as the single analysis-output summary surface.
 - Similar Cases corpus scope clarified.
 - News filters and active-analysis lexical relevance added.
+- Findings & Evidence related-alert panel added on demand.
 - News severity-like output relabelled as triage signal.
 - Fatal-alert KPI deduplicated by `alert_id`.
 - GPT-OSS 20B Ask allowance set to 30/day.
