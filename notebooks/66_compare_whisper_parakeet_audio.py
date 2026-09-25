@@ -11,6 +11,13 @@
 
 # COMMAND ----------
 
+# Parakeet's Transformers implementation requires PyTorch. The current serverless
+# runtime used for this benchmark does not provide torch, so install the CPU build
+# explicitly rather than pulling CUDA packages onto a CPU-only test environment.
+# MAGIC %pip install "torch>=2.6,<3" --index-url https://download.pytorch.org/whl/cpu
+
+# COMMAND ----------
+
 # Version-range requirements are quoted deliberately. Databricks executes %pip
 # through a shell and unquoted '<' / '>' characters can be interpreted as shell
 # redirection rather than as PEP 440 version operators.
@@ -38,7 +45,6 @@ if END_S - START_S > 180:
 # COMMAND ----------
 
 from pathlib import Path
-import json
 import os
 import tempfile
 import time
