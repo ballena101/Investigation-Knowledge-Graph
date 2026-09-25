@@ -24,7 +24,9 @@
 # Transformers 5.17.0 is pinned because the current official NVIDIA Parakeet
 # model is directly supported by the Transformers automatic-speech-recognition
 # pipeline. PyTorch is provided by the Databricks runtime and is not reinstalled.
-# MAGIC %pip install faster-whisper==1.2.1 transformers==5.17.0 safetensors>=0.4 huggingface-hub>=0.34,<2 neo4j==6.3.1 cryptography==46.0.2
+# Version-range requirements are quoted because Databricks executes %pip through
+# a shell and unquoted '<' / '>' can be interpreted as shell redirection.
+# MAGIC %pip install faster-whisper==1.2.1 transformers==5.17.0 "safetensors>=0.4" "huggingface-hub>=0.34,<2" neo4j==6.3.1 cryptography==46.0.2
 
 # COMMAND ----------
 
