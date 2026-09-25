@@ -14,8 +14,6 @@
 # COMMAND ----------
 
 from collections import deque
-from pathlib import PurePosixPath
-
 import pandas as pd
 from neo4j import GraphDatabase
 from pyspark.sql import functions as F
@@ -83,6 +81,10 @@ finally:
 
 # Walk only the MAIRA investigation-report Volume. The cap prevents an
 # accidental unbounded inventory on a large production Volume.
+def volume_path(path):
+    return path.removeprefix("dbfs:").rstrip("/")
+
+
 queue = deque([ROOT])
 pdf_paths = set()
 entries_seen = 0
@@ -95,12 +97,12 @@ while queue:
                 f"Volume inventory exceeded {MAX_ENTRIES} entries; narrow the scan."
             )
         if entry.isDir():
-            queue.append(entry.path.rstrip("/"))
+            queue.append(volume_path(entry.path))
         elif entry.path.lower().endswith(".pdf"):
-            pdf_paths.add(entry.path)
+            pdf_paths.add(volume_path(entry.path))
 
 registered_paths = {
-    str(item["file_path"])
+    volume_path(str(item["file_path"]))
     for item in doc_by_id.values() if item.get("file_path")
 }
 unregistered_pdfs = sorted(pdf_paths - registered_paths)
@@ -117,7 +119,7 @@ for document_id, item in doc_by_id.items():
     reasons = []
     if not item.get("file_path"):
         reasons.append("NO_REGISTERED_PATH")
-    elif item["file_path"] not in pdf_paths:
+    elif volume_path(item["file_path"]) not in pdf_paths:
         reasons.append("REGISTERED_FILE_NOT_IN_VOLUME")
     if not in_selector:
         reasons.append("MISSING_OR_UNAVAILABLE_IN_IKF_CATALOGUE")
