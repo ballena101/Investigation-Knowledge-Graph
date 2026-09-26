@@ -1,28 +1,31 @@
 """Execute only the selected top-level IKF capability.
 
-Streamlit renders all code placed inside ``st.tabs`` on every script rerun. IKF
-has grown into several data-heavy capabilities, so that behaviour causes
-inactive pages to query Neo4j, build graphs and prepare UI unnecessarily.
+Streamlit renders code placed inside all top-level ``st.tabs`` containers on
+every script rerun. IKF now has several data-heavy capabilities, so that eager
+execution causes inactive pages to query Neo4j, SQL and build UI unnecessarily.
 
-This source transform preserves the existing capability bodies and widget keys,
-but changes only their top-level execution guard. Inner tabs and fragments are
-left untouched.
+This transform is deliberately applied last. It preserves the existing
+capability bodies, widget keys, inner Ask tabs and fragments, changing only the
+top-level execution guard.
 """
 
 from __future__ import annotations
 
+import re
 
-LAZY_NAVIGATION_VERSION = "IKF_LAZY_CAPABILITY_NAVIGATION_V0.1"
+
+LAZY_NAVIGATION_VERSION = "IKF_LAZY_CAPABILITY_NAVIGATION_V0.1.1"
 
 
+# These are the user-visible labels after the existing UI/simplification passes.
 CAPABILITIES = (
     "Home",
     "News & Alerts",
-    "Transcriptions",
+    "Audio transcription",
     "Analyse Documents",
     "Findings & Evidence",
     "Knowledge Graph",
-    "Ask / Compare LLMs",
+    "Ask LLMs",
     "Review & Validate",
     "Terms of reference",
 )
@@ -43,49 +46,40 @@ def transform_app_lazy_navigation(source: str):
 
     applied = []
 
-    tab_block = '''(
-    tab_home,
-    tab_news,
-    tab_transcriptions,
-    tab_new_analysis,
-    tab_findings,
-    tab_knowledge_graph,
-    tab_analyses,
-    tab_review,
-    tab_about,
-) = st.tabs(
-    [
-        "Home",
-        "News & Alerts",
-        "Transcriptions",
-        "Analyse Documents",
-        "Findings & Evidence",
-        "Knowledge Graph",
-        "Ask / Compare LLMs",
-        "Review & Validate",
-        "Terms of reference",
-    ]
-)
-
-# Relationship and EMCIP reviews are deliberately presented in one capability.
-# Re-entering the same Streamlit tab later appends the mapping-review section.
-tab_mapping_review = tab_review
-'''
+    # Match the navigation by stable variable structure, not wording. Earlier
+    # presentation passes legitimately rename user-visible labels.
+    tab_pattern = re.compile(
+        r"\(\n"
+        r"    tab_home,\n"
+        r"    tab_news,\n"
+        r"    tab_transcriptions,\n"
+        r"    tab_new_analysis,\n"
+        r"    tab_findings,\n"
+        r"    tab_knowledge_graph,\n"
+        r"    tab_analyses,\n"
+        r"    tab_review,\n"
+        r"    tab_about,\n"
+        r"\) = st\.tabs\(\n"
+        r"    \[\n"
+        r"(?:        \"[^\"]+\",\n){9}"
+        r"    \]\n"
+        r"\)\n"
+    )
 
     selector = '''# LAZY_CAPABILITY_NAVIGATION
 # Only the selected top-level capability executes on each Streamlit rerun.
-# This replaces eager st.tabs execution while preserving all capability bodies,
-# widget keys, fragments, job triggers and governance controls.
+# Existing widget keys, fragments, job triggers and governance controls remain
+# inside their original capability bodies.
 active_capability = st.radio(
     "Capability",
     options=[
         "Home",
         "News & Alerts",
-        "Transcriptions",
+        "Audio transcription",
         "Analyse Documents",
         "Findings & Evidence",
         "Knowledge Graph",
-        "Ask / Compare LLMs",
+        "Ask LLMs",
         "Review & Validate",
         "Terms of reference",
     ],
@@ -95,36 +89,32 @@ active_capability = st.radio(
 )
 '''
 
-    source = _replace_exact(
-        source,
-        tab_block,
-        selector,
-        "top-level capability selector",
-    )
+    source, tab_count = tab_pattern.subn(selector, source, count=1)
+    if tab_count != 1:
+        raise RuntimeError(
+            "Lazy navigation transform failed at top-level capability selector: "
+            f"expected one top-level tabs block, found {tab_count}."
+        )
     applied.append("top_level_tabs_replaced_with_single_capability_selector")
 
     single_guards = {
         "with tab_home:\n": 'if active_capability == "Home":\n',
         "with tab_news:\n": 'if active_capability == "News & Alerts":\n',
-        "with tab_transcriptions:\n": 'if active_capability == "Transcriptions":\n',
+        "with tab_transcriptions:\n": 'if active_capability == "Audio transcription":\n',
         "with tab_new_analysis:\n": 'if active_capability == "Analyse Documents":\n',
         "with tab_findings:\n": 'if active_capability == "Findings & Evidence":\n',
         "with tab_knowledge_graph:\n": 'if active_capability == "Knowledge Graph":\n',
-        "with tab_analyses:\n": 'if active_capability == "Ask / Compare LLMs":\n',
+        "with tab_analyses:\n": 'if active_capability == "Ask LLMs":\n',
         "with tab_about:\n": 'if active_capability == "Terms of reference":\n',
     }
 
     for old, new in single_guards.items():
-        source = _replace_exact(
-            source,
-            old,
-            new,
-            old.strip(),
-        )
+        source = _replace_exact(source, old, new, old.strip())
 
-    # Review is intentionally assembled in three consecutive sections:
-    # relationship review, optional relationship quality check, and the
-    # mapping/SHIELD section that previously reused tab_review via an alias.
+    # At this final transform stage the old EMCIP alias and the separate SHIELD
+    # UI have already been removed by existing workflow/visual refinements. The
+    # two remaining review sections are relationship review and optional quality
+    # review; both stay under Review & Validate.
     source = _replace_exact(
         source,
         "with tab_review:\n",
@@ -132,12 +122,11 @@ active_capability = st.radio(
         "review capability guards",
         expected=2,
     )
-    source = _replace_exact(
-        source,
-        "with tab_mapping_review:\n",
-        'if active_capability == "Review & Validate":\n',
-        "mapping review capability guard",
-    )
+
+    if "with tab_mapping_review:\n" in source:
+        raise RuntimeError(
+            "Lazy navigation found a legacy mapping-review tab after final UI transforms."
+        )
 
     applied.extend(
         [
@@ -147,8 +136,6 @@ active_capability = st.radio(
         ]
     )
 
-    # Fail closed if any old top-level tab guard survived. Inner Ask tabs have
-    # different variable names and are intentionally unaffected.
     forbidden = (
         "with tab_home:",
         "with tab_news:",
