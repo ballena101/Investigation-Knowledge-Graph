@@ -63,6 +63,8 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert "filter_catalogue_rows(" in materialized
     assert "resolve_effective_document_scope(" in materialized
     assert "validate_human_relationship_review(" in materialized
+    # SHIELD governance stays in the package/backend, while the current visual
+    # refinement deliberately hides the old inline investigator-facing section.
     assert "validate_app_shield_review(" in materialized
     assert "scope_graph_by_documents(" in materialized
 
@@ -79,8 +81,6 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert "Total alerts" in materialized
     assert "Alert locations" in materialized
     assert "Alerts by vessel type" in materialized
-    # Daily-count wording was intentionally removed by the current compact News UI;
-    # retain the functional query/filters rather than pinning a retired chart label.
     assert "Related to active analysis only" in materialized
     assert "Triage signal" in materialized
     assert "headline-derived screening signal" in materialized.lower()
@@ -138,9 +138,7 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert 'st.markdown("### Analysis summary")' not in materialized
     assert "### Brief analysis summary" in materialized
     assert "### 2. EMCIP mapping review" not in materialized
-    assert "### SHIELD classification of contributing factors" in materialized
-    assert '"Contributing factor"' in materialized
-    assert '"SHIELD (LLM)"' in materialized
+    assert "### SHIELD classification of contributing factors" not in materialized
 
     assert 'GPT20_DAILY_QUESTION_LIMIT = int(os.getenv("GPT20_DAILY_QUESTION_LIMIT", "30"))' in materialized
     assert 'LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "10"))' in materialized
@@ -236,7 +234,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert manifest["applied_branding_adoptions"] == ["safety_investigation_ai_sandbox"]
     assert set(manifest["applied_operational_refinements"]) >= {
         "analysis_summary_findings_only",
-        "analysis_runs_do_not_consume_ask_quota",
+        "analysis_runs_do_not_consume_ask_quota_already_present_in_source",
         "news_triage_semantics_and_filters",
         "news_active_analysis_lexical_relevance",
         "news_unique_fatal_alert_count",
