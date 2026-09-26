@@ -43,6 +43,9 @@ if not MATERIALIZED_MARKER.is_file():
     from ikf.app_branding_adoption import transform_app_branding_source
     from ikf.app_operational_refinement import transform_app_operational_refinement
     from ikf.app_similarity_refinement import transform_app_similarity_refinement
+    from ikf.app_direct_text_classification_guard import (
+        transform_app_direct_text_classification_guard,
+    )
 
     source, _ = transform_app_source(source)
     source, _ = transform_app_files_api_source(source)
@@ -57,6 +60,7 @@ if not MATERIALIZED_MARKER.is_file():
     source, _ = transform_app_branding_source(source)
     source, _ = transform_app_operational_refinement(source)
     source, _ = transform_app_similarity_refinement(source)
+    source, _ = transform_app_direct_text_classification_guard(source)
 
 code = compile(source, str(APP_FILE), "exec")
 exec(code, {"__name__": "__main__", "__file__": str(APP_FILE)})
