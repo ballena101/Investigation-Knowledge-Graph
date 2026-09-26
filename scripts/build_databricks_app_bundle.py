@@ -51,6 +51,10 @@ from ikf.app_pseudonymisation_adoption import (
     PSEUDONYMISATION_ADOPTION_VERSION,
     transform_app_pseudonymisation_source,
 )
+from ikf.app_pseudonymisation_persistence import (
+    PSEUDONYMISATION_PERSISTENCE_VERSION,
+    transform_app_pseudonymisation_persistence,
+)
 
 COPIED_APP_FILES = ("bootstrap.py", "app.yaml", "requirements.txt")
 MATERIALIZED_MARKER = ".ikf_shared_policy_materialized"
@@ -158,6 +162,9 @@ def build_bundle(output: Path) -> Path:
     transformed_app_source, applied_visual = transform_app_visual_refinement(transformed_app_source)
     transformed_app_source, applied_classification = transform_app_direct_text_classification_guard(transformed_app_source)
     transformed_app_source, applied_pseudonymisation = transform_app_pseudonymisation_source(transformed_app_source)
+    transformed_app_source, applied_pseudonymisation_persistence = transform_app_pseudonymisation_persistence(
+        transformed_app_source
+    )
     compile(transformed_app_source, str(output / "app.py"), "exec")
     (output / "app.py").write_text(transformed_app_source, encoding="utf-8")
 
@@ -172,10 +179,11 @@ def build_bundle(output: Path) -> Path:
         NEWS_ADOPTION_VERSION, BRANDING_ADOPTION_VERSION, OPERATIONAL_REFINEMENT_VERSION,
         SIMILARITY_REFINEMENT_VERSION, VISUAL_REFINEMENT_VERSION,
         DIRECT_TEXT_CLASSIFICATION_GUARD_VERSION, PSEUDONYMISATION_ADOPTION_VERSION,
+        PSEUDONYMISATION_PERSISTENCE_VERSION,
     ]) + "\n", encoding="utf-8")
 
     manifest = {
-        "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.14",
+        "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.15",
         "adoption_version": ADOPTION_VERSION,
         "files_api_download_adoption_version": FILES_API_DOWNLOAD_ADOPTION_VERSION,
         "audio_adoption_version": AUDIO_ADOPTION_VERSION,
@@ -192,6 +200,7 @@ def build_bundle(output: Path) -> Path:
         "visual_refinement_version": VISUAL_REFINEMENT_VERSION,
         "direct_text_classification_guard_version": DIRECT_TEXT_CLASSIFICATION_GUARD_VERSION,
         "pseudonymisation_adoption_version": PSEUDONYMISATION_ADOPTION_VERSION,
+        "pseudonymisation_persistence_version": PSEUDONYMISATION_PERSISTENCE_VERSION,
         "source_app_sha256": _sha256_text(original_app_source),
         "materialized_app_sha256": _sha256_text(transformed_app_source),
         "applied_policy_adoptions": list(applied_policy),
@@ -209,6 +218,7 @@ def build_bundle(output: Path) -> Path:
         "applied_visual_refinements": list(applied_visual),
         "applied_classification_guards": list(applied_classification),
         "applied_pseudonymisation_adoptions": list(applied_pseudonymisation),
+        "applied_pseudonymisation_persistence": list(applied_pseudonymisation_persistence),
         "shared_package_path": "src/ikf",
     }
     (output / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -224,7 +234,10 @@ def build_bundle(output: Path) -> Path:
         bundle_package / "app_branding_adoption.py", bundle_package / "app_operational_refinement.py",
         bundle_package / "app_similarity_refinement.py", bundle_package / "app_visual_refinement.py",
         bundle_package / "app_direct_text_classification_guard.py",
-        bundle_package / "app_pseudonymisation_adoption.py", bundle_package / "pseudonymisation.py",
+        bundle_package / "app_pseudonymisation_adoption.py",
+        bundle_package / "app_pseudonymisation_persistence.py",
+        bundle_package / "pseudonymisation.py", bundle_package / "pseudonymisation_sources.py",
+        bundle_package / "pseudonymised_source.py",
         bundle_package / "timeline.py", bundle_package / "transcription_governance.py",
         bundle_package / "source_routing.py", bundle_package / "evidence_locations.py",
         bundle_package / "question_scope.py", bundle_package / "review_governance.py",
