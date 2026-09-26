@@ -49,6 +49,9 @@ if not MATERIALIZED_MARKER.is_file():
     from ikf.app_pseudonymisation_adoption import (
         transform_app_pseudonymisation_source,
     )
+    from ikf.app_pseudonymisation_persistence import (
+        transform_app_pseudonymisation_persistence,
+    )
 
     source, _ = transform_app_source(source)
     source, _ = transform_app_files_api_source(source)
@@ -65,6 +68,7 @@ if not MATERIALIZED_MARKER.is_file():
     source, _ = transform_app_similarity_refinement(source)
     source, _ = transform_app_direct_text_classification_guard(source)
     source, _ = transform_app_pseudonymisation_source(source)
+    source, _ = transform_app_pseudonymisation_persistence(source)
 
 code = compile(source, str(APP_FILE), "exec")
 exec(code, {"__name__": "__main__", "__file__": str(APP_FILE)})
