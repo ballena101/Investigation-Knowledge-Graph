@@ -2,16 +2,14 @@
 
 This refinement is intentionally small and deterministic. It changes the
 Analyse Documents UI so information classification has an explicit unselected
-state, disables direct-text entry/submission until a class is chosen, and adds
-a server-side guard in the direct-text analysis constructor.
+state, disables input/submission until a class is chosen, and adds a server-side
+guard in the direct-text analysis constructor.
 """
 
 from __future__ import annotations
 
-import re
 
-
-DIRECT_TEXT_CLASSIFICATION_GUARD_VERSION = "IKF_DIRECT_TEXT_CLASSIFICATION_GUARD_V0.1.2"
+DIRECT_TEXT_CLASSIFICATION_GUARD_VERSION = "IKF_DIRECT_TEXT_CLASSIFICATION_GUARD_V0.1.3"
 
 
 def _replace_once(source: str, old: str, new: str, name: str) -> str:
@@ -62,7 +60,7 @@ def transform_app_direct_text_classification_guard(source: str):
     if not classification_selected:
         st.info(
             "Select an information classification before entering or "
-            "processing direct text."
+            "processing input."
         )
 '''
     source = _replace_once(
@@ -73,38 +71,31 @@ def transform_app_direct_text_classification_guard(source: str):
     )
     applied.append("explicit_information_class_selection")
 
-    # Locate the actual document-catalogue branch by its stable MAIRA scope
-    # marker rather than depending on the precise condition introduced by an
-    # earlier source-routing transform. Only this branch is eligible for the
-    # fail-closed precondition.
-    maira_marker = '        catalogue_scope_label = "MAIRA published investigation material"\n'
-    marker_pos = source.find(maira_marker)
-    if marker_pos < 0 or source.find(maira_marker, marker_pos + 1) >= 0:
-        raise RuntimeError(
-            "Direct-text classification guard failed at classification-driven "
-            "catalogue: expected exactly one MAIRA catalogue scope marker."
-        )
-    branch_pos = source.rfind("\n    if ", max(0, marker_pos - 1600), marker_pos)
-    if branch_pos < 0:
-        raise RuntimeError(
-            "Direct-text classification guard could not locate the catalogue branch."
-        )
-    branch_pos += 1
-    branch_line_end = source.find("\n", branch_pos)
-    branch_line = source[branch_pos:branch_line_end]
-    if "information_class" not in branch_line or not branch_line.endswith(":"):
-        raise RuntimeError(
-            "Direct-text classification guard found an unexpected catalogue condition: "
-            + branch_line.strip()
-        )
-    existing_condition = branch_line[len("    if ") : -1]
-    guarded_branch = (
-        '    if not classification_selected:\n'
-        '        available_documents = []\n'
-        '        catalogue_scope_label = "Select an information classification"\n'
-        f'    elif {existing_condition}:\n'
+    # Source-routing details are intentionally owned by their existing layer.
+    # Enforce the security invariant after that routing has produced the final
+    # available_documents collection and immediately before it is exposed to
+    # the document selector. This is independent of MAIRA/IKF wording or future
+    # routing refinements.
+    documents_map_anchor = '''    documents_by_id = {
+        document["document_id"]: document
+        for document in available_documents
+    }
+'''
+    guarded_documents_map = '''    if not classification_selected:
+        available_documents = []
+        catalogue_scope_label = "Select an information classification"
+
+    documents_by_id = {
+        document["document_id"]: document
+        for document in available_documents
+    }
+'''
+    source = _replace_once(
+        source,
+        documents_map_anchor,
+        guarded_documents_map,
+        "classification-driven catalogue",
     )
-    source = source[:branch_pos] + guarded_branch + source[branch_line_end + 1 :]
     applied.append("unclassified_catalogue_fail_closed")
 
     old_policy = '''    policy = resolve_model_policy(information_class)
