@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 
-DIRECT_TEXT_CLASSIFICATION_GUARD_VERSION = "IKF_DIRECT_TEXT_CLASSIFICATION_GUARD_V0.1.1"
+DIRECT_TEXT_CLASSIFICATION_GUARD_VERSION = "IKF_DIRECT_TEXT_CLASSIFICATION_GUARD_V0.1.2"
 
 
 def _replace_once(source: str, old: str, new: str, name: str) -> str:
@@ -73,27 +73,38 @@ def transform_app_direct_text_classification_guard(source: str):
     )
     applied.append("explicit_information_class_selection")
 
-    # The source-routing/presentation layers may add conditions to the catalogue
-    # body. The security property depends only on inserting the unclassified
-    # fail-closed branch ahead of the existing Class-B branch, so avoid coupling
-    # this guard to the exact catalogue implementation.
-    catalogue_pattern = re.compile(
-        r'(?m)^(    )if information_class == "B":\n'
-        r'(?=\s+available_documents\s*=)'
-    )
-    source, catalogue_count = catalogue_pattern.subn(
-        r'\1if not classification_selected:\n'
-        r'\1    available_documents = []\n'
-        r'\1    catalogue_scope_label = "Select an information classification"\n'
-        r'\1elif information_class == "B":\n',
-        source,
-        count=1,
-    )
-    if catalogue_count != 1:
+    # Locate the actual document-catalogue branch by its stable MAIRA scope
+    # marker rather than depending on the precise condition introduced by an
+    # earlier source-routing transform. Only this branch is eligible for the
+    # fail-closed precondition.
+    maira_marker = '        catalogue_scope_label = "MAIRA published investigation material"\n'
+    marker_pos = source.find(maira_marker)
+    if marker_pos < 0 or source.find(maira_marker, marker_pos + 1) >= 0:
         raise RuntimeError(
             "Direct-text classification guard failed at classification-driven "
-            f"catalogue: expected one Class-B catalogue branch, found {catalogue_count}."
+            "catalogue: expected exactly one MAIRA catalogue scope marker."
         )
+    branch_pos = source.rfind("\n    if ", max(0, marker_pos - 1600), marker_pos)
+    if branch_pos < 0:
+        raise RuntimeError(
+            "Direct-text classification guard could not locate the catalogue branch."
+        )
+    branch_pos += 1
+    branch_line_end = source.find("\n", branch_pos)
+    branch_line = source[branch_pos:branch_line_end]
+    if "information_class" not in branch_line or not branch_line.endswith(":"):
+        raise RuntimeError(
+            "Direct-text classification guard found an unexpected catalogue condition: "
+            + branch_line.strip()
+        )
+    existing_condition = branch_line[len("    if ") : -1]
+    guarded_branch = (
+        '    if not classification_selected:\n'
+        '        available_documents = []\n'
+        '        catalogue_scope_label = "Select an information classification"\n'
+        f'    elif {existing_condition}:\n'
+    )
+    source = source[:branch_pos] + guarded_branch + source[branch_line_end + 1 :]
     applied.append("unclassified_catalogue_fail_closed")
 
     old_policy = '''    policy = resolve_model_policy(information_class)
