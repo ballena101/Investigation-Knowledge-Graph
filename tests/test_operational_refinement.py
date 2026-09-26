@@ -11,10 +11,13 @@ def test_operational_refinement_materializes_expected_app(tmp_path):
 
     assert 'GPT20_DAILY_QUESTION_LIMIT = int(os.getenv("GPT20_DAILY_QUESTION_LIMIT", "30"))' in source
     assert 'LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "10"))' in source
-    assert "def get_gpt20_daily_usage():" in source
-    assert "def reserve_class_d_question_usage(model_selection):" in source
-    assert "GPT-OSS 20B Ask questions remaining today" in source
-    assert "Llama 3.3 70B Ask questions remaining today" in source
+    # The app now uses one generic, atomic quota implementation for both Class-D
+    # models rather than duplicated model-specific helper functions.
+    assert "def get_model_daily_usage(model_key):" in source
+    assert "def consume_model_daily_usage(selection):" in source
+    assert "MODEL_DAILY_LIMITS" in source
+    assert "GPT20" in source
+    assert "LLAMA70" in source
     assert 'name: GPT20_DAILY_QUESTION_LIMIT' in yaml_text
     assert 'value: "30"' in yaml_text
     assert 'name: LLAMA_DAILY_QUESTION_LIMIT' in yaml_text
@@ -28,6 +31,7 @@ def test_operational_refinement_materializes_expected_app(tmp_path):
     assert "Deterministic weighted score:" in source
 
     manifest = (output / "ikf_bundle_manifest.json").read_text(encoding="utf-8")
-    assert '"bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.12"' in manifest
+    assert '"bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.16"' in manifest
     assert '"operational_refinement_version": "IKF_APP_OPERATIONAL_REFINEMENT_V0.2"' in manifest
     assert '"similarity_refinement_version": "IKF_APP_SIMILARITY_REFINEMENT_V0.1"' in manifest
+    assert '"lazy_navigation_version": "IKF_LAZY_CAPABILITY_NAVIGATION_V0.1.2"' in manifest
