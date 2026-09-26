@@ -17,9 +17,25 @@
   "applied_branding_adoptions": [
     "safety_investigation_ai_sandbox"
   ],
+  "applied_classification_guards": [
+    "explicit_information_class_selection",
+    "unclassified_catalogue_fail_closed",
+    "unclassified_policy_fail_closed",
+    "direct_text_disabled_until_classified",
+    "analysis_submit_disabled_until_classified",
+    "server_side_submit_classification_guard",
+    "direct_text_constructor_fail_closed"
+  ],
   "applied_files_api_adoptions": [
     "files_api_transport_imports",
     "ranged_files_api_download"
+  ],
+  "applied_lazy_navigation": [
+    "top_level_tabs_replaced_with_single_capability_selector",
+    "inactive_capability_bodies_do_not_execute",
+    "timeline_capability_preserved",
+    "ask_inner_tabs_preserved",
+    "review_sections_preserved_under_one_capability"
   ],
   "applied_news_adoptions": [
     "pandas_news_dependency",
@@ -56,6 +72,21 @@
     "shield_gate2",
     "emcip_review",
     "graph_document_scope"
+  ],
+  "applied_pseudonymisation_adoptions": [
+    "pseudonymisation_source_agnostic_imports",
+    "pseudonymisation_controls_all_input_modes",
+    "pseudonymisation_generate_action_all_sources",
+    "pseudonymisation_documents_transcripts_direct_text",
+    "pseudonymised_derivative_reusable_analysis_input"
+  ],
+  "applied_pseudonymisation_persistence": [
+    "persistent_encrypted_derivative_store",
+    "derivatives_in_document_selector",
+    "derivative_parentage_visible_in_selector",
+    "saved_derivative_can_be_reprocessed",
+    "reviewed_derivative_save_action",
+    "saved_derivative_reuses_direct_text_pipeline"
   ],
   "applied_similarity_refinements": [
     "weighted_candidate_provenance",
@@ -114,12 +145,16 @@
   "audio_adoption_version": "IKF_APP_AUDIO_ADOPTION_V0.4",
   "audio_fixup_version": "IKF_APP_AUDIO_FIXUP_V0.2",
   "branding_adoption_version": "IKF_APP_BRANDING_ADOPTION_V0.1",
-  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.13",
+  "bundle_contract": "IKF_DATABRICKS_APP_BUNDLE_V0.16",
+  "direct_text_classification_guard_version": "IKF_DIRECT_TEXT_CLASSIFICATION_GUARD_V0.1.3",
   "files_api_download_adoption_version": "IKF_APP_FILES_API_DOWNLOAD_V0.1",
-  "materialized_app_sha256": "6cd765e88acf377cb6c97ee8983198a7f9c452bcd57c56aa23da182917e6f5c0",
+  "lazy_navigation_version": "IKF_LAZY_CAPABILITY_NAVIGATION_V0.1.2",
+  "materialized_app_sha256": "62bca8742c0e7bb115ee245571053f545fd5fe9bf2e3830d4e46d9d5322bd4e5",
   "news_adoption_version": "IKF_APP_NEWS_ADOPTION_V0.1",
   "operational_refinement_version": "IKF_APP_OPERATIONAL_REFINEMENT_V0.2",
   "parakeet_adoption_version": "IKF_APP_PARAKEET_ADOPTION_V0.3",
+  "pseudonymisation_adoption_version": "IKF_APP_PSEUDONYMISATION_V0.1.1",
+  "pseudonymisation_persistence_version": "IKF_PSEUDONYMISATION_PERSISTENCE_V0.1.1",
   "shared_package_path": "src/ikf",
   "similarity_refinement_version": "IKF_APP_SIMILARITY_REFINEMENT_V0.1",
   "simplification_adoption_version": "IKF_APP_SIMPLIFICATION_ADOPTION_V0.5",

@@ -19,6 +19,13 @@ import pandas as pd
 import pydeck as pdk
 import plotly.graph_objects as go
 import streamlit as st
+from ikf.pseudonymisation import (
+    ALL_CATEGORIES as PSEUDONYMISATION_CATEGORIES,
+    DEFAULT_CATEGORIES as PSEUDONYMISATION_DEFAULTS,
+    pseudonymise_text,
+)
+from ikf.pseudonymisation_sources import read_source_text
+from ikf.pseudonymised_source import processing_policy
 from cryptography.fernet import Fernet
 from databricks.sdk import WorkspaceClient
 from neo4j import GraphDatabase
@@ -2078,6 +2085,10 @@ def create_analysis_from_text(
     model_service,
     model_selection=None,
 ):
+    if information_class not in INFORMATION_CLASSES:
+        raise ValueError(
+            "Direct text requires an explicit valid information classification."
+        )
     reviewer = get_reviewer_identity()
     creator = (
         reviewer["email"]
@@ -6369,19 +6380,13 @@ else:
             "Create an analysis to establish a shared working case."
         )
 
-(
-    tab_home,
-    tab_news,
-    tab_transcriptions,
-    tab_new_analysis,
-    tab_findings,
-    tab_timeline,
-    tab_knowledge_graph,
-    tab_analyses,
-    tab_review,
-    tab_about,
-) = st.tabs(
-    [
+# LAZY_CAPABILITY_NAVIGATION
+# Only the selected top-level capability executes on each Streamlit rerun.
+# Existing widget keys, fragments, job triggers and governance controls remain
+# inside their original capability bodies.
+active_capability = st.radio(
+    "Capability",
+    options=[
         "Home",
         "News & Alerts",
         "Audio transcription",
@@ -6392,10 +6397,13 @@ else:
         "Ask LLMs",
         "Review & Validate",
         "Terms of reference",
-    ]
+    ],
+    horizontal=True,
+    key="ikf_active_capability",
+    label_visibility="collapsed",
 )
 
-with tab_home:
+if active_capability == "Home":
     st.subheader("What would you like to do?")
     st.caption(
         "Choose one capability. The full evidence and validation pipeline "
@@ -6490,7 +6498,7 @@ with tab_home:
 
 
 
-with tab_news:
+if active_capability == "News & Alerts":
     st.subheader("News & Alerts")
     st.caption(
         "External alert intelligence. Event type and triage signals are derived "
@@ -6750,7 +6758,7 @@ with tab_news:
         "validated investigation findings."
     )
 
-with tab_transcriptions:
+if active_capability == "Audio transcription":
     st.subheader("Type D audio transcriptions")
     st.caption(
         "Select any governed audio recording, transcribe it, validate the machine "
@@ -7254,7 +7262,176 @@ with tab_transcriptions:
                             st.error("The validated transcript could not be accepted/published.")
                             st.caption(str(exc))
 
-with tab_new_analysis:
+
+def save_pseudonymised_derivative(result, title):
+    """Persist encrypted reviewed derivative plus encrypted reversible mapping."""
+    if not DIRECT_TEXT_ENCRYPTION_KEY:
+        raise RuntimeError(
+            "DIRECT_TEXT_ENCRYPTION_KEY is not configured; reusable derivatives "
+            "cannot be persisted safely."
+        )
+
+    text = str(result.get("text") or "").strip()
+    if not text:
+        raise ValueError("The reviewed pseudonymised derivative is empty.")
+
+    processing_class = str(result.get("processing_class") or "").strip().upper()
+    if processing_class not in INFORMATION_CLASSES:
+        raise ValueError("The pseudonymised derivative has no valid processing class.")
+
+    derivative_id = "pseudo_" + uuid.uuid4().hex
+    safe_title = str(title or "").strip() or "Pseudonymised derivative"
+    filename = safe_title if safe_title.lower().endswith(".txt") else safe_title + ".txt"
+    text_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    encrypted_text = encrypt_direct_text(text)
+    mapping_payload = json.dumps(
+        result.get("mapping") or {},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    encrypted_mapping = encrypt_direct_text(mapping_payload)
+    reviewer = get_reviewer_identity()
+    actor = (
+        reviewer["email"]
+        if reviewer["email"] != "unknown"
+        else reviewer["username"]
+    )
+
+    with get_driver().session() as session:
+        session.run(
+            """
+            CREATE (d:PseudonymisedDerivative {
+                derivative_id: $derivative_id,
+                filename: $filename,
+                title: $title,
+                source_type: 'PSEUDONYMISED_DERIVATIVE',
+                privacy_status: 'PSEUDONYMISED_DERIVATIVE',
+                source_managed_by: 'IKF',
+                catalogue_status: 'AVAILABLE',
+                information_class: $information_class,
+                source_information_class: $source_information_class,
+                source_mode: $source_mode,
+                pseudonymisation_version: $pseudonymisation_version,
+                selected_categories: $selected_categories,
+                parent_source_ids: $parent_source_ids,
+                parent_source_labels: $parent_source_labels,
+                encrypted_text: $encrypted_text,
+                encryption_scheme: 'FERNET',
+                text_sha256: $text_sha256,
+                encrypted_mapping: $encrypted_mapping,
+                mapping_encryption_scheme: 'FERNET',
+                review_status: 'REVIEWED_FOR_REUSE',
+                created_by: $created_by,
+                created_at: datetime()
+            })
+            """,
+            derivative_id=derivative_id,
+            filename=filename,
+            title=safe_title,
+            information_class=processing_class,
+            source_information_class=str(
+                result.get("source_information_class") or processing_class
+            ),
+            source_mode=str(result.get("source_mode") or "UNKNOWN"),
+            pseudonymisation_version=str(result.get("version") or "UNKNOWN"),
+            selected_categories=list(result.get("categories") or []),
+            parent_source_ids=list(result.get("parent_source_ids") or []),
+            parent_source_labels=list(result.get("parent_source_labels") or []),
+            encrypted_text=encrypted_text,
+            text_sha256=text_sha256,
+            encrypted_mapping=encrypted_mapping,
+            created_by=actor,
+        ).consume()
+
+        for parent_id in result.get("parent_source_ids") or []:
+            session.run(
+                """
+                MATCH (d:PseudonymisedDerivative {derivative_id: $derivative_id})
+                MATCH (p:SourceDocument {document_id: $parent_id})
+                MERGE (d)-[:DERIVED_FROM]->(p)
+                """,
+                derivative_id=derivative_id,
+                parent_id=parent_id,
+            ).consume()
+
+    return derivative_id
+
+
+@st.cache_data(ttl=30)
+def load_pseudonymised_derivatives(information_class):
+    if information_class not in INFORMATION_CLASSES:
+        return []
+    query = """
+    MATCH (d:PseudonymisedDerivative)
+    WHERE
+        d.catalogue_status = 'AVAILABLE'
+        AND d.information_class = $information_class
+    RETURN
+        d.derivative_id AS document_id,
+        d.filename AS filename,
+        NULL AS volume_path,
+        NULL AS relative_path,
+        d.source_type AS source_type,
+        NULL AS byte_size,
+        NULL AS viewer_source_path,
+        'IKF' AS viewer_source_repository,
+        d.filename AS viewer_source_filename,
+        'IKF' AS source_managed_by,
+        d.information_class AS information_class,
+        d.source_information_class AS source_information_class,
+        coalesce(d.parent_source_ids, []) AS parent_source_ids,
+        coalesce(d.parent_source_labels, []) AS parent_source_labels,
+        d.pseudonymisation_version AS pseudonymisation_version,
+        d.text_sha256 AS sha256,
+        true AS is_pseudonymised_derivative,
+        'English' AS detected_language
+    ORDER BY d.created_at DESC
+    """
+    with get_driver().session() as session:
+        return [
+            record.data()
+            for record in session.run(
+                query,
+                information_class=information_class,
+            )
+        ]
+
+
+def load_pseudonymised_derivative_text(derivative_id):
+    if not DIRECT_TEXT_ENCRYPTION_KEY:
+        raise RuntimeError("DIRECT_TEXT_ENCRYPTION_KEY is not configured.")
+    with get_driver().session() as session:
+        record = session.run(
+            """
+            MATCH (d:PseudonymisedDerivative {derivative_id: $derivative_id})
+            WHERE d.catalogue_status = 'AVAILABLE'
+            RETURN
+                d.encrypted_text AS encrypted_text,
+                d.encryption_scheme AS encryption_scheme,
+                d.information_class AS information_class,
+                d.source_information_class AS source_information_class,
+                coalesce(d.parent_source_ids, []) AS parent_source_ids,
+                coalesce(d.parent_source_labels, []) AS parent_source_labels,
+                d.pseudonymisation_version AS pseudonymisation_version,
+                d.filename AS filename
+            """,
+            derivative_id=derivative_id,
+        ).single()
+    if record is None:
+        raise ValueError("The pseudonymised derivative is no longer available.")
+    if record["encryption_scheme"] != "FERNET":
+        raise ValueError("Unsupported pseudonymised derivative encryption scheme.")
+    text = Fernet(
+        DIRECT_TEXT_ENCRYPTION_KEY.encode("utf-8")
+    ).decrypt(
+        record["encrypted_text"].encode("utf-8")
+    ).decode("utf-8")
+    data = record.data()
+    data["text"] = text
+    return data
+
+
+if active_capability == "Analyse Documents":
     st.subheader("Analyse Documents")
     st.caption(
         "Prepare and analyse a governed evidence set from indexed documents or "
@@ -7277,6 +7454,17 @@ with tab_new_analysis:
 
     def source_document_label(document_id):
         document = documents_by_id[document_id]
+        if document.get("is_pseudonymised_derivative"):
+            parents = document.get("parent_source_labels") or []
+            parent_text = (
+                " · derived from " + ", ".join(parents)
+                if parents
+                else ""
+            )
+            return (
+                f"[IKF · Pseudonymised · Class {document.get('information_class')}] "
+                f"{document.get('filename') or document_id}{parent_text}"
+            )
         repository = (
             document.get("source_managed_by")
             or "IKF"
@@ -7321,14 +7509,28 @@ with tab_new_analysis:
 
     information_class = st.selectbox(
         "Information classification",
-        options=list(INFORMATION_CLASSES),
-        format_func=information_class_label,
+        options=[None] + list(INFORMATION_CLASSES),
+        index=0,
+        format_func=(
+            lambda value: (
+                "Select information classification"
+                if value is None
+                else information_class_label(value)
+            )
+        ),
         key="analysis_information_class",
         help=(
-            "This is a processing control, not only a label. It determines "
+            "Required before any document or direct text can be processed. "
+            "This is a processing control, not only a label; it determines "
             "which model path the App is allowed to use."
         ),
     )
+    classification_selected = information_class in INFORMATION_CLASSES
+    if not classification_selected:
+        st.info(
+            "Select an information classification before entering or "
+            "processing input."
+        )
 
     # CLASSIFICATION_DRIVEN_CATALOGUE — shared deterministic policy
     source_route = resolve_source_route(information_class, "DOCUMENTS")
@@ -7342,12 +7544,30 @@ with tab_new_analysis:
         else "IKF document library"
     )
 
+    if not classification_selected:
+        available_documents = []
+        catalogue_scope_label = "Select an information classification"
+
+    if classification_selected:
+        available_documents = list(available_documents) + load_pseudonymised_derivatives(
+            information_class
+        )
+
     documents_by_id = {
         document["document_id"]: document
         for document in available_documents
     }
 
-    policy = resolve_model_policy(information_class)
+    if classification_selected:
+        policy = resolve_model_policy(information_class)
+    else:
+        policy = {
+            "description": "Select an information classification to continue.",
+            "model": None,
+            "model_name": "Not selected",
+            "data_flow": "No model route is available until classification is selected.",
+            "ready": False,
+        }
 
     st.markdown("**Processing disclosure**")
     st.write(policy["description"])
@@ -7538,6 +7758,7 @@ with tab_new_analysis:
                 "Text to analyse and map",
                 height=260,
                 key="analysis_direct_text",
+                disabled=not classification_selected,
                 placeholder=(
                     "Write or paste the material from which you want the "
                     "knowledge graph to be constructed."
@@ -7548,6 +7769,74 @@ with tab_new_analysis:
                     "payload is purged after extraction."
                 ),
             )
+
+        pseudonymisation_categories = []
+        pseudonymisation_manual_names = ""
+        pseudonymisation_manual_terms = ""
+        pseudonymisation_target_class = information_class
+        st.markdown("#### Pseudonymisation")
+        st.caption(
+            "Optional privacy transformation for the current input. It works on "
+            "direct text and selected governed documents (PDF, text/interview files "
+            "and transcript JSON). The canonical source is never overwritten."
+        )
+        pseudonymisation_categories = st.multiselect(
+            "Elements to pseudonymise",
+            options=list(PSEUDONYMISATION_CATEGORIES),
+            default=list(PSEUDONYMISATION_DEFAULTS),
+            help=(
+                "Person names, email, telephone and personal identifiers are the "
+                "recommended defaults. Vessel, IMO/MMSI, organisation, port and "
+                "location data are optional because they may be analytically important."
+            ),
+            key="pseudonymisation_categories",
+            disabled=not classification_selected,
+        )
+        if classification_selected:
+            pseudo_policy = processing_policy(information_class)
+            if len(pseudo_policy.allowed_processing_classes) > 1:
+                pseudonymisation_target_class = st.selectbox(
+                    "Processing class for the reviewed pseudonymised derivative",
+                    options=list(pseudo_policy.allowed_processing_classes),
+                    index=0,
+                    help=(
+                        "Pseudonymisation does not automatically downgrade Class D. "
+                        "Class C may be selected only for a reviewed derivative; A/B "
+                        "are not permitted downgrade targets for Class D in v0.1."
+                    ),
+                    key="pseudonymisation_target_class",
+                )
+        if "PERSON" in pseudonymisation_categories:
+            pseudonymisation_manual_names = st.text_area(
+                "Person names to pseudonymise (optional in v0.1)",
+                height=90,
+                placeholder="One name per line",
+                help=(
+                    "V0.1 does not guess person names with a regex. Enter known names "
+                    "for deterministic replacement. Classification-aware LLM/entity "
+                    "detection can be added later without changing this replacement layer."
+                ),
+                key="pseudonymisation_manual_names",
+                disabled=not classification_selected,
+            )
+        pseudonymisation_manual_terms = st.text_area(
+            "Additional terms to pseudonymise (optional)",
+            height=90,
+            placeholder="CATEGORY | exact text, one per line\ne.g. ORGANISATION | Example Shipping Ltd",
+            help=(
+                "Use a selected category followed by | and the exact term. This is "
+                "useful for organisations, vessels, ports or locations when stricter "
+                "pseudonymisation is required."
+            ),
+            key="pseudonymisation_manual_terms",
+            disabled=not classification_selected,
+        )
+        pseudonymisation_review_confirmed = st.checkbox(
+            "I will review the pseudonymised output before using it as analysis input.",
+            value=False,
+            key="pseudonymisation_review_confirmed",
+            disabled=not classification_selected,
+        )
 
         language_mode = st.selectbox(
             "Source language handling",
@@ -7585,10 +7874,254 @@ with tab_new_analysis:
         create_submitted = st.form_submit_button(
             "Create and analyse",
             type="primary",
+            disabled=not classification_selected,
         )
+        pseudonymise_submitted = st.form_submit_button(
+            "Generate pseudonymised version",
+            disabled=(
+                not classification_selected
+                or not pseudonymisation_review_confirmed
+            ),
+        )
+
+    if pseudonymise_submitted:
+        pseudo_errors = []
+        source_text_for_pseudonymisation = ""
+        parent_source_ids = []
+        parent_source_labels = []
+
+        if information_class not in INFORMATION_CLASSES:
+            pseudo_errors.append(
+                "Select an information classification before pseudonymisation."
+            )
+        elif input_mode == "Direct text":
+            if not direct_text.strip():
+                pseudo_errors.append(
+                    "Enter direct text before generating a pseudonymised version."
+                )
+            else:
+                source_text_for_pseudonymisation = direct_text.strip()
+                parent_source_labels = ["Direct text"]
+        else:
+            if not selected_document_ids:
+                pseudo_errors.append(
+                    "Select at least one document before generating a pseudonymised version."
+                )
+            else:
+                source_chunks = []
+                for document_id in selected_document_ids:
+                    document = documents_by_id.get(document_id) or all_documents_by_id.get(document_id)
+                    if not document:
+                        pseudo_errors.append(
+                            f"Selected source is no longer available: {document_id}"
+                        )
+                        continue
+                    filename = document.get("filename") or document_id
+                    try:
+                        if document.get("is_pseudonymised_derivative"):
+                            extracted = {
+                                "text": load_pseudonymised_derivative_text(
+                                    document_id
+                                )["text"]
+                            }
+                        else:
+                            source_path = (
+                                document.get("viewer_source_path")
+                                or document.get("volume_path")
+                            )
+                            extracted = read_source_text(
+                                source_path,
+                                allowed_roots=ALLOWED_SOURCE_VOLUME_ROOTS,
+                            )
+                    except Exception as exc:
+                        pseudo_errors.append(
+                            f"{filename}: {exc}"
+                        )
+                        continue
+                    source_chunks.append(
+                        f"[[SOURCE {filename}]]\n{extracted['text']}"
+                    )
+                    parent_source_ids.append(document_id)
+                    parent_source_labels.append(filename)
+                source_text_for_pseudonymisation = "\n\n".join(source_chunks).strip()
+
+        if not pseudo_errors and source_text_for_pseudonymisation:
+            manual_terms = {}
+            names = [
+                value.strip()
+                for value in pseudonymisation_manual_names.splitlines()
+                if value.strip()
+            ]
+            if names:
+                manual_terms["PERSON"] = names
+            for raw_line in pseudonymisation_manual_terms.splitlines():
+                line = raw_line.strip()
+                if not line or "|" not in line:
+                    continue
+                category, value = [part.strip() for part in line.split("|", 1)]
+                category = category.upper()
+                if category in pseudonymisation_categories and value:
+                    manual_terms.setdefault(category, []).append(value)
+
+            result = pseudonymise_text(
+                source_text_for_pseudonymisation,
+                categories=pseudonymisation_categories,
+                manual_terms=manual_terms,
+            )
+            st.session_state["pseudonymisation_result"] = {
+                "text": result["text"],
+                "version": result["version"],
+                "categories": list(result["categories"]),
+                "mapping": result["mapping"],
+                "source_information_class": information_class,
+                "processing_class": pseudonymisation_target_class,
+                "parent_source_ids": parent_source_ids,
+                "parent_source_labels": parent_source_labels,
+                "source_mode": input_mode,
+            }
+        else:
+            for message in pseudo_errors:
+                st.error(message)
+
+    pseudonymisation_result = st.session_state.get("pseudonymisation_result")
+    if pseudonymisation_result:
+        st.markdown("### Pseudonymised derivative")
+        parent_labels = pseudonymisation_result.get("parent_source_labels") or []
+        st.caption(
+            f"{pseudonymisation_result['version']} · source Class "
+            f"{pseudonymisation_result['source_information_class']} · processing Class "
+            f"{pseudonymisation_result['processing_class']} · "
+            + (", ".join(parent_labels) if parent_labels else "direct text")
+        )
+        st.text_area(
+            "Review pseudonymised output",
+            value=pseudonymisation_result["text"],
+            height=300,
+            key="pseudonymisation_output_preview",
+        )
+        st.download_button(
+            "Download pseudonymised text (.txt)",
+            data=pseudonymisation_result["text"].encode("utf-8"),
+            file_name="ikf_pseudonymised_text.txt",
+            mime="text/plain",
+            key="download_pseudonymised_text",
+        )
+        with st.expander("Authorised mapping review", expanded=False):
+            mapping_rows = [
+                {"Pseudonym": key, "Original": value}
+                for key, value in pseudonymisation_result["mapping"].items()
+            ]
+            if mapping_rows:
+                st.dataframe(mapping_rows, use_container_width=True, hide_index=True)
+            else:
+                st.caption("No replacements were generated with the selected categories.")
+
+        derivative_default_title = (
+            "Pseudonymised — "
+            + (
+                ", ".join(parent_labels)
+                if parent_labels
+                else "direct text"
+            )
+        )
+        derivative_title = st.text_input(
+            "Reusable derivative name",
+            value=derivative_default_title,
+            key="pseudonymised_derivative_title",
+        )
+        if st.button(
+            "Save reviewed derivative as reusable input",
+            key="save_pseudonymised_derivative",
+        ):
+            try:
+                derivative_id = save_pseudonymised_derivative(
+                    pseudonymisation_result,
+                    derivative_title,
+                )
+                load_pseudonymised_derivatives.clear()
+                st.success(
+                    "Saved as reusable governed input: " + derivative_id
+                )
+            except Exception as exc:
+                st.error("The reusable derivative could not be saved safely.")
+                st.caption(str(exc))
+
+        def _adopt_pseudonymised_derivative():
+            result = st.session_state.get("pseudonymisation_result") or {}
+            if not result.get("text"):
+                return
+            st.session_state["analysis_input_mode"] = "Direct text"
+            st.session_state["analysis_information_class"] = result.get(
+                "processing_class"
+            )
+            st.session_state["analysis_direct_text"] = result["text"]
+            st.session_state["pseudonymised_analysis_origin"] = {
+                "source_information_class": result.get("source_information_class"),
+                "processing_class": result.get("processing_class"),
+                "parent_source_ids": list(result.get("parent_source_ids") or []),
+                "pseudonymisation_version": result.get("version"),
+            }
+
+        st.button(
+            "Use reviewed pseudonymised version as analysis input",
+            key="use_pseudonymised_as_analysis_input",
+            on_click=_adopt_pseudonymised_derivative,
+            help=(
+                "Reuses the existing governed DirectTextSource analysis ingress; no "
+                "second LLM pipeline is created. Parent source IDs are retained in "
+                "session provenance for the PoC."
+            ),
+        )
+
+    if create_submitted and input_mode == "Documents":
+        derivative_ids = [
+            document_id
+            for document_id in selected_document_ids
+            if (documents_by_id.get(document_id) or {}).get(
+                "is_pseudonymised_derivative"
+            )
+        ]
+        if derivative_ids:
+            if len(derivative_ids) != 1 or len(selected_document_ids) != 1:
+                st.error(
+                    "For v0.1, analyse one saved pseudonymised derivative at a time; "
+                    "do not mix it with original documents in the same analysis."
+                )
+                create_submitted = False
+            else:
+                try:
+                    derivative = load_pseudonymised_derivative_text(
+                        derivative_ids[0]
+                    )
+                    direct_text = derivative["text"]
+                    input_mode = "Direct text"
+                    information_class = derivative["information_class"]
+                    policy = resolve_model_policy(information_class)
+                    st.session_state.pop("transcript_analysis_origin", None)
+                    st.session_state["pseudonymised_analysis_origin"] = {
+                        "derivative_id": derivative_ids[0],
+                        "source_information_class": derivative.get(
+                            "source_information_class"
+                        ),
+                        "processing_class": derivative.get("information_class"),
+                        "parent_source_ids": list(
+                            derivative.get("parent_source_ids") or []
+                        ),
+                        "pseudonymisation_version": derivative.get(
+                            "pseudonymisation_version"
+                        ),
+                    }
+                except Exception as exc:
+                    st.error("The saved pseudonymised derivative could not be opened.")
+                    st.caption(str(exc))
+                    create_submitted = False
 
     if create_submitted:
         errors = []
+        if information_class not in INFORMATION_CLASSES:
+            errors.append(
+                "Select an information classification before processing this input."
+            )
         transcript_origin = st.session_state.get("transcript_analysis_origin")
         if transcript_origin and input_mode == "Direct text":
             if information_class != "D":
@@ -8800,7 +9333,7 @@ def render_direct_reference_ask():
 
 
 
-with tab_analyses:
+if active_capability == "Ask LLMs":
     case_question_tab, direct_reference_tab = st.tabs(
         [
             "Case / analysed evidence",
@@ -8814,7 +9347,7 @@ with tab_analyses:
     with direct_reference_tab:
         render_direct_reference_ask()
 
-with tab_findings:
+if active_capability == "Findings & Evidence":
     st.subheader("Findings & Evidence")
     st.caption(
         "Browse processed findings, relationships and their cited source evidence. "
@@ -9958,7 +10491,7 @@ def _short_timeline_label(value, limit=34):
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
-with tab_timeline:
+if active_capability == "Timeline":
     st.subheader("Timeline")
     st.caption(
         "Default chronology projected from the same evidence-derived Event nodes and "
@@ -10495,7 +11028,7 @@ def apply_latest_relationship_reviews_to_graph(
         },
     }
 
-with tab_knowledge_graph:
+if active_capability == "Knowledge Graph":
     st.subheader("Knowledge Graph")
     st.caption(
         "Explore the active analysis as an interactive knowledge graph. "
@@ -10925,7 +11458,7 @@ with tab_knowledge_graph:
         )
 
 
-with tab_review:
+if active_capability == "Review & Validate":
     st.subheader("Review & Validate")
     st.caption(
         "Select a completed analysis and make human governance decisions on "
@@ -11398,7 +11931,7 @@ with tab_review:
                 st.exception(exc)
 
 
-with tab_review:
+if active_capability == "Review & Validate":
     st.divider()
     st.markdown("### Optional relationship quality check")
     st.caption(
@@ -11763,7 +12296,7 @@ with tab_review:
                         st.exception(exc)
 
 
-with tab_about:
+if active_capability == "Terms of reference":
     st.markdown(
         f"""
 ### Current Proof of Concept

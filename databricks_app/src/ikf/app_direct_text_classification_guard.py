@@ -2,14 +2,14 @@
 
 This refinement is intentionally small and deterministic. It changes the
 Analyse Documents UI so information classification has an explicit unselected
-state, disables direct-text entry/submission until a class is chosen, and adds
-a server-side guard in the direct-text analysis constructor.
+state, disables input/submission until a class is chosen, and adds a server-side
+guard in the direct-text analysis constructor.
 """
 
 from __future__ import annotations
 
 
-DIRECT_TEXT_CLASSIFICATION_GUARD_VERSION = "IKF_DIRECT_TEXT_CLASSIFICATION_GUARD_V0.1"
+DIRECT_TEXT_CLASSIFICATION_GUARD_VERSION = "IKF_DIRECT_TEXT_CLASSIFICATION_GUARD_V0.1.3"
 
 
 def _replace_once(source: str, old: str, new: str, name: str) -> str:
@@ -60,7 +60,7 @@ def transform_app_direct_text_classification_guard(source: str):
     if not classification_selected:
         st.info(
             "Select an information classification before entering or "
-            "processing direct text."
+            "processing input."
         )
 '''
     source = _replace_once(
@@ -71,43 +71,29 @@ def transform_app_direct_text_classification_guard(source: str):
     )
     applied.append("explicit_information_class_selection")
 
-    old_catalogue = '''    if information_class == "B":
-        available_documents = [
-            document
-            for document in source_documents
-            if document.get("source_managed_by") == "MAIRA"
-        ]
-        catalogue_scope_label = "MAIRA published investigation material"
-    else:
-        available_documents = [
-            document
-            for document in source_documents
-            if document.get("source_managed_by") != "MAIRA"
-        ]
-        catalogue_scope_label = "IKF document library"
+    # Source-routing details are intentionally owned by their existing layer.
+    # Enforce the security invariant after that routing has produced the final
+    # available_documents collection and immediately before it is exposed to
+    # the document selector. This is independent of MAIRA/IKF wording or future
+    # routing refinements.
+    documents_map_anchor = '''    documents_by_id = {
+        document["document_id"]: document
+        for document in available_documents
+    }
 '''
-    new_catalogue = '''    if not classification_selected:
+    guarded_documents_map = '''    if not classification_selected:
         available_documents = []
         catalogue_scope_label = "Select an information classification"
-    elif information_class == "B":
-        available_documents = [
-            document
-            for document in source_documents
-            if document.get("source_managed_by") == "MAIRA"
-        ]
-        catalogue_scope_label = "MAIRA published investigation material"
-    else:
-        available_documents = [
-            document
-            for document in source_documents
-            if document.get("source_managed_by") != "MAIRA"
-        ]
-        catalogue_scope_label = "IKF document library"
+
+    documents_by_id = {
+        document["document_id"]: document
+        for document in available_documents
+    }
 '''
     source = _replace_once(
         source,
-        old_catalogue,
-        new_catalogue,
+        documents_map_anchor,
+        guarded_documents_map,
         "classification-driven catalogue",
     )
     applied.append("unclassified_catalogue_fail_closed")
