@@ -52,6 +52,9 @@ if not MATERIALIZED_MARKER.is_file():
     from ikf.app_pseudonymisation_persistence import (
         transform_app_pseudonymisation_persistence,
     )
+    from ikf.app_lazy_navigation import (
+        transform_app_lazy_navigation,
+    )
 
     source, _ = transform_app_source(source)
     source, _ = transform_app_files_api_source(source)
@@ -69,6 +72,9 @@ if not MATERIALIZED_MARKER.is_file():
     source, _ = transform_app_direct_text_classification_guard(source)
     source, _ = transform_app_pseudonymisation_source(source)
     source, _ = transform_app_pseudonymisation_persistence(source)
+    # Apply navigation last so every earlier capability transform still sees
+    # the original tab anchors it was designed to modify.
+    source, _ = transform_app_lazy_navigation(source)
 
 code = compile(source, str(APP_FILE), "exec")
 exec(code, {"__name__": "__main__", "__file__": str(APP_FILE)})
