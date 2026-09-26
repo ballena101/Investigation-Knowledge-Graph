@@ -10,7 +10,7 @@ DirectTextSource pipeline. No second analysis pipeline is introduced.
 from __future__ import annotations
 
 
-PSEUDONYMISATION_PERSISTENCE_VERSION = "IKF_PSEUDONYMISATION_PERSISTENCE_V0.1"
+PSEUDONYMISATION_PERSISTENCE_VERSION = "IKF_PSEUDONYMISATION_PERSISTENCE_V0.1.1"
 
 
 def _replace_once(source: str, old: str, new: str, name: str) -> str:
@@ -176,6 +176,7 @@ def load_pseudonymised_derivative_text(derivative_id):
                 d.information_class AS information_class,
                 d.source_information_class AS source_information_class,
                 coalesce(d.parent_source_ids, []) AS parent_source_ids,
+                coalesce(d.parent_source_labels, []) AS parent_source_labels,
                 d.pseudonymisation_version AS pseudonymisation_version,
                 d.filename AS filename
             """,
@@ -208,7 +209,8 @@ def load_pseudonymised_derivative_text(derivative_id):
         for document in available_documents
     }
 
-    policy = resolve_model_policy(information_class)
+    if classification_selected:
+        policy = resolve_model_policy(information_class)
 '''
     catalogue_new = '''    if classification_selected:
         available_documents = list(available_documents) + load_pseudonymised_derivatives(
@@ -220,7 +222,8 @@ def load_pseudonymised_derivative_text(derivative_id):
         for document in available_documents
     }
 
-    policy = resolve_model_policy(information_class)
+    if classification_selected:
+        policy = resolve_model_policy(information_class)
 '''
     source = _replace_once(
         source,
@@ -256,6 +259,59 @@ def load_pseudonymised_derivative_text(derivative_id):
         "derivative selector label",
     )
     applied.append("derivative_parentage_visible_in_selector")
+
+    derivative_read_anchor = '''                    source_path = (
+                        document.get("viewer_source_path")
+                        or document.get("volume_path")
+                    )
+                    try:
+                        extracted = read_source_text(
+                            source_path,
+                            allowed_roots=ALLOWED_SOURCE_VOLUME_ROOTS,
+                        )
+                    except Exception as exc:
+                        pseudo_errors.append(
+                            f"{document.get('filename') or document_id}: {exc}"
+                        )
+                        continue
+                    filename = document.get("filename") or document_id
+                    source_chunks.append(
+                        f"[[SOURCE {filename}]]\\n{extracted['text']}"
+                    )
+'''
+    derivative_read_new = '''                    filename = document.get("filename") or document_id
+                    try:
+                        if document.get("is_pseudonymised_derivative"):
+                            extracted = {
+                                "text": load_pseudonymised_derivative_text(
+                                    document_id
+                                )["text"]
+                            }
+                        else:
+                            source_path = (
+                                document.get("viewer_source_path")
+                                or document.get("volume_path")
+                            )
+                            extracted = read_source_text(
+                                source_path,
+                                allowed_roots=ALLOWED_SOURCE_VOLUME_ROOTS,
+                            )
+                    except Exception as exc:
+                        pseudo_errors.append(
+                            f"{filename}: {exc}"
+                        )
+                        continue
+                    source_chunks.append(
+                        f"[[SOURCE {filename}]]\\n{extracted['text']}"
+                    )
+'''
+    source = _replace_once(
+        source,
+        derivative_read_anchor,
+        derivative_read_new,
+        "pseudonymise saved derivative source",
+    )
+    applied.append("saved_derivative_can_be_reprocessed")
 
     save_anchor = '''        def _adopt_pseudonymised_derivative():
             result = st.session_state.get("pseudonymisation_result") or {}
