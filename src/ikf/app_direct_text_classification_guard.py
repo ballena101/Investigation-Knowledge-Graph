@@ -8,8 +8,10 @@ a server-side guard in the direct-text analysis constructor.
 
 from __future__ import annotations
 
+import re
 
-DIRECT_TEXT_CLASSIFICATION_GUARD_VERSION = "IKF_DIRECT_TEXT_CLASSIFICATION_GUARD_V0.1"
+
+DIRECT_TEXT_CLASSIFICATION_GUARD_VERSION = "IKF_DIRECT_TEXT_CLASSIFICATION_GUARD_V0.1.1"
 
 
 def _replace_once(source: str, old: str, new: str, name: str) -> str:
@@ -71,45 +73,27 @@ def transform_app_direct_text_classification_guard(source: str):
     )
     applied.append("explicit_information_class_selection")
 
-    old_catalogue = '''    if information_class == "B":
-        available_documents = [
-            document
-            for document in source_documents
-            if document.get("source_managed_by") == "MAIRA"
-        ]
-        catalogue_scope_label = "MAIRA published investigation material"
-    else:
-        available_documents = [
-            document
-            for document in source_documents
-            if document.get("source_managed_by") != "MAIRA"
-        ]
-        catalogue_scope_label = "IKF document library"
-'''
-    new_catalogue = '''    if not classification_selected:
-        available_documents = []
-        catalogue_scope_label = "Select an information classification"
-    elif information_class == "B":
-        available_documents = [
-            document
-            for document in source_documents
-            if document.get("source_managed_by") == "MAIRA"
-        ]
-        catalogue_scope_label = "MAIRA published investigation material"
-    else:
-        available_documents = [
-            document
-            for document in source_documents
-            if document.get("source_managed_by") != "MAIRA"
-        ]
-        catalogue_scope_label = "IKF document library"
-'''
-    source = _replace_once(
-        source,
-        old_catalogue,
-        new_catalogue,
-        "classification-driven catalogue",
+    # The source-routing/presentation layers may add conditions to the catalogue
+    # body. The security property depends only on inserting the unclassified
+    # fail-closed branch ahead of the existing Class-B branch, so avoid coupling
+    # this guard to the exact catalogue implementation.
+    catalogue_pattern = re.compile(
+        r'(?m)^(    )if information_class == "B":\n'
+        r'(?=\s+available_documents\s*=)'
     )
+    source, catalogue_count = catalogue_pattern.subn(
+        r'\1if not classification_selected:\n'
+        r'\1    available_documents = []\n'
+        r'\1    catalogue_scope_label = "Select an information classification"\n'
+        r'\1elif information_class == "B":\n',
+        source,
+        count=1,
+    )
+    if catalogue_count != 1:
+        raise RuntimeError(
+            "Direct-text classification guard failed at classification-driven "
+            f"catalogue: expected one Class-B catalogue branch, found {catalogue_count}."
+        )
     applied.append("unclassified_catalogue_fail_closed")
 
     old_policy = '''    policy = resolve_model_policy(information_class)
