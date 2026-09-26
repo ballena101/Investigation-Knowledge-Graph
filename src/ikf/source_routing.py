@@ -8,6 +8,9 @@ Current ownership boundary:
 - Classes A/C/D -> IKF-managed sources.
 - Direct text is an IKF ingress and is not constrained by the document
   catalogue ownership filter.
+- Reviewed IKF pseudonymised derivatives are reusable governed sources. They
+  remain separate from their parent source and are visible only in their
+  explicitly approved processing class.
 - if an IKF SourceDocument has an explicit information_class, it is visible
   only in that class. Legacy documents without an explicit class retain the
   existing ownership-only behaviour.
@@ -26,6 +29,7 @@ DIRECT_TEXT_INPUT = "DIRECT_TEXT"
 
 MAIRA_MANAGER = "MAIRA"
 IKF_MANAGER = "IKF"
+PSEUDONYMISED_DERIVATIVE = "PSEUDONYMISED_DERIVATIVE"
 
 SUPPORTED_INFORMATION_CLASSES = frozenset({"A", "B", "C", "D"})
 SUPPORTED_INPUT_MODES = frozenset({DOCUMENT_INPUT, DIRECT_TEXT_INPUT})
@@ -106,10 +110,10 @@ def filter_catalogue_rows(
 ) -> list[dict]:
     """Filter catalogue rows by source owner and explicit class when present.
 
-    Explicitly classified protected derivatives such as validated transcripts
-    must never appear in A/C document selectors. Existing SourceDocument rows
-    that pre-date the class field remain governed by the established manager
-    boundary so this change is backward-compatible.
+    Pseudonymised derivatives are special only in source ownership: they are
+    created and managed by IKF, but may retain Class B processing when derived
+    from already-published Class B material. They must have explicit class and
+    REVIEWED/APPROVED status; an unreviewed derivative never enters a selector.
     """
 
     information_class = normalise_information_class(information_class)
@@ -119,10 +123,20 @@ def filter_catalogue_rows(
     filtered = []
     for row in rows:
         manager = str(row.get("source_managed_by") or "").strip().upper()
-        if manager not in allowed:
+        source_type = str(row.get("source_type") or "").strip().upper()
+        explicit_class = str(row.get("information_class") or "").strip().upper()
+
+        is_reviewed_derivative = (
+            source_type == PSEUDONYMISED_DERIVATIVE
+            and manager == IKF_MANAGER
+            and explicit_class == information_class
+            and str(row.get("pseudonymisation_review_status") or "").strip().upper()
+            in {"REVIEWED", "APPROVED"}
+        )
+
+        if manager not in allowed and not is_reviewed_derivative:
             continue
 
-        explicit_class = str(row.get("information_class") or "").strip().upper()
         if explicit_class and explicit_class != information_class:
             continue
 
