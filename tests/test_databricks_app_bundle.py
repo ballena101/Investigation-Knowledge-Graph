@@ -38,7 +38,10 @@ def test_bundle_contains_app_and_canonical_ikf_package(tmp_path):
         "app_audio_fixup.py", "app_parakeet_adoption.py", "app_timeline_adoption.py",
         "app_ui_adoption.py", "app_workflow_adoption.py", "app_simplification_adoption.py",
         "app_news_adoption.py", "app_branding_adoption.py", "app_operational_refinement.py",
-        "app_similarity_refinement.py", "timeline.py", "transcription_governance.py",
+        "app_similarity_refinement.py", "app_direct_text_classification_guard.py",
+        "app_pseudonymisation_adoption.py", "app_pseudonymisation_persistence.py",
+        "app_lazy_navigation.py", "pseudonymisation.py", "pseudonymisation_sources.py",
+        "pseudonymised_source.py", "timeline.py", "transcription_governance.py",
         "source_routing.py", "evidence_locations.py", "question_scope.py",
         "review_governance.py", "shield_governance.py", "emcip_governance.py",
         "graph_governance.py", "retention.py",
@@ -76,7 +79,8 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert "Total alerts" in materialized
     assert "Alert locations" in materialized
     assert "Alerts by vessel type" in materialized
-    assert "Daily alert count" in materialized
+    # Daily-count wording was intentionally removed by the current compact News UI;
+    # retain the functional query/filters rather than pinning a retired chart label.
     assert "Related to active analysis only" in materialized
     assert "Triage signal" in materialized
     assert "headline-derived screening signal" in materialized.lower()
@@ -140,9 +144,9 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
 
     assert 'GPT20_DAILY_QUESTION_LIMIT = int(os.getenv("GPT20_DAILY_QUESTION_LIMIT", "30"))' in materialized
     assert 'LLAMA_DAILY_QUESTION_LIMIT = int(os.getenv("LLAMA_DAILY_QUESTION_LIMIT", "10"))' in materialized
-    assert "reserve_class_d_question_usage" in materialized
-    assert "GPT-OSS 20B Ask questions remaining today" in materialized
-    assert "Llama 3.3 70B Ask questions remaining today" in materialized
+    assert "def get_model_daily_usage(model_key):" in materialized
+    assert "def consume_model_daily_usage(selection):" in materialized
+    assert "MODEL_DAILY_LIMITS" in materialized
     assert "analysis_runs_do_not_consume_ask_quota" not in materialized
 
     assert "Search scope: all processed MAIRA INVESTIGATION / MAIN_REPORT passages" in materialized
@@ -174,6 +178,18 @@ def test_bundle_materializes_governed_investigator_workflow(tmp_path):
     assert "Evidence-based conclusion" in materialized
     assert "HUMAN_VALIDATED" in materialized
 
+    # Performance contract: top-level capabilities are lazily gated while inner
+    # Ask tabs remain unchanged.
+    assert "# LAZY_CAPABILITY_NAVIGATION" in materialized
+    assert 'key="ikf_active_capability"' in materialized
+    assert 'if active_capability == "Timeline":' in materialized
+    assert 'if active_capability == "News & Alerts":' in materialized
+    assert 'if active_capability == "Analyse Documents":' in materialized
+    assert "with tab_home:" not in materialized
+    assert "with tab_news:" not in materialized
+    assert "with tab_timeline:" not in materialized
+    assert "case_question_tab, direct_reference_tab = st.tabs(" in materialized
+
     app_yaml = (output / "app.yaml").read_text(encoding="utf-8")
     assert "EMCIP_MAPPING_JOB_ID" not in app_yaml
     assert "CLASS_D_OLLAMA_LLAMA70_URL" not in app_yaml
@@ -190,7 +206,7 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     output = build_test_bundle(tmp_path)
     manifest = json.loads((output / "ikf_bundle_manifest.json").read_text(encoding="utf-8"))
 
-    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.12"
+    assert manifest["bundle_contract"] == "IKF_DATABRICKS_APP_BUNDLE_V0.16"
     assert manifest["parakeet_adoption_version"] == "IKF_APP_PARAKEET_ADOPTION_V0.3"
     assert set(manifest["applied_parakeet_adoptions"]) >= {
         "parakeet_governance_imports",
@@ -209,6 +225,8 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert manifest["branding_adoption_version"] == "IKF_APP_BRANDING_ADOPTION_V0.1"
     assert manifest["operational_refinement_version"] == "IKF_APP_OPERATIONAL_REFINEMENT_V0.2"
     assert manifest["similarity_refinement_version"] == "IKF_APP_SIMILARITY_REFINEMENT_V0.1"
+    assert manifest["direct_text_classification_guard_version"] == "IKF_DIRECT_TEXT_CLASSIFICATION_GUARD_V0.1.3"
+    assert manifest["lazy_navigation_version"] == "IKF_LAZY_CAPABILITY_NAVIGATION_V0.1.2"
     assert set(manifest["applied_news_adoptions"]) == {
         "pandas_news_dependency",
         "sql_warehouse_binding",
@@ -218,7 +236,6 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
     assert manifest["applied_branding_adoptions"] == ["safety_investigation_ai_sandbox"]
     assert set(manifest["applied_operational_refinements"]) >= {
         "analysis_summary_findings_only",
-        "class_d_ask_quotas_gpt20_30_llama70_10",
         "analysis_runs_do_not_consume_ask_quota",
         "news_triage_semantics_and_filters",
         "news_active_analysis_lexical_relevance",
@@ -229,6 +246,13 @@ def test_bundle_manifest_records_materialized_contract(tmp_path):
         "weighted_candidate_provenance",
         "maira_query_ready_coverage_display",
         "weighted_match_explanation",
+    }
+    assert set(manifest["applied_lazy_navigation"]) >= {
+        "top_level_tabs_replaced_with_single_capability_selector",
+        "inactive_capability_bodies_do_not_execute",
+        "timeline_capability_preserved",
+        "ask_inner_tabs_preserved",
+        "review_sections_preserved_under_one_capability",
     }
     assert manifest["source_app_sha256"] != manifest["materialized_app_sha256"]
     assert manifest["shared_package_path"] == "src/ikf"
@@ -250,4 +274,8 @@ def test_bundled_bootstrap_prefers_materialized_source(tmp_path):
     assert "transform_app_branding_source" in bootstrap
     assert "transform_app_operational_refinement" in bootstrap
     assert "transform_app_similarity_refinement" in bootstrap
+    assert "transform_app_direct_text_classification_guard" in bootstrap
+    assert "transform_app_pseudonymisation_source" in bootstrap
+    assert "transform_app_pseudonymisation_persistence" in bootstrap
+    assert "transform_app_lazy_navigation" in bootstrap
     assert (output / "src" / "ikf").is_dir()
